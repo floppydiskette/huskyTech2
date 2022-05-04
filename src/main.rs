@@ -7,6 +7,7 @@ pub trait Thingy {
     fn get_depth(&self) -> i32;
 }
 
+pub mod sunlust_intro;
 pub mod renderer;
 pub mod helpers;
 pub mod cock_handler;
