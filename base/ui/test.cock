@@ -1,0 +1,16 @@
+// here is an example cock file (ui descriptor for huskyTech2)
+// each line or block will begin with two coordinates separated by a comma,
+// or the letter 'X' to specify that they should be centred on the screen.
+// the letter 'X' can also be followed by a number (with or without a negative sign) to specify an offset.
+//
+// as you can also see, two forward slashes (//) are used to begin a comment.
+
+// here is an example of drawing simple text, this doesn't usually look the best and should probably just
+// be used for debugging.
+
+// X,Y <type specifier>"text"
+X,X S"i love cock!"
+
+// type specifier P is used for drawing an image, and is followed by the image file name.
+// image names are relative to the imgz directory in the base directory.
+X,X-100 P"cock.png"
