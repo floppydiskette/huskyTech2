@@ -1,10 +1,6 @@
 // array of 2d points showing the path that the cool looking rainbow line will take
 // to draw the HT2 logo
 
-struct loc {
-    pub x: i32,
-    pub y: i32,
-}
 
 static points: [loc; 21] = [
     loc{x: 640, y: 104},
