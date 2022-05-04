@@ -9,8 +9,8 @@
 // be used for debugging.
 
 // X,Y <type specifier>"text"
-X,X S"i love cock!"
+X,X str"i love cock!"
 
-// type specifier P is used for drawing an image, and is followed by the image file name.
+// type specifier "pic" is used for drawing an image, and is followed by the image file name.
 // image names are relative to the imgz directory in the base directory.
-X,X-100 P"cock.png"
+X,X-100 pic"cock.png"
