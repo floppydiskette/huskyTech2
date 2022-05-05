@@ -2,6 +2,9 @@
 // to draw the HT2 logo
 
 
+use crate::renderer::loc;
+use crate::renderer::ht_renderer;
+
 static points: [loc; 21] = [
     loc{x: 640, y: 104},
     loc{x: 640-445, y: 104}, // 445 = 320 (centre screen) + 13 (half of the T bar) + 30 (length of one T arm) + 26 (one H bar) + 30 (length of one H arm) + 26 (one H bar)
@@ -25,3 +28,10 @@ static points: [loc; 21] = [
     loc{x: 640-221, y: 104+26}, // go to the top right of the 2
     loc{x: 640-359, y: 104}, // DO AN ARC ON THIS ONE TOO
 ];
+
+pub fn animate(renderer: ht_renderer) {
+    let mut time = 0.0; // animation time from 0 onwards
+    let mut delta_time = 0.0; // time since last frame
+    let mut last_time = 0.0; // unix time of last frame
+    let mut i = 0; // index of current point in the points array
+}

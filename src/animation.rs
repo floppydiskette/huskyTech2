@@ -1,7 +1,4 @@
-pub struct loc {
-    pub x: i32,
-    pub y: i32,
-}
+use crate::renderer::loc;
 
 pub struct Animation2D {
     pub loc1: loc,

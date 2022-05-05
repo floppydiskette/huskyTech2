@@ -4,6 +4,18 @@ use crate::helpers::*;
 #[cfg(target_os = "linux")]
 use libsex::bindings::*;
 
+pub struct loc {
+    pub x: i32,
+    pub y: i32,
+}
+
+pub struct colour {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
 pub enum RenderType {
     GLX,
 }
@@ -13,6 +25,7 @@ pub struct X11backend {
     pub display: *mut Display,
     pub window: Window,
     pub ctx: GLXContext,
+    pub current_mode: Option<GLenum>,
 }
 
 pub struct ht_renderer {
@@ -67,9 +80,46 @@ impl ht_renderer {
                 display,
                 window,
                 ctx,
+                current_mode: Option::None,
             }
         };
 
-        Err("not implemented".to_string())
+        // if backend is null, we're on windows (error for now)
+        #[cfg(not(target_os = "linux"))]
+        {
+            return Err("not implemented on windows".to_string());
+        }
+        Ok(ht_renderer {
+            type_: RenderType::GLX,
+            backend,
+        })
+    }
+
+    pub fn swap_buffers(&mut self) {
+        #[cfg(target_os = "linux")]
+        {
+            unsafe {
+                if self.backend.current_mode != Option::None {
+                    glEnd();
+                    self.backend.current_mode = Option::None;
+                }
+                glXSwapBuffers(self.backend.display, self.backend.window);
+            }
+        }
+    }
+
+    pub fn put_vertex(&mut self, point: loc, c: colour) {
+        #[cfg(target_os = "linux")]
+        {
+            unsafe {
+                // check if we're already in GL_POINTS mode
+                if self.backend.current_mode != Option::Some(GL_POINTS) {
+                    glBegin(GL_POINTS);
+                    self.backend.current_mode = Option::Some(GL_POINTS);
+                }
+                glColor4ub(c.r, c.g, c.b, c.a);
+                glVertex2i(point.x, point.y);
+            }
+        }
     }
 }
