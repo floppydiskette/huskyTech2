@@ -71,8 +71,9 @@ pub fn animate(mut renderer: ht_renderer) {
             let color = gen_rainbow(time + pos_i as f64 + 1.0);
             renderer.put_vertex(point, color);
             renderer.swap_buffers();
+            i += 1;
         }
-        i += 1;
+        greater_i += 2;
+        println!("done");
     }
-    greater_i += 2;
 }

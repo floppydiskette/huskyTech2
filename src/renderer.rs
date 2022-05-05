@@ -31,6 +31,7 @@ pub struct X11backend {
 
 pub struct ht_renderer {
     pub type_: RenderType,
+    pub window_size: loc,
     #[cfg(target_os = "linux")] // X11 specifics (todo: add native wayland support)
     pub backend: X11backend,
 }
@@ -75,6 +76,7 @@ impl ht_renderer {
 
                     glXMakeCurrent(display, window, ctx);
                     glViewport(0, 0, window_width as i32, window_height as i32);
+                    gluOrtho2D(0.0, window_width as f64, 0.0, window_height as f64);
                 }
 
                 X11backend {
@@ -87,6 +89,7 @@ impl ht_renderer {
 
             Ok(ht_renderer {
                 type_: RenderType::GLX,
+                window_size: loc { x: window_width, y: window_height },
                 backend,
             })
         }
@@ -123,5 +126,12 @@ impl ht_renderer {
                 glVertex2i(point.x, point.y);
             }
         }
+    }
+
+    pub fn to_gl_coord(&self, point: loc) -> loc {
+        let mut ret = point;
+        // we use coords from top left, but opengl uses bottom left
+        ret.y = self.window_size.y - ret.y;
+        ret
     }
 }
