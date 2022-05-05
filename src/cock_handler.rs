@@ -14,7 +14,7 @@ pub struct CockBlock { // a collection of cock elements
     y: i32,
     cached_width: i32,
     cached_height: i32,
-    elements: Vec<CockElement>,
+    elements: Vec<&'static dyn CockElement>,
 }
 
 impl Thingy for CockBlock {
@@ -104,11 +104,11 @@ impl CockBasicText {
     }
 }
 
-pub fn parse_cock(cock: &str) -> Result<CockElement, String> {
+pub fn parse_cock(cock: &str) -> Result<&'static dyn CockElement, String> {
     // if the line begins with two forward slashes, it's a comment
     if cock.starts_with("//") {
-        Err("comment".to_string())
+        return Err("comment".to_string());
     }
 
-    Err("no cock ):".to_string())
+    return Err("no cock ):".to_string());
 }

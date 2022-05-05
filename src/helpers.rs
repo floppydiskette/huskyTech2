@@ -1,5 +1,7 @@
 use std::os::raw::c_int;
 use std::ptr::null_mut;
+use crate::renderer::colour;
+
 #[cfg(target_os = "linux")]
 use libsex::bindings::*;
 
@@ -80,4 +82,12 @@ pub unsafe fn get_window_fb_config(window: Window, display: *mut Display, screen
     //println!("{}", wanted_config);
 
     *fbconfigs.offset(wanted_config as isize)
+}
+
+pub fn gen_rainbow(time: f64) -> colour {
+    let frequency = 0.05;
+    let r = ((frequency * (time as f64) + 0.0).sin() * 127.0f64 + 128.0f64);
+    let g = ((frequency * (time as f64) + 2.0).sin() * 127.0f64 + 128.0f64);
+    let b = ((frequency * (time as f64) + 4.0).sin() * 127.0f64 + 128.0f64);
+    colour { r: (r * 255.0) as u8, g: (g * 255.0) as u8, b: (b * 255.0) as u8, a: 255 }
 }

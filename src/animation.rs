@@ -17,8 +17,8 @@ impl Animation2D {
 
     pub fn get_point_at_time(&self, time: f32) -> loc {
         let time_ratio = time / self.time_to_animate;
-        let x = self.loc1.x + (self.loc2.x - self.loc1.x) * time_ratio;
-        let y = self.loc1.y + (self.loc2.y - self.loc1.y) * time_ratio;
-        loc { x, y }
+        let x = (self.loc1.x + (self.loc2.x - self.loc1.x)) as f32 * time_ratio;
+        let y = (self.loc1.y + (self.loc2.y - self.loc1.y)) as f32 * time_ratio;
+        loc { x: x as i32, y: y as i32 }
     }
 }

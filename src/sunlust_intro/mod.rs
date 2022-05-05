@@ -2,6 +2,8 @@
 // to draw the HT2 logo
 
 
+use crate::animation::Animation2D;
+use crate::helpers::gen_rainbow;
 use crate::renderer::loc;
 use crate::renderer::ht_renderer;
 
@@ -29,9 +31,48 @@ static points: [loc; 21] = [
     loc{x: 640-359, y: 104}, // DO AN ARC ON THIS ONE TOO
 ];
 
-pub fn animate(renderer: ht_renderer) {
+pub fn animate(mut renderer: ht_renderer) {
+
+    let mut points_on_screen: Vec<loc> = Vec::new();
+    let mut pos_i = 0;
+
+    // time for the rainbow outline animation
+    let rainbow_length = 1122.0; // in milliseconds
+
     let mut time = 0.0; // animation time from 0 onwards
     let mut delta_time = 0.0; // time since last frame
     let mut last_time = 0.0; // unix time of last frame
-    let mut i = 0; // index of current point in the points array
+
+    let mut greater_i = 0;
+    while greater_i < 21 {
+        let mut i = 0;
+
+        let tta = (1.0 / 10.5) * rainbow_length; // time to animate for two points
+        let current_animation = Animation2D::new(points[i], points[i + 1], tta);
+        while (i as f32) < tta {
+            delta_time += (time - last_time) * 1000.0; // delta time in milliseconds
+            last_time = time;
+            time += delta_time;
+
+            pos_i = 0;
+            while pos_i < points_on_screen.len() { // draw all the previous points
+                let color = gen_rainbow(time + pos_i as f64);
+                renderer.put_vertex(points_on_screen[pos_i], color);
+                pos_i += 1;
+            }
+
+            let point = current_animation.get_point_at_time(time as f32);
+            points_on_screen.push(point);
+            // if length is greater than 40, remove the first point
+            if points_on_screen.len() > 40 {
+                points_on_screen.remove(0);
+            }
+            // draw the current point
+            let color = gen_rainbow(time + pos_i as f64 + 1.0);
+            renderer.put_vertex(point, color);
+            renderer.swap_buffers();
+        }
+        i += 1;
+    }
+    greater_i += 2;
 }
