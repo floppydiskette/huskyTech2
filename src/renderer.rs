@@ -73,10 +73,16 @@ impl ht_renderer {
                 unsafe {
                     XMapWindow(display, window);
                     XSync(display, 0);
-
                     glXMakeCurrent(display, window, ctx);
+
+
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    glMatrixMode( GL_PROJECTION );
+                    glLoadIdentity();
                     glViewport(0, 0, window_width as i32, window_height as i32);
                     gluOrtho2D(0.0, window_width as f64, 0.0, window_height as f64);
+
+                    glLineWidth(10.0);
                 }
 
                 X11backend {
@@ -113,18 +119,31 @@ impl ht_renderer {
         }
     }
 
-    pub fn put_vertex(&mut self, point: loc, c: colour) {
+    pub fn put_line(&mut self, point1: loc, point2: loc, c: colour) {
         #[cfg(target_os = "linux")]
         {
             unsafe {
-                // check if we're already in GL_POINTS mode
-                if self.backend.current_mode != Option::Some(GL_POINTS) {
-                    glBegin(GL_POINTS);
-                    self.backend.current_mode = Option::Some(GL_POINTS);
+                // check if we're already in GL_LINES mode
+                if self.backend.current_mode != Option::Some(GL_LINES) {
+                    if self.backend.current_mode != Option::None {
+                        glEnd();
+                    }
+                    glBegin(GL_LINES);
+                    self.backend.current_mode = Option::Some(GL_LINES);
                 }
                 glColor4ub(c.r, c.g, c.b, c.a);
-                glVertex2i(point.x, point.y);
+                glVertex2i(point1.x, point1.y);
+                glVertex2i(point2.x, point2.y);
             }
+        }
+    }
+    pub fn put_pixel(&mut self, point: loc, c: colour) {
+        #[cfg(target_os = "linux")]
+        {
+            // this is a bit of a hack,
+            // we use put_line to draw a single pixel by setting the end point to the same point
+            // + 1x cause it doesn't render unless the end point is different
+            self.put_line(point, loc { x: point.x + 1, y: point.y }, c);
         }
     }
 

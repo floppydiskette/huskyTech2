@@ -89,5 +89,5 @@ pub fn gen_rainbow(time: f64) -> colour {
     let r = ((frequency * (time as f64) + 0.0).sin() * 127.0f64 + 128.0f64);
     let g = ((frequency * (time as f64) + 2.0).sin() * 127.0f64 + 128.0f64);
     let b = ((frequency * (time as f64) + 4.0).sin() * 127.0f64 + 128.0f64);
-    colour { r: (r * 255.0) as u8, g: (g * 255.0) as u8, b: (b * 255.0) as u8, a: 255 }
+    colour { r: (r) as u8, g: (g) as u8, b: (b) as u8, a: 255 }
 }

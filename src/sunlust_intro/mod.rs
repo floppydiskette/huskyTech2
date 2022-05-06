@@ -47,29 +47,34 @@ pub fn animate(mut renderer: ht_renderer) {
     while greater_i < 21 {
         let mut i = 0;
 
-        let tta = (1.0 / 10.5) * rainbow_length; // time to animate for two points
-        let current_animation = Animation2D::new(points[i], points[i + 1], tta);
+        // time to animate the rainbow outline
+        let tta = rainbow_length / 21.0;
         while (i as f32) < tta {
-            delta_time += (time - last_time) * 1000.0; // delta time in milliseconds
+            if i > 20 {
+                break;
+            }
+            let current_animation = Animation2D::new(points[i], points[i + 1], tta);
+            delta_time += (time - last_time); // delta time in milliseconds
             last_time = time;
             time += delta_time;
 
             pos_i = 0;
             while pos_i < points_on_screen.len() { // draw all the previous points
-                let color = gen_rainbow(time + pos_i as f64);
-                renderer.put_vertex(points_on_screen[pos_i], color);
+                let color = gen_rainbow(time + (pos_i * 100) as f64);
+                renderer.put_pixel(renderer.to_gl_coord(points_on_screen[pos_i]), color);
                 pos_i += 1;
+                renderer.swap_buffers();
             }
 
-            let point = current_animation.get_point_at_time(time as f32);
+            let point = current_animation.get_point_at_time(time as f64);
             points_on_screen.push(point);
             // if length is greater than 40, remove the first point
             if points_on_screen.len() > 40 {
                 points_on_screen.remove(0);
             }
             // draw the current point
-            let color = gen_rainbow(time + pos_i as f64 + 1.0);
-            renderer.put_vertex(point, color);
+            let color = gen_rainbow(time + pos_i as f64 + 100.0);
+            renderer.put_pixel(renderer.to_gl_coord(point), color);
             renderer.swap_buffers();
             i += 1;
         }
