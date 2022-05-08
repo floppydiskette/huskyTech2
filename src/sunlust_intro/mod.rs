@@ -2,10 +2,16 @@
 // to draw the HT2 logo
 
 
+use std::time::SystemTime;
 use crate::animation::Animation2D;
 use crate::helpers::gen_rainbow;
 use crate::renderer::loc;
 use crate::renderer::ht_renderer;
+
+struct SunlustLine {
+    pub pointA: loc,
+    pub pointB: loc,
+}
 
 static points: [loc; 21] = [
     loc{x: 640, y: 104},
@@ -14,11 +20,11 @@ static points: [loc; 21] = [
     loc{x: 640-419, y: 208}, // to the right side of the H bar
     loc{x: 640-419, y: 208-39}, // go to the bottom side of the H arm
     loc{x: 640-389, y: 208-39}, // go to the right side of the H arm
-    loc{x: 640-389, y: 208}, // go to the bottom side of the right H arm
-    loc{x: 640-415, y: 208}, // go to the right side of the right H arm
-    loc{x: 640-415, y: 104+26}, // go just below the connector of the T to the H
-    loc{x: 640-385, y: 104+26}, // go to the side of the T bar
-    loc{x: 640-385, y: 208}, // go to the bottom of the T bar
+    loc{x: 640-389, y: 208}, // go to the bottom side of the right H arm (btw my math fucked up after this one, so improvising it (: )
+    loc{x: 640-(389-26), y: 208}, // go to the right side of the right H arm
+    loc{x: 640-(389-26), y: 104+26}, // go just below the connector of the T to the H
+    loc{x: 640-((389-26)-13), y: 104+26}, // go to the side of the T bar
+    loc{x: 640-((389-26)-13), y: 208}, // go to the bottom of the T bar
     loc{x: 640-359, y: 208}, // go to the right side of the T bar
     loc{x: 640-359, y: 104+26}, // go to the bottom side of the T arm
     loc{x: 640-221, y: 104+26}, // WE NEED TO ARC FROM THE LAST POINT TO THIS ONE, THIS IS THE 2
@@ -32,53 +38,62 @@ static points: [loc; 21] = [
 ];
 
 pub fn animate(mut renderer: ht_renderer) {
-
-    let mut points_on_screen: Vec<loc> = Vec::new();
-    let mut pos_i = 0;
-
     // time for the rainbow outline animation
     let rainbow_length = 1122.0; // in milliseconds
 
-    let mut time = 0.0; // animation time from 0 onwards
-    let mut delta_time = 0.0; // time since last frame
-    let mut last_time = 0.0; // unix time of last frame
+    let mut time = 0.0; // used for working out how far a line should be drawn
+    let mut last_time = SystemTime::now();
 
-    let mut greater_i = 0;
-    while greater_i < 21 {
-        let mut i = 0;
+    let mut previous_lines: Vec<SunlustLine> = Vec::new();
 
-        // time to animate the rainbow outline
-        let tta = rainbow_length / 21.0;
-        while (i as f32) < tta {
-            if i > 20 {
-                break;
-            }
-            let current_animation = Animation2D::new(points[i], points[i + 1], tta);
-            delta_time += (time - last_time); // delta time in milliseconds
-            last_time = time;
-            time += delta_time;
+    let mut i = 0; // index of the current point
+    let mut time_of_each_line = rainbow_length / 21.0; // this is how long we'll allow for the drawing of a line before moving on to the next one
+    while i < 20 { // loop through the points
+        // we need to draw the line from the previous point to however far we are depending on the time
+        // we also need to handle drawing all of the previous lines (if any)
 
-            pos_i = 0;
-            while pos_i < points_on_screen.len() { // draw all the previous points
-                let color = gen_rainbow(time + (pos_i * 100) as f64);
-                renderer.put_pixel(renderer.to_gl_coord(points_on_screen[pos_i]), color);
-                pos_i += 1;
-                renderer.swap_buffers();
-            }
+        // for each of the previous lines, we need to draw them
+        let mut j = 0;
+        for line in previous_lines.iter() {
+            let colour = gen_rainbow(time + j as f64 * time_of_each_line);
+            renderer.put_line(line.pointA, line.pointB, colour);
+            j += 1;
+        }
 
-            let point = current_animation.get_point_at_time(time as f64);
-            points_on_screen.push(point);
-            // if length is greater than 40, remove the first point
-            if points_on_screen.len() > 40 {
-                points_on_screen.remove(0);
-            }
-            // draw the current point
-            let color = gen_rainbow(time + pos_i as f64 + 100.0);
-            renderer.put_pixel(renderer.to_gl_coord(point), color);
-            renderer.swap_buffers();
+        // i will be the starting point of the line
+        // i+1 will be the end point of the line
+
+        let pointA = points[i];
+        let pointB = points[i+1];
+
+        // we need to work out how far we should draw the line
+        // for this, we can use the get_point_at_time function from the Animation2D struct
+        let animation = Animation2D::new(pointA, pointB, time_of_each_line as f32);
+        let pointB = animation.get_point_at_time(time);
+
+        // get a nice rainbow colour for the line
+        let colour = gen_rainbow(time + i as f64 * time_of_each_line);
+
+        // draw the line
+        renderer.put_line(pointA, pointB, colour);
+
+
+        // add delta time to the time
+        let now = SystemTime::now();
+        let delta_time = now.duration_since(last_time).unwrap().as_millis() as f64;
+        last_time = now;
+        time += delta_time;
+
+        renderer.swap_buffers();
+
+        // if the time is greater than the time we need for the current line, we need to move on to the next line
+        if time > time_of_each_line as f64 {
+            // add the previous line to the list of previous lines
+            previous_lines.push(SunlustLine { pointA: points[i], pointB: points[i+1] });
+
+            time = 0.0;
             i += 1;
         }
-        greater_i += 2;
-        println!("done");
     }
+    println!("done 2");
 }

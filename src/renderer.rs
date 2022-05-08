@@ -10,6 +10,7 @@ pub struct loc {
     pub y: i32,
 }
 
+#[derive(Clone, Copy)]
 pub struct colour {
     pub r: u8,
     pub g: u8,
@@ -59,7 +60,7 @@ impl ht_renderer {
                 let window_x = width / 2 - window_width / 2;
                 let window_y = height / 2 - window_height / 2;
 
-                let window = unsafe {
+                let window = unsafe { // todo: make it so that the window is not resizable
                     XCreateSimpleWindow(display, root, window_x, window_y, window_width as c_uint, window_height as c_uint, 0, 0, 0)
                 };
 
@@ -76,13 +77,14 @@ impl ht_renderer {
                     glXMakeCurrent(display, window, ctx);
 
 
-                    glClear(GL_COLOR_BUFFER_BIT);
-                    glMatrixMode( GL_PROJECTION );
-                    glLoadIdentity();
                     glViewport(0, 0, window_width as i32, window_height as i32);
-                    gluOrtho2D(0.0, window_width as f64, 0.0, window_height as f64);
+                    glMatrixMode(GL_PROJECTION);
+                    glLoadIdentity();
+                    // make top left corner as origin
+                    //glOrtho(0.0, src_width as f64, src_height as f64, 0.0, -1.0, 1.0);
+                    gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
 
-                    glLineWidth(10.0);
+                    glLineWidth(2.0);
                 }
 
                 X11backend {
@@ -143,14 +145,14 @@ impl ht_renderer {
             // this is a bit of a hack,
             // we use put_line to draw a single pixel by setting the end point to the same point
             // + 1x cause it doesn't render unless the end point is different
-            self.put_line(point, loc { x: point.x + 1, y: point.y }, c);
+            self.put_line(point, loc { x: point.x + 10, y: point.y + 10 }, c);
         }
     }
 
     pub fn to_gl_coord(&self, point: loc) -> loc {
         let mut ret = point;
         // we use coords from top left, but opengl uses bottom left
-        ret.y = self.window_size.y - ret.y;
+        //ret.y = self.window_size.y - ret.y;
         ret
     }
 }
