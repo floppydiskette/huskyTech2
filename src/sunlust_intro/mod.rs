@@ -21,20 +21,20 @@ static points: [loc; 21] = [
     loc{x: 640-419, y: 208-39}, // go to the bottom side of the H arm
     loc{x: 640-389, y: 208-39}, // go to the right side of the H arm
     loc{x: 640-389, y: 208}, // go to the bottom side of the right H arm (btw my math fucked up after this one, so improvising it (: )
-    loc{x: 640-(389-26), y: 208}, // go to the right side of the right H arm
-    loc{x: 640-(389-26), y: 104+26}, // go just below the connector of the T to the H
-    loc{x: 640-((389-26)-13), y: 104+26}, // go to the side of the T bar
-    loc{x: 640-((389-26)-13), y: 208}, // go to the bottom of the T bar
-    loc{x: 640-359, y: 208}, // go to the right side of the T bar
-    loc{x: 640-359, y: 104+26}, // go to the bottom side of the T arm
-    loc{x: 640-221, y: 104+26}, // WE NEED TO ARC FROM THE LAST POINT TO THIS ONE, THIS IS THE 2
-    loc{x: 640-359, y: 208-26}, // go to the slight bend in the bottom left of the 2
-    loc{x: 640-359, y: 208}, // go to the bottom of the 2
+    loc{x: 640-363, y: 208}, // go to the right side of the right H arm
+    loc{x: 640-363, y: 104+26}, // go just below the connector of the T to the H
+    loc{x: 640-350, y: 104+26}, // go to the side of the T bar
+    loc{x: 640-350, y: 208}, // go to the bottom of the T bar
+    loc{x: 640-324, y: 208}, // go to the right side of the T bar
+    loc{x: 640-324, y: 104+26}, // go to the bottom side of the T arm
+    loc{x: 640-(221+26), y: 104+26}, // WE NEED TO ARC FROM THE LAST POINT TO THIS ONE, THIS IS THE 2
+    loc{x: 640-298, y: 208-26}, // go to the slight bend in the bottom left of the 2
+    loc{x: 640-298, y: 208}, // go to the bottom of the 2
     loc{x: 640-221, y: 208}, // go to the right side of the 2
     loc{x: 640-221, y: 208-26}, // go to the top part of the right side of the 2
-    loc{x: 640-333, y: 208-26}, // go to the little crack in the left side of the 2
+    loc{x: 640-272, y: 208-26}, // go to the little crack in the left side of the 2
     loc{x: 640-221, y: 104+26}, // go to the top right of the 2
-    loc{x: 640-359, y: 104}, // DO AN ARC ON THIS ONE TOO
+    loc{x: 640-324, y: 104}, // DO AN ARC ON THIS ONE TOO
 ];
 
 pub fn animate(mut renderer: ht_renderer) {
