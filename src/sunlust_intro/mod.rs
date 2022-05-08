@@ -38,6 +38,17 @@ static points: [loc; 21] = [
 ];
 
 pub fn animate(mut renderer: ht_renderer) {
+    // first things first, figure out the number to multiply by so that the points get scaled up from 640x480 to the current resolution
+    let mut scale_factor_x = 1.0;
+    let mut scale_factor_y = 1.0;
+    let mut current_resolution = renderer.window_size;
+    if current_resolution.x > 640 {
+        scale_factor_x = current_resolution.x as f32 / 640.0;
+    }
+    if current_resolution.y > 480 {
+        scale_factor_y = current_resolution.y as f32 / 480.0;
+    }
+
     // time for the rainbow outline animation
     let rainbow_length = 1122.0; // in milliseconds
 
@@ -63,8 +74,11 @@ pub fn animate(mut renderer: ht_renderer) {
         // i will be the starting point of the line
         // i+1 will be the end point of the line
 
-        let pointA = points[i];
-        let pointB = points[i+1];
+        let mul_pointA = loc { x: (points[i].x as f32 * scale_factor_x) as i32, y: (points[i].y as f32 * scale_factor_y) as i32 };
+        let mul_pointB = loc { x: (points[i + 1].x as f32 * scale_factor_x) as i32, y: (points[i + 1].y as f32 * scale_factor_y) as i32 };
+
+        let pointA = mul_pointA;
+        let pointB = mul_pointB;
 
         // we need to work out how far we should draw the line
         // for this, we can use the get_point_at_time function from the Animation2D struct
@@ -89,7 +103,7 @@ pub fn animate(mut renderer: ht_renderer) {
         // if the time is greater than the time we need for the current line, we need to move on to the next line
         if time > time_of_each_line as f64 {
             // add the previous line to the list of previous lines
-            previous_lines.push(SunlustLine { pointA: points[i], pointB: points[i+1] });
+            previous_lines.push(SunlustLine { pointA: mul_pointA, pointB: mul_pointB });
 
             time = 0.0;
             i += 1;
