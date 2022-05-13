@@ -110,5 +110,7 @@ pub fn parse_cock(cock: &str) -> Result<&'static dyn CockElement, String> {
         return Err("comment".to_string());
     }
 
+    //
+
     return Err("no cock ):".to_string());
 }
