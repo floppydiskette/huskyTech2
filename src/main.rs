@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+use dae_parser::Document;
 use crate::renderer::ht_renderer;
 
 pub trait Thingy {
@@ -23,13 +25,27 @@ fn main() {
         println!("{:?}", renderer.err());
         return;
     }
-    let renderer = renderer.unwrap();
+    let mut renderer = renderer.unwrap();
     println!("initialised renderer");
 
     // wait 2 seconds
     std::thread::sleep(std::time::Duration::from_millis(2000));
 
-    sunlust_intro::animate(renderer);
+    //sunlust_intro::animate(renderer);
+    test_render(renderer);
 
     loop {}
+}
+
+
+// for testing (:
+fn test_render(mut renderer: ht_renderer) {
+    // load the dae file
+    let document = Document::from_file("base/models/ht2.dae").unwrap();
+    let mesh = renderer.initMesh(document, "Cube_001-mesh").unwrap();
+
+    // render the mesh
+    renderer.render_mesh(mesh);
+    renderer.swap_buffers();
+    println!("rendered mesh");
 }

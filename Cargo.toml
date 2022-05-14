@@ -10,4 +10,4 @@ edition = "2021"
 dae-parser = "0.8.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libsex = "0.1.2"
+libsex = { git = "https://github.com/realmicrosoft/libsex.git" }

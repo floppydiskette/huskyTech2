@@ -1,5 +1,7 @@
+use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_uint;
 use std::ptr::null_mut;
+use dae_parser::{Document, Geometry};
 use crate::helpers::*;
 #[cfg(target_os = "linux")]
 use libsex::bindings::*;
@@ -18,18 +20,27 @@ pub struct colour {
     pub a: u8,
 }
 
+pub struct Mesh {
+    pub vbo: GLuint,
+    pub data: Vec<u32>,
+}
+
+#[derive(Clone, Copy)]
 pub enum RenderType {
     GLX,
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Clone, Copy)]
 pub struct X11backend {
     pub display: *mut Display,
     pub window: Window,
     pub ctx: GLXContext,
     pub current_mode: Option<GLenum>,
+    pub active_vbo: Option<GLuint>,
 }
 
+#[derive(Clone, Copy)]
 pub struct ht_renderer {
     pub type_: RenderType,
     pub window_size: loc,
@@ -85,6 +96,35 @@ impl ht_renderer {
                     gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
 
                     glLineWidth(2.0);
+
+                    // load an example shader
+                    let vert_source = include_str!("../base/shaders/example.vert");
+                    let frag_source = include_str!("../base/shaders/example.frag");
+
+                    // convert strings to c strings
+                    let vert_source_c = CString::new(vert_source).unwrap();
+                    let frag_source_c = CString::new(frag_source).unwrap();
+
+                    let vert_shader = glCreateShader(GL_VERTEX_SHADER);
+                    let frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
+
+                    glShaderSource(vert_shader, 1, &vert_source_c.as_ptr(), null_mut());
+                    glShaderSource(frag_shader, 1, &frag_source_c.as_ptr(), null_mut());
+
+                    glCompileShader(vert_shader);
+                    glCompileShader(frag_shader);
+
+                    let shader_program = glCreateProgram();
+
+                    glAttachShader(shader_program, vert_shader);
+                    glAttachShader(shader_program, frag_shader);
+
+                    glBindAttribLocation(shader_program, 0, CString::new("in_Position").unwrap().as_ptr());
+
+                    glLinkProgram(shader_program);
+
+                    // todo: for testing
+                    glUseProgram(shader_program);
                 }
 
                 X11backend {
@@ -92,6 +132,7 @@ impl ht_renderer {
                     window,
                     ctx,
                     current_mode: Option::None,
+                    active_vbo: Option::None,
                 }
             };
 
@@ -154,5 +195,39 @@ impl ht_renderer {
         // we use coords from top left, but opengl uses bottom left
         //ret.y = self.window_size.y - ret.y;
         ret
+    }
+
+    pub fn initMesh(&mut self, doc: Document, mesh_name: &str) -> Result<Mesh, String> {
+        let mesh = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
+        let element = mesh.element.as_mesh().unwrap();
+        let triangles = element.elements[0].as_triangles().unwrap();
+        // get the u32 data from the mesh
+        let data = triangles.data.as_deref().unwrap();
+        let mut vbo = 0 as GLuint;
+        unsafe {
+            glGenBuffers(1, &mut vbo);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(GL_ARRAY_BUFFER, data.len() as GLsizeiptr, data.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            // stuff for shaders (following wikipedia code for now)
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null_mut());
+            glEnableVertexAttribArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
+        }
+        Ok(Mesh {
+            vbo,
+            data: data.to_vec(),
+        })
+    }
+
+    pub fn render_mesh(&mut self, mesh: Mesh) {
+        if self.backend.active_vbo != Some(mesh.vbo) {
+            unsafe {
+                glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+                self.backend.active_vbo = Some(mesh.vbo);
+            }
+        }
+        unsafe {
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
     }
 }
