@@ -1,11 +1,9 @@
-// also stolen from wikipedia (:
+#version 330 core
 
-#version 150 // Specify which version of GLSL we are using.
-
-// in_Position was bound to attribute index 0("shaderAttribute")
-in  vec3 in_Position;
+layout(location = 0) in vec3 in_Position;
 
 void main()
 {
-    gl_Position = vec4(in_Position.x, in_Position.y, in_Position.z, 1.0);
+    gl_Position.xyz = in_Position;
+    gl_Position.w = 1.0;
 }

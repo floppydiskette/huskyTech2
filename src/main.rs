@@ -29,7 +29,7 @@ fn main() {
     println!("initialised renderer");
 
     // wait 2 seconds
-    std::thread::sleep(std::time::Duration::from_millis(2000));
+    //std::thread::sleep(std::time::Duration::from_millis(2000));
 
     //sunlust_intro::animate(renderer);
     test_render(renderer);
@@ -41,7 +41,7 @@ fn main() {
 // for testing (:
 fn test_render(mut renderer: ht_renderer) {
     // load the dae file
-    let document = Document::from_file("base/models/ht2.dae").unwrap();
+    let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
     let mesh = renderer.initMesh(document, "Cube_001-mesh").unwrap();
 
     // render the mesh

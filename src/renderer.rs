@@ -22,7 +22,7 @@ pub struct colour {
 
 pub struct Mesh {
     pub vbo: GLuint,
-    pub data: Vec<u32>,
+    pub data: Vec<f32>,
 }
 
 #[derive(Clone, Copy)]
@@ -93,7 +93,7 @@ impl ht_renderer {
                     glLoadIdentity();
                     // make top left corner as origin
                     //glOrtho(0.0, src_width as f64, src_height as f64, 0.0, -1.0, 1.0);
-                    gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
+                    //gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
 
                     glLineWidth(2.0);
 
@@ -125,6 +125,8 @@ impl ht_renderer {
 
                     // todo: for testing
                     glUseProgram(shader_program);
+
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 }
 
                 X11backend {
@@ -199,8 +201,9 @@ impl ht_renderer {
 
     pub fn initMesh(&mut self, doc: Document, mesh_name: &str) -> Result<Mesh, String> {
         let mesh = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
-        let element = mesh.element.as_mesh().unwrap();
-        let triangles = element.elements[0].as_triangles().unwrap();
+        let mesh = mesh.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
+        let vertices = mesh.elements[0].vertices.clone();
+
         // get the u32 data from the mesh
         let data = triangles.data.as_deref().unwrap();
         let mut vbo = 0 as GLuint;
@@ -228,6 +231,29 @@ impl ht_renderer {
         }
         unsafe {
             glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
+    }
+
+    // creates a vbo with a single triangle for testing
+    pub fn gen_testing_triangle(&mut self) -> Mesh {
+        let mut vbo = 0 as GLuint;
+        let buffer_data = [
+            -1.0, -1.0, 0.0,
+            1.0, -1.0, 0.0,
+            0.0, 1.0, 0.0,
+        ];
+        unsafe {
+            glGenBuffers(1, &mut vbo);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(GL_ARRAY_BUFFER, buffer_data.len() as GLsizeiptr, buffer_data.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            // stuff for shaders (following wikipedia code for now)
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null_mut());
+            glEnableVertexAttribArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
+        };
+        Mesh {
+            vbo,
+            data: buffer_data.to_vec(),
         }
     }
 }

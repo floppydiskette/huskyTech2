@@ -1,12 +1,7 @@
-// stole from wikipedia (:
+#version 330 core
 
-#version 150 // Specify which version of GLSL we are using.
+out vec3 color;
 
-precision highp float; // Video card drivers require this line to function properly
-
-out vec4 fragColor;
-
-void main()
-{
-    fragColor = vec4(1.0,1.0,1.0,1.0); //Set colour of each fragment to WHITE
+void main(){
+    color = vec3(1,0,0);
 }
