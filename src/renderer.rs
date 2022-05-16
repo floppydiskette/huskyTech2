@@ -1,10 +1,16 @@
+use std::any::Any;
+use std::borrow::Borrow;
 use std::ffi::{c_void, CStr, CString};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
+use std::ops::Deref;
 use std::os::raw::c_uint;
-use std::ptr::null_mut;
-use dae_parser::{Document, Geometry};
+use std::ptr::{null, null_mut};
+use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices};
 use crate::helpers::*;
 #[cfg(target_os = "linux")]
 use libsex::bindings::*;
+use crate::helpers;
 
 #[derive(Copy, Clone)]
 pub struct loc {
@@ -22,7 +28,7 @@ pub struct colour {
 
 pub struct Mesh {
     pub vbo: GLuint,
-    pub data: Vec<f32>,
+    pub num_vertices: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -88,14 +94,14 @@ impl ht_renderer {
                     glXMakeCurrent(display, window, ctx);
 
 
-                    glViewport(0, 0, window_width as i32, window_height as i32);
-                    glMatrixMode(GL_PROJECTION);
-                    glLoadIdentity();
+                    //glViewport(0, 0, window_width as i32, window_height as i32);
+                    //lMatrixMode(GL_PROJECTION);
+                    //glLoadIdentity();
                     // make top left corner as origin
                     //glOrtho(0.0, src_width as f64, src_height as f64, 0.0, -1.0, 1.0);
                     //gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
 
-                    glLineWidth(2.0);
+                    /*glLineWidth(2.0);
 
                     // load an example shader
                     let vert_source = include_str!("../base/shaders/example.vert");
@@ -126,6 +132,8 @@ impl ht_renderer {
                     // todo: for testing
                     glUseProgram(shader_program);
 
+                     */
+
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 }
 
@@ -149,6 +157,24 @@ impl ht_renderer {
         {
             return Err("not implemented on windows".to_string());
         }
+    }
+
+    pub fn load_shader(shader_name: String) -> Result<i32, String> {
+        // read the files
+        let vert_source = helpers::load_string_from_file(format!("base/shaders/{}.vert", shader_name)).expect("failed to load vertex shader");
+        let frag_source = helpers::load_string_from_file(format!("base/shaders/{}.frag", shader_name)).expect("failed to load fragment shader");
+
+        // convert strings to c strings
+        let vert_source_c = CString::new(vert_source).unwrap();
+        let frag_source_c = CString::new(frag_source).unwrap();
+
+        // create the shaders
+        let vert_shader = unsafe { glCreateShader(GL_VERTEX_SHADER) };
+        let frag_shader = unsafe { glCreateShader(GL_FRAGMENT_SHADER) };
+
+
+
+        Err("not implemented".to_string())
     }
 
     pub fn swap_buffers(&mut self) {
@@ -200,26 +226,52 @@ impl ht_renderer {
     }
 
     pub fn initMesh(&mut self, doc: Document, mesh_name: &str) -> Result<Mesh, String> {
-        let mesh = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
-        let mesh = mesh.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
-        let vertices = mesh.elements[0].vertices.clone();
+        let geom = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
+        let mesh = geom.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
+        let tris = mesh.elements[0].as_triangles().expect("NO TRIANGLES?");
+        let vertices_map = doc.local_map::<Vertices>().expect("no vertices?");
+        let vertices = vertices_map.get_raw(&tris.inputs[0].source).expect("no vertices? (2)");
+        let source_map = doc.local_map::<Source>().expect("no sources?");
+        let source = source_map.get_raw(&vertices.inputs[0].source).expect("no positions?");
+
+        let array = source.array.clone().expect("NO ARRAY?");
 
         // get the u32 data from the mesh
-        let data = triangles.data.as_deref().unwrap();
         let mut vbo = 0 as GLuint;
         unsafe {
             glGenBuffers(1, &mut vbo);
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(GL_ARRAY_BUFFER, data.len() as GLsizeiptr, data.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
-            // stuff for shaders (following wikipedia code for now)
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null_mut());
-            glEnableVertexAttribArray(0);
-            glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
+            // assuming that the world hasn't imploded, the array should be either a float array or an int array
+            // the array is currently an ArrayElement enum, we need to get the inner value
+            if let ArrayElement::Float(array) = array {
+                glBufferData(GL_ARRAY_BUFFER, (array.len() * std::mem::size_of::<f32>()) as GLsizeiptr, array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            } else if let ArrayElement::Int(array) = array {
+                glBufferData(GL_ARRAY_BUFFER, (array.len() * std::mem::size_of::<i32>()) as GLsizeiptr, array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            } else {
+                panic!("unsupported array type");
+            }
+            let loc = glGetAttribLocation(0, CString::new("in_Position").unwrap().as_ptr());
+            glEnableVertexAttribArray(loc as GLuint);
+            glVertexAttribPointer(loc as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null_mut());
         }
-        Ok(Mesh {
-            vbo,
-            data: data.to_vec(),
-        })
+
+        let array = source.array.clone().expect("NO ARRAY?");
+
+        if let ArrayElement::Float(array) = array {
+            let num_vertices = array.len();
+            Ok(Mesh {
+                vbo,
+                num_vertices,
+            })
+        } else if let ArrayElement::Int(array) = array {
+            let num_vertices = array.len();
+            Ok(Mesh {
+                vbo,
+                num_vertices,
+            })
+        } else {
+            Err("unsupported array type".to_string())
+        }
     }
 
     pub fn render_mesh(&mut self, mesh: Mesh) {
@@ -230,7 +282,7 @@ impl ht_renderer {
             }
         }
         unsafe {
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glDrawArrays(GL_TRIANGLES, 0, mesh.num_vertices as GLsizei);
         }
     }
 
@@ -249,11 +301,11 @@ impl ht_renderer {
             // stuff for shaders (following wikipedia code for now)
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null_mut());
             glEnableVertexAttribArray(0);
-            glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
+            //glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
         };
         Mesh {
             vbo,
-            data: buffer_data.to_vec(),
+            num_vertices: 3,
         }
     }
 }

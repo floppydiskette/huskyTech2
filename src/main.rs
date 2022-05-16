@@ -42,7 +42,8 @@ fn main() {
 fn test_render(mut renderer: ht_renderer) {
     // load the dae file
     let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
-    let mesh = renderer.initMesh(document, "Cube_001-mesh").unwrap();
+   // let mesh = renderer.initMesh(document, "Cube_001-mesh").unwrap();
+    let mesh = renderer.gen_testing_triangle();
 
     // render the mesh
     renderer.render_mesh(mesh);
