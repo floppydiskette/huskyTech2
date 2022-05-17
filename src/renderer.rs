@@ -30,8 +30,9 @@ pub struct colour {
 pub struct Mesh {
     pub vbo: GLuint,
     pub vao: GLuint,
+    pub ebo: GLuint,
     pub num_vertices: usize,
-    pub indices: Vec<u32>,
+    pub num_indices: usize,
 }
 
 #[derive(Clone)]
@@ -103,6 +104,12 @@ impl ht_renderer {
                     XMapWindow(display, window);
                     XSync(display, 0);
                     glXMakeCurrent(display, window, ctx);
+
+
+                    // Configure culling
+                    //glEnable(GL_CULL_FACE);
+                    //glCullFace(GL_BACK);
+                    //glFrontFace(GL_CW);
 
 
                     //glViewport(0, 0, window_width as i32, window_height as i32);
@@ -290,6 +297,7 @@ impl ht_renderer {
         // get the u32 data from the mesh
         let mut vbo = 0 as GLuint;
         let mut vao = 0 as GLuint;
+        let mut ebo = 0 as GLuint;
         let indices = tris.data.as_deref().expect("no indices?");
         unsafe {
 
@@ -314,25 +322,34 @@ impl ht_renderer {
             let pos = glGetAttribLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_pos").unwrap().as_ptr());
             glVertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
             glEnableVertexAttribArray(0);
+
+            // now the indices
+            glGenBuffers(1, &mut ebo);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * std::mem::size_of::<u32>()) as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
         }
 
         let array = source.array.clone().expect("NO ARRAY?");
 
         if let ArrayElement::Float(array) = array {
             let num_vertices = array.val.len();
+            let num_indices = indices.len();
             Ok(Mesh {
                 vbo,
                 vao,
+                ebo,
                 num_vertices,
-                indices: Vec::from(indices),
+                num_indices,
             })
         } else if let ArrayElement::Int(array) = array {
             let num_vertices = array.val.len();
+            let num_indices = indices.len();
             Ok(Mesh {
                 vbo,
                 vao,
+                ebo,
                 num_vertices,
-                indices: Vec::from(indices),
+                num_indices,
             })
         } else {
             Err("unsupported array type".to_string())
@@ -343,19 +360,22 @@ impl ht_renderer {
         // load the shader
         if self.backend.current_shader != Some(shader_index) {
             unsafe {
-                //glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
+                glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
                 self.backend.current_shader = Some(shader_index);
             }
         }
         if self.backend.active_vbo != Some(mesh.vbo) {
             unsafe {
-                //glBindVertexArray(mesh.vao);
+                glEnableVertexAttribArray(0);
+                glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+                glVertexAttribPointer(0 as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
                 self.backend.active_vbo = Some(mesh.vbo);
             }
         }
-        println!("{:?}", mesh.indices);
         unsafe {
-            glDrawElements(GL_TRIANGLES, mesh.indices.len() as GLsizei, GL_UNSIGNED_INT, mesh.indices.as_ptr() as *const GLvoid);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+            glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            glDisableVertexAttribArray(0);
         }
 
         // print any errors
@@ -390,12 +410,20 @@ impl ht_renderer {
             //glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
         };
         let indices = [0, 1, 2];
+        let num_vertices = 3;
+        let mut ebo = 0 as GLuint;
+        unsafe {
+            glGenBuffers(1, &mut ebo);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * std::mem::size_of::<GLuint>()) as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+        };
 
         Mesh {
             vbo,
             vao: 0,
+            ebo,
             num_vertices: 3,
-            indices: Vec::from(indices),
+            num_indices: 3,
         }
     }
 }
