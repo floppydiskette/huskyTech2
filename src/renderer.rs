@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::iter::Map;
 use std::ops::{Deref, DerefMut};
-use std::os::raw::c_uint;
+use std::os::raw::{c_int, c_uint};
 use std::ptr::{null, null_mut};
 use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices};
 use crate::helpers::*;
@@ -49,10 +49,8 @@ pub enum RenderType {
 
 #[cfg(target_os = "linux")]
 #[derive(Clone)]
-pub struct X11backend {
-    pub display: *mut Display,
-    pub window: Window,
-    pub ctx: GLXContext,
+pub struct GLFWBackend {
+    pub window: *mut GLFWwindow,
     pub current_mode: Option<GLenum>,
     pub active_vbo: Option<GLuint>,
     pub current_shader: Option<usize>,
@@ -64,7 +62,7 @@ pub struct ht_renderer {
     pub type_: RenderType,
     pub window_size: loc,
     #[cfg(target_os = "linux")] // X11 specifics (todo: add native wayland support)
-    pub backend: X11backend,
+    pub backend: GLFWBackend,
 }
 
 impl ht_renderer {
@@ -75,36 +73,26 @@ impl ht_renderer {
 
         #[cfg(target_os = "linux")]{
             let backend = {
-                println!("running on linux, using glx as backend");
-                let display = unsafe { XOpenDisplay(null_mut()) };
-                if display.is_null() {
-                    return Err("failed to open display".to_string());
-                }
-                let root = unsafe { XDefaultRootWindow(display) };
-                // get size of root window so we can centre our window
-                let mut root_size: XWindowAttributes = unsafe { std::mem::zeroed() };
-                unsafe { XGetWindowAttributes(display, root, &mut root_size) };
-                let width = root_size.width;
-                let height = root_size.height;
-
-                let window_x = width / 2 - window_width / 2;
-                let window_y = height / 2 - window_height / 2;
-
-                let window = unsafe { // todo: make it so that the window is not resizable
-                    XCreateSimpleWindow(display, root, window_x, window_y, window_width as c_uint, window_height as c_uint, 0, 0, 0)
-                };
-
-                let screen = unsafe { XDefaultScreenOfDisplay(display) }; // we need this to get the fbconfig
-                let fbconfig = unsafe { get_window_fb_config(window, display, screen) };
-                let visinfo = unsafe { glXGetVisualFromFBConfig(display, fbconfig) };
-                let ctx = unsafe { glXCreateContext(display, visinfo, null_mut(), 1i32) };
-                if ctx.is_null() {
-                    return Err("failed to create context".to_string());
-                }
+                println!("running on linux, using glfw as backend");
                 unsafe {
-                    XMapWindow(display, window);
-                    XSync(display, 0);
-                    glXMakeCurrent(display, window, ctx);
+                    let result = glfwInit();
+                    if result == 0 {
+                        return Err("glfwInit failed".to_string());
+                    }
+                    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR as c_int, 3);
+                    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR as c_int, 3);
+                    glfwWindowHint(GLFW_OPENGL_PROFILE as c_int, GLFW_OPENGL_CORE_PROFILE as c_int);
+                    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT as c_int, GL_TRUE as c_int);
+
+                    let window = glfwCreateWindow(window_width as c_int,
+                                                  window_height as c_int,
+                                                  CString::new("huskyTech2").unwrap().as_ptr(),
+                                                  null_mut(), null_mut());
+                    if window.is_null() {
+                        glfwTerminate();
+                        return Err("glfwCreateWindow failed".to_string());
+                    }
+                    glfwMakeContextCurrent(window);
 
 
                     // Configure culling
@@ -124,17 +112,14 @@ impl ht_renderer {
                      */
 
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                }
 
-
-                X11backend {
-                    display,
-                    window,
-                    ctx,
-                    current_mode: Option::None,
-                    current_shader: Option::None,
-                    active_vbo: Option::None,
-                    shaders: Option::None,
+                    GLFWBackend {
+                        window,
+                        current_mode: Option::None,
+                        current_shader: Option::None,
+                        active_vbo: Option::None,
+                        shaders: Option::None,
+                    }
                 }
             };
 
@@ -227,7 +212,7 @@ impl ht_renderer {
         if self.backend.shaders.is_none() {
             self.backend.shaders = Option::Some(Vec::new());
         }
-        self.backend.shaders.as_mut().unwrap().push(Shader{
+        self.backend.shaders.as_mut().unwrap().push(Shader {
             name: shader_name.parse().unwrap(),
             program: shader_program,
         });
@@ -244,7 +229,7 @@ impl ht_renderer {
                     glEnd();
                     self.backend.current_mode = Option::None;
                 }
-                glXSwapBuffers(self.backend.display, self.backend.window);
+                glfwSwapBuffers(self.backend.window);
             }
         }
     }
@@ -300,9 +285,10 @@ impl ht_renderer {
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
         let mut indices = tris.data.clone().prim.expect("no indices?");
+        // tris.count returns the number of triangles, not the number of indices
         let num_indices = tris.count * 3;
 
-        let mut indices = indices.deref_mut();
+        let indices = indices.deref();
         println!("num indices: {}", num_indices);
         unsafe {
             println!("indices: {:?}", indices);
@@ -313,7 +299,7 @@ impl ht_renderer {
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
             // assuming that the world hasn't imploded, the array should be either a float array or an int array
             // the array is currently an ArrayElement enum, we need to get the inner value
-            let size;
+            let mut size;
             if let ArrayElement::Float(a) = array {
                 println!("array: {:?}", a.val);
                 println!("len: {}", a.val.len());
@@ -325,7 +311,6 @@ impl ht_renderer {
                 println!("len: {}", a.val.len());
                 println!("type: int");
                 size = a.val.len() * std::mem::size_of::<i32>();
-                glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             } else {
                 panic!("unsupported array type");
             }
@@ -336,6 +321,7 @@ impl ht_renderer {
             // now the indices
             glGenBuffers(1, &mut ebo);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            size = num_indices * std::mem::size_of::<i32>();
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, size as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
         }
 
@@ -369,12 +355,12 @@ impl ht_renderer {
     pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize) {
         // load the shader
 
-        /*if self.backend.current_shader != Some(shader_index) {
+        if self.backend.current_shader != Some(shader_index) {
             unsafe {
                 glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
                 self.backend.current_shader = Some(shader_index);
             }
-        }if self.backend.active_vbo != Some(mesh.vbo) {
+        }/*if self.backend.active_vbo != Some(mesh.vbo) {
             unsafe {
                 glEnableVertexAttribArray(0);
                 glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
@@ -386,7 +372,7 @@ impl ht_renderer {
         unsafe {
             glEnableVertexAttribArray(0);
             glBindVertexArray(mesh.vao);
-            glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, 0 as *const GLvoid);
             glDisableVertexAttribArray(0);
         }
 
@@ -400,7 +386,6 @@ impl ht_renderer {
                 glGetError()
             };
         }
-
     }
 
     // creates a vbo with a single triangle for testing

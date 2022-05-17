@@ -45,7 +45,7 @@ fn main() {
 fn test_render(mut renderer: ht_renderer, shader: usize) {
     // load the dae file
     let document = Document::from_file("base/models/cube.dae").expect("failed to load dae file");
-    let mesh = renderer.initMesh(document, "Torus_002-mesh", shader).unwrap();
+    let mesh = renderer.initMesh(document, "Plane-mesh", shader).unwrap();
     //let mesh = renderer.gen_testing_triangle();
 
     println!("{}", mesh.vbo);
