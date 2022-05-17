@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
 use dae_parser::Document;
+use libsex::bindings::*;
 use crate::renderer::ht_renderer;
 
 pub trait Thingy {
@@ -37,7 +38,11 @@ fn main() {
     //sunlust_intro::animate(renderer);
     test_render(renderer, example_index);
 
-    loop {}
+    loop {
+        unsafe {
+            glfwPollEvents();
+        }
+    }
 }
 
 

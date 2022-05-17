@@ -93,6 +93,7 @@ impl ht_renderer {
                         return Err("glfwCreateWindow failed".to_string());
                     }
                     glfwMakeContextCurrent(window);
+                    glfwSetInputMode(window, GLFW_STICKY_KEYS as c_int, GL_TRUE as c_int);
 
 
                     // Configure culling
@@ -286,9 +287,22 @@ impl ht_renderer {
         let mut ebo = 0 as GLuint;
         let mut indices = tris.data.clone().prim.expect("no indices?");
         // tris.count returns the number of triangles, not the number of indices
-        let num_indices = tris.count * 3;
+        let num_indices = tris.count * 9;
 
-        let indices = indices.deref();
+        // todo: this only counts for triangulated collada meshes made in blender, we cannot assume that everything else will act like this
+
+        // indices for vertex positions are offset by the normal and texcoord indices
+        // we need to skip the normal and texcoord indices and fill a new array with the vertex positions
+        let mut new_indices = Vec::with_capacity(num_indices);
+        // skip the normal (offset 1) and texcoord (offset 2) indices
+        let mut i = 0;
+        while i < num_indices {
+            new_indices.push(indices[i] as u32);
+            i += 3;
+        }
+
+
+        let indices = new_indices;
         println!("num indices: {}", num_indices);
         unsafe {
             println!("indices: {:?}", indices);
@@ -333,7 +347,7 @@ impl ht_renderer {
                 vbo,
                 vao,
                 ebo,
-                indices: indices.to_vec(),
+                indices: indices,
                 num_vertices,
                 num_indices,
             })
@@ -343,7 +357,7 @@ impl ht_renderer {
                 vbo,
                 vao,
                 ebo,
-                indices: indices.to_vec(),
+                indices: indices,
                 num_vertices,
                 num_indices,
             })
