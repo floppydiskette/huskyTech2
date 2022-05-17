@@ -4,7 +4,7 @@ use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::iter::Map;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::c_uint;
 use std::ptr::{null, null_mut};
 use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices};
@@ -31,6 +31,7 @@ pub struct Mesh {
     pub vbo: GLuint,
     pub vao: GLuint,
     pub ebo: GLuint,
+    pub indices: Vec<u32>,
     pub num_vertices: usize,
     pub num_indices: usize,
 }
@@ -298,8 +299,13 @@ impl ht_renderer {
         let mut vbo = 0 as GLuint;
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
-        let indices = tris.data.as_deref().expect("no indices?");
+        let mut indices = tris.data.clone().prim.expect("no indices?");
+        let num_indices = tris.count * 3;
+
+        let mut indices = indices.deref_mut();
+        println!("num indices: {}", num_indices);
         unsafe {
+            println!("indices: {:?}", indices);
 
             glGenVertexArrays(1, &mut vao);
             glBindVertexArray(vao);
@@ -307,15 +313,19 @@ impl ht_renderer {
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
             // assuming that the world hasn't imploded, the array should be either a float array or an int array
             // the array is currently an ArrayElement enum, we need to get the inner value
-            let mut size = 0;
-            if let ArrayElement::Float(array) = array {
-                println!("{:?}", array.val);
-                size = array.val.len() * std::mem::size_of::<f32>();
-                glBufferData(GL_ARRAY_BUFFER, (array.val.len() * std::mem::size_of::<f32>()) as GLsizeiptr, array.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
-            } else if let ArrayElement::Int(array) = array {
-                println!("{:?}", array.val);
-                size = array.val.len() * std::mem::size_of::<i32>();
-                glBufferData(GL_ARRAY_BUFFER, (array.val.len() * std::mem::size_of::<i32>()) as GLsizeiptr, array.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            let size;
+            if let ArrayElement::Float(a) = array {
+                println!("array: {:?}", a.val);
+                println!("len: {}", a.val.len());
+                println!("type: float");
+                size = a.val.len() * std::mem::size_of::<f32>();
+                glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            } else if let ArrayElement::Int(a) = array {
+                println!("array: {:?}", a);
+                println!("len: {}", a.val.len());
+                println!("type: int");
+                size = a.val.len() * std::mem::size_of::<i32>();
+                glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             } else {
                 panic!("unsupported array type");
             }
@@ -326,28 +336,28 @@ impl ht_renderer {
             // now the indices
             glGenBuffers(1, &mut ebo);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * std::mem::size_of::<u32>()) as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, size as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
         }
 
         let array = source.array.clone().expect("NO ARRAY?");
 
         if let ArrayElement::Float(array) = array {
             let num_vertices = array.val.len();
-            let num_indices = indices.len();
             Ok(Mesh {
                 vbo,
                 vao,
                 ebo,
+                indices: indices.to_vec(),
                 num_vertices,
                 num_indices,
             })
         } else if let ArrayElement::Int(array) = array {
             let num_vertices = array.val.len();
-            let num_indices = indices.len();
             Ok(Mesh {
                 vbo,
                 vao,
                 ebo,
+                indices: indices.to_vec(),
                 num_vertices,
                 num_indices,
             })
@@ -358,13 +368,13 @@ impl ht_renderer {
 
     pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize) {
         // load the shader
-        if self.backend.current_shader != Some(shader_index) {
+
+        /*if self.backend.current_shader != Some(shader_index) {
             unsafe {
                 glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
                 self.backend.current_shader = Some(shader_index);
             }
-        }
-        if self.backend.active_vbo != Some(mesh.vbo) {
+        }if self.backend.active_vbo != Some(mesh.vbo) {
             unsafe {
                 glEnableVertexAttribArray(0);
                 glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
@@ -372,8 +382,10 @@ impl ht_renderer {
                 self.backend.active_vbo = Some(mesh.vbo);
             }
         }
+         */
         unsafe {
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+            glEnableVertexAttribArray(0);
+            glBindVertexArray(mesh.vao);
             glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
             glDisableVertexAttribArray(0);
         }
@@ -422,6 +434,7 @@ impl ht_renderer {
             vbo,
             vao: 0,
             ebo,
+            indices: indices.to_vec(),
             num_vertices: 3,
             num_indices: 3,
         }
