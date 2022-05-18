@@ -9,19 +9,14 @@ use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr::{null, null_mut};
 use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices};
+use gfx_maths::*;
 use crate::helpers;
 use crate::shaders::*;
 #[cfg(feature = "glfw")]
 use libsex::bindings::*;
 
-#[derive(Copy, Clone)]
-pub struct loc {
-    pub x: i32,
-    pub y: i32,
-}
-
 #[derive(Clone, Copy)]
-pub struct colour {
+pub struct Colour {
     pub r: u8,
     pub g: u8,
     pub b: u8,
@@ -37,6 +32,14 @@ pub struct Mesh {
     pub num_indices: usize,
 }
 
+pub struct Camera {
+    pub position: Vec3,
+    pub rotation: Vec3,
+    pub fov: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
 #[derive(Clone, Copy)]
 pub enum RenderType {
     GLX,
@@ -46,7 +49,6 @@ pub enum RenderType {
 #[derive(Clone)]
 pub struct GLFWBackend {
     pub window: *mut GLFWwindow,
-    pub current_mode: Option<GLenum>,
     pub active_vbo: Option<GLuint>,
     pub current_shader: Option<usize>,
     pub shaders: Option<Vec<Shader>>,
@@ -55,7 +57,7 @@ pub struct GLFWBackend {
 #[derive(Clone)]
 pub struct ht_renderer {
     pub type_: RenderType,
-    pub window_size: loc,
+    pub window_size: Vec2,
     #[cfg(feature = "glfw")]
     pub backend: GLFWBackend,
 }
@@ -109,7 +111,6 @@ impl ht_renderer {
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                     GLFWBackend {
                         window,
-                        current_mode: Option::None,
                         current_shader: Option::None,
                         active_vbo: Option::None,
                         shaders: Option::None,
@@ -119,7 +120,7 @@ impl ht_renderer {
 
             Ok(ht_renderer {
                 type_: RenderType::GLX,
-                window_size: loc { x: window_width as i32, y: window_height as i32 },
+                window_size: Vec2::new(window_width as f32, window_height as f32),
                 backend,
             })
         }
@@ -214,48 +215,9 @@ impl ht_renderer {
         #[cfg(target_os = "linux")]
         {
             unsafe {
-                if self.backend.current_mode != Option::None {
-                    glEnd();
-                    self.backend.current_mode = Option::None;
-                }
                 glfwSwapBuffers(self.backend.window);
             }
         }
-    }
-
-    pub fn put_line(&mut self, point1: loc, point2: loc, c: colour) {
-        #[cfg(feature = "glfw")]
-        {
-            unsafe {
-                // check if we're already in GL_LINES mode
-                if self.backend.current_mode != Option::Some(GL_LINES) {
-                    if self.backend.current_mode != Option::None {
-                        glEnd();
-                    }
-                    glBegin(GL_LINES);
-                    self.backend.current_mode = Option::Some(GL_LINES);
-                }
-                glColor4ub(c.r, c.g, c.b, c.a);
-                glVertex2i(point1.x, point1.y);
-                glVertex2i(point2.x, point2.y);
-            }
-        }
-    }
-    pub fn put_pixel(&mut self, point: loc, c: colour) {
-        #[cfg(feature = "glfw")]
-        {
-            // this is a bit of a hack,
-            // we use put_line to draw a single pixel by setting the end point to the same point
-            // + 1x cause it doesn't render unless the end point is different
-            self.put_line(point, loc { x: point.x + 10, y: point.y + 10 }, c);
-        }
-    }
-
-    pub fn to_gl_coord(&self, point: loc) -> loc {
-        let mut ret = point;
-        // we use coords from top left, but opengl uses bottom left
-        //ret.y = self.window_size.y - ret.y;
-        ret
     }
 
     pub fn initMesh(&mut self, doc: Document, mesh_name: &str, shader_index: usize) -> Result<Mesh, String> {

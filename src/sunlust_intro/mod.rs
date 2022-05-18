@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use dae_parser::Document;
 use crate::animation::Animation2D;
 use crate::helpers::gen_rainbow;
-use crate::renderer::loc;
+use crate::renderer::Loc;
 use crate::renderer::ht_renderer;
 
 /*
