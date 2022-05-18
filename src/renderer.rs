@@ -12,6 +12,7 @@ use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices}
 use gfx_maths::*;
 use crate::helpers;
 use crate::shaders::*;
+use crate::camera::*;
 #[cfg(feature = "glfw")]
 use libsex::bindings::*;
 
@@ -23,21 +24,16 @@ pub struct Colour {
     pub a: u8,
 }
 
+#[derive(Clone, Copy)]
 pub struct Mesh {
-    pub vbo: GLuint,
+    pub position: Vec3,
+    pub rotation: Quaternion,
+    pub scale: Vec3,
     pub vao: GLuint,
+    pub vbo: GLuint,
     pub ebo: GLuint,
-    pub indices: Vec<u32>,
     pub num_vertices: usize,
     pub num_indices: usize,
-}
-
-pub struct Camera {
-    pub position: Vec3,
-    pub rotation: Vec3,
-    pub fov: f32,
-    pub near: f32,
-    pub far: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -58,6 +54,7 @@ pub struct GLFWBackend {
 pub struct ht_renderer {
     pub type_: RenderType,
     pub window_size: Vec2,
+    pub camera: Camera,
     #[cfg(feature = "glfw")]
     pub backend: GLFWBackend,
 }
@@ -68,9 +65,11 @@ impl ht_renderer {
         let window_width = 640;
         let window_height = 480;
 
+        let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 100.0);
+
         #[cfg(feature = "glfw")]{
             let backend = {
-                println!("running on linux, using glfw as backend");let display = unsafe { XOpenDisplay(null_mut()) };
+                println!("running on linux, using glfw as backend");
                 unsafe {
                     let result = glfwInit();
                     if result == 0 {
@@ -94,17 +93,15 @@ impl ht_renderer {
 
 
                     // Configure culling
-                    //glEnable(GL_CULL_FACE);
-                    //glCullFace(GL_BACK);
-                    //glFrontFace(GL_CW);
+                    glEnable(GL_CULL_FACE);
+                    glCullFace(GL_BACK);
+                    glFrontFace(GL_CW);
+                    glEnable(GL_DEPTH_TEST);
+                    glDepthFunc(GL_LESS);
 
 
                     glViewport(0, 0, window_width as i32, window_height as i32);
-                    glMatrixMode(GL_PROJECTION);
-                    glLoadIdentity();
                     // make top left corner as origin
-                    //glOrtho(0.0, src_width as f64, src_height as f64, 0.0, -1.0, 1.0);
-                    gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
 
                     glLineWidth(2.0);
 
@@ -121,6 +118,7 @@ impl ht_renderer {
             Ok(ht_renderer {
                 type_: RenderType::GLX,
                 window_size: Vec2::new(window_width as f32, window_height as f32),
+                camera,
                 backend,
             })
         }
@@ -216,6 +214,7 @@ impl ht_renderer {
         {
             unsafe {
                 glfwSwapBuffers(self.backend.window);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             }
         }
     }
@@ -253,6 +252,7 @@ impl ht_renderer {
 
 
         let indices = new_indices;
+        let num_indices = indices.len();
         println!("num indices: {}", num_indices);
         unsafe {
             println!("indices: {:?}", indices);
@@ -294,20 +294,24 @@ impl ht_renderer {
         if let ArrayElement::Float(array) = array {
             let num_vertices = array.val.len();
             Ok(Mesh {
+                position: Vec3::new(0.0, 0.0, 0.0),
+                rotation: Quaternion::identity(),
+                scale: Vec3::new(1.0, 1.0, 1.0),
                 vbo,
                 vao,
                 ebo,
-                indices: indices,
                 num_vertices,
                 num_indices,
             })
         } else if let ArrayElement::Int(array) = array {
             let num_vertices = array.val.len();
             Ok(Mesh {
+                position: Vec3::new(0.0, 0.0, 0.0),
+                rotation: Quaternion::identity(),
+                scale: Vec3::new(1.0, 1.0, 1.0),
                 vbo,
                 vao,
                 ebo,
-                indices: indices,
                 num_vertices,
                 num_indices,
             })
@@ -328,7 +332,23 @@ impl ht_renderer {
         unsafe {
             glEnableVertexAttribArray(0);
             glBindVertexArray(mesh.vao);
-            glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, 0 as *const GLvoid);
+
+            // transformation time!
+            let camera_projection = self.camera.get_projection();
+            let camera_view = self.camera.get_view();
+
+            // calculate the model matrix
+            let model_matrix = self.calculate_model_matrix(mesh.position, mesh.rotation, mesh.scale);
+
+            // calculate the mvp matrix
+            let mvp = camera_projection * camera_view * model_matrix;
+
+            // send the mvp matrix to the shader
+            let mvp_loc = glGetUniformLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_mvp").unwrap().as_ptr());
+            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
+
+
+            glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
             glDisableVertexAttribArray(0);
         }
 
@@ -344,7 +364,16 @@ impl ht_renderer {
         }
     }
 
-    // creates a vbo with a single triangle for testing
+    fn calculate_model_matrix(&self, position: Vec3, rotation: Quaternion, scale: Vec3) -> Mat4 {
+        let mut model_matrix = Mat4::identity();
+        model_matrix = model_matrix * Mat4::translate(position);
+        model_matrix = model_matrix * Mat4::rotate(rotation);
+        model_matrix = model_matrix * Mat4::scale(scale);
+        model_matrix
+    }
+
+    /*
+    // creates a vbo with a single triangle for testing (should no longer be used)
     pub fn gen_testing_triangle(&mut self) -> Mesh {
         let mut vbo = 0 as GLuint;
         let buffer_data: [f32; 9] = [
@@ -375,9 +404,9 @@ impl ht_renderer {
             vbo,
             vao: 0,
             ebo,
-            indices: indices.to_vec(),
             num_vertices: 3,
             num_indices: 3,
         }
     }
+     */
 }

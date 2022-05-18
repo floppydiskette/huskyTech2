@@ -6,7 +6,6 @@ use std::time::SystemTime;
 use dae_parser::Document;
 use crate::animation::Animation2D;
 use crate::helpers::gen_rainbow;
-use crate::renderer::Loc;
 use crate::renderer::ht_renderer;
 
 /*
@@ -119,5 +118,5 @@ pub fn animate(mut renderer: ht_renderer) {
 pub fn animate(mut renderer: ht_renderer) {
     // load the huskyTech2 logo mesh
     let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
-    let mesh = renderer.initMesh(document, "Cube_001-mesh", shader).unwrap();
+    let mesh = renderer.initMesh(document, "Cube_001-mesh", 1).unwrap();
 }
