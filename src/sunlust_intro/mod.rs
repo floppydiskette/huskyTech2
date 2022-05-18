@@ -12,7 +12,7 @@ use crate::animation::Animation2D;
 use crate::helpers::gen_rainbow;
 use crate::renderer::{Colour, ht_renderer};
 
-// todo: needs to be eventually converted to use vec2
+/*
 #[derive(Clone, Copy)]
 struct loc {
     x: i32,
@@ -54,7 +54,7 @@ pub fn animate(mut renderer: ht_renderer) {
     let mut scale_factor_y = 1.0;
 
 
-    let shader_index  = renderer.load_shader("rainbow").expect("failed to load rainbow shader");
+    let shader_index  = renderer.load_shader("basic").expect("failed to load rainbow shader");
 
     // time for the rainbow outline animation
     let rainbow_length = 1122.0; // in milliseconds
@@ -171,3 +171,4 @@ fn put_line(line: &SunlustLine, c: Colour, shader_index: usize, renderer: &mut h
         glDeleteBuffers(1, &mut cbo);
     }
 }
+*/
