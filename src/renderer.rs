@@ -4,14 +4,15 @@ use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::iter::Map;
+use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::os::raw::{c_int, c_uint};
+use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr::{null, null_mut};
 use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices};
-use crate::helpers::*;
-#[cfg(target_os = "linux")]
-use libsex::bindings::*;
 use crate::helpers;
+use crate::shaders::*;
+#[cfg(feature = "glfw")]
+use libsex::bindings::*;
 
 #[derive(Copy, Clone)]
 pub struct loc {
@@ -36,18 +37,12 @@ pub struct Mesh {
     pub num_indices: usize,
 }
 
-#[derive(Clone)]
-pub struct Shader {
-    pub name: String,
-    pub program: GLuint,
-}
-
 #[derive(Clone, Copy)]
 pub enum RenderType {
     GLX,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(feature = "glfw")]
 #[derive(Clone)]
 pub struct GLFWBackend {
     pub window: *mut GLFWwindow,
@@ -61,7 +56,7 @@ pub struct GLFWBackend {
 pub struct ht_renderer {
     pub type_: RenderType,
     pub window_size: loc,
-    #[cfg(target_os = "linux")] // X11 specifics (todo: add native wayland support)
+    #[cfg(feature = "glfw")]
     pub backend: GLFWBackend,
 }
 
@@ -71,9 +66,9 @@ impl ht_renderer {
         let window_width = 640;
         let window_height = 480;
 
-        #[cfg(target_os = "linux")]{
+        #[cfg(feature = "glfw")]{
             let backend = {
-                println!("running on linux, using glfw as backend");
+                println!("running on linux, using glfw as backend");let display = unsafe { XOpenDisplay(null_mut()) };
                 unsafe {
                     let result = glfwInit();
                     if result == 0 {
@@ -102,18 +97,16 @@ impl ht_renderer {
                     //glFrontFace(GL_CW);
 
 
-                    //glViewport(0, 0, window_width as i32, window_height as i32);
-                    //lMatrixMode(GL_PROJECTION);
-                    //glLoadIdentity();
+                    glViewport(0, 0, window_width as i32, window_height as i32);
+                    glMatrixMode(GL_PROJECTION);
+                    glLoadIdentity();
                     // make top left corner as origin
                     //glOrtho(0.0, src_width as f64, src_height as f64, 0.0, -1.0, 1.0);
-                    //gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
+                    gluOrtho2D(0.0, window_width as f64, window_height as f64, 0.0);
 
-                    /*glLineWidth(2.0);
-                     */
+                    glLineWidth(2.0);
 
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
                     GLFWBackend {
                         window,
                         current_mode: Option::None,
@@ -126,14 +119,9 @@ impl ht_renderer {
 
             Ok(ht_renderer {
                 type_: RenderType::GLX,
-                window_size: loc { x: window_width, y: window_height },
+                window_size: loc { x: window_width as i32, y: window_height as i32 },
                 backend,
             })
-        }
-        // if backend is null, we're on windows (error for now)
-        #[cfg(not(target_os = "linux"))]
-        {
-            return Err("not implemented on windows".to_string());
         }
     }
 
@@ -236,7 +224,7 @@ impl ht_renderer {
     }
 
     pub fn put_line(&mut self, point1: loc, point2: loc, c: colour) {
-        #[cfg(target_os = "linux")]
+        #[cfg(feature = "glfw")]
         {
             unsafe {
                 // check if we're already in GL_LINES mode
@@ -254,7 +242,7 @@ impl ht_renderer {
         }
     }
     pub fn put_pixel(&mut self, point: loc, c: colour) {
-        #[cfg(target_os = "linux")]
+        #[cfg(feature = "glfw")]
         {
             // this is a bit of a hack,
             // we use put_line to draw a single pixel by setting the end point to the same point
@@ -286,7 +274,7 @@ impl ht_renderer {
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
         let mut indices = tris.data.clone().prim.expect("no indices?");
-        // tris.count returns the number of triangles, not the number of indices
+        // 9 accounts for the x3 needed to convert to triangles, and the x3 needed to skip the normals and tex coords
         let num_indices = tris.count * 9;
 
         // todo: this only counts for triangulated collada meshes made in blender, we cannot assume that everything else will act like this
@@ -374,15 +362,7 @@ impl ht_renderer {
                 glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
                 self.backend.current_shader = Some(shader_index);
             }
-        }/*if self.backend.active_vbo != Some(mesh.vbo) {
-            unsafe {
-                glEnableVertexAttribArray(0);
-                glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-                glVertexAttribPointer(0 as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
-                self.backend.active_vbo = Some(mesh.vbo);
-            }
         }
-         */
         unsafe {
             glEnableVertexAttribArray(0);
             glBindVertexArray(mesh.vao);

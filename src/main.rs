@@ -17,6 +17,7 @@ pub mod renderer;
 pub mod helpers;
 pub mod cock_handler;
 pub mod animation;
+mod shaders;
 
 fn main() {
     println!("good day! initialising huskyTech2");
@@ -33,10 +34,10 @@ fn main() {
     let example_index = renderer.load_shader("example").expect("failed to load example shader");
 
     // wait 2 seconds
-    //std::thread::sleep(std::time::Duration::from_millis(2000));
 
-    //sunlust_intro::animate(renderer);
-    test_render(renderer, example_index);
+    sunlust_intro::animate(renderer.clone());
+    //std::thread::sleep(std::time::Duration::from_millis(2000));
+    test_render(renderer.clone(), example_index);
 
     loop {
         unsafe {
@@ -49,8 +50,8 @@ fn main() {
 // for testing (:
 fn test_render(mut renderer: ht_renderer, shader: usize) {
     // load the dae file
-    let document = Document::from_file("base/models/cube.dae").expect("failed to load dae file");
-    let mesh = renderer.initMesh(document, "Plane-mesh", shader).unwrap();
+    let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
+    let mesh = renderer.initMesh(document, "Cube_001-mesh", shader).unwrap();
     //let mesh = renderer.gen_testing_triangle();
 
     println!("{}", mesh.vbo);
