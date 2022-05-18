@@ -37,9 +37,9 @@ fn main() {
 
     // wait 2 seconds
 
-    //sunlust_intro::animate(renderer.clone());
+    sunlust_intro::animate(renderer.clone());
     //std::thread::sleep(std::time::Duration::from_millis(2000));
-    test_render(renderer.clone(), example_index);
+    //test_render(renderer.clone(), example_index);
 
     loop {
         unsafe {

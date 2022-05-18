@@ -1,8 +1,8 @@
 #version 330 core
 
-uniform f32vec4 u_color;
-out vec4 f_color;
+in vec3 i_colour;
+out vec3 o_colour;
 
 void main(){
-    f_color = u_color;
+    o_colour = i_colour;
 }
