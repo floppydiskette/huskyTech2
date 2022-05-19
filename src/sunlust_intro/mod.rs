@@ -50,7 +50,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     }
 
     let normal_time = 9119.0 - rainbow_time; // in milliseconds
-    let normal_anim = Animation::new(Vec3::new(0.0, 0.25, 2.0), Vec3::new(0.0, 0.35, 1.0), normal_time);
+    let normal_anim = Animation::new(Vec3::new(0.0, 0.25, 2.0), Vec3::new(0.0, 0.35, 1.7), normal_time);
 
     loop {
         // check how long it's been
