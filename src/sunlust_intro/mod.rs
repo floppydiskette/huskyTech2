@@ -17,7 +17,7 @@ use crate::renderer::{Colour, ht_renderer};
 
 pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
     // load rainbow shader
-    let rainbow_shader = renderer.load_shader("basic").expect("failed to load rainbow shader");
+    let rainbow_shader = renderer.load_shader("rainbow").expect("failed to load rainbow shader");
     // load ht2 logo model
     let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
     let mut mesh = renderer.initMesh(document, "Cube_001-mesh", rainbow_shader).unwrap();
@@ -27,7 +27,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     println!("playing sunlust.wav");
     let time_of_start = SystemTime::now(); // when the animation started
     let mut current_time = SystemTime::now(); // for later
-    let rainbow_time = 900.0; // in milliseconds
+    let rainbow_time = 1032.0; // in milliseconds
     let rainbow_anim = Animation::new(Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.25, 2.0), rainbow_time);
 
     loop {
@@ -39,6 +39,16 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         if time_since_start > rainbow_time {
             break;
         }
+
+        // set colour of mesh
+        unsafe {
+            let colour = gen_rainbow(time_since_start as f64);
+            // get uniform location
+            let colour_loc = glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader].program, CString::new("i_colour").unwrap().as_ptr());
+            glUniform4f(colour_loc, colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
+        }
+
+
         // get the point at the current time
         let point = rainbow_anim.get_point_at_time(time_since_start as f64);
         // set the position of the mesh

@@ -141,7 +141,7 @@ impl ht_renderer {
         unsafe {
             glGetShaderiv(vert_shader, GL_COMPILE_STATUS, &mut status);
             if status == 0 {
-                let mut len = 0;
+                let mut len = 255;
                 glGetShaderiv(vert_shader, GL_INFO_LOG_LENGTH, &mut len);
                 let mut log = Vec::with_capacity(len as usize);
                 glGetShaderInfoLog(vert_shader, len, null_mut(), log.as_mut_ptr() as *mut GLchar);
@@ -149,7 +149,7 @@ impl ht_renderer {
             }
             glGetShaderiv(frag_shader, GL_COMPILE_STATUS, &mut status);
             if status == 0 {
-                let mut len = 0;
+                let mut len = 255;
                 glGetShaderiv(frag_shader, GL_INFO_LOG_LENGTH, &mut len);
                 let mut log = Vec::with_capacity(len as usize);
                 glGetShaderInfoLog(frag_shader, len, null_mut(), log.as_mut_ptr() as *mut GLchar);
