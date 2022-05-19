@@ -1,6 +1,8 @@
 use std::borrow::BorrowMut;
 use dae_parser::Document;
 use gfx_maths::{Quaternion, Vec3};
+use kira::manager::{AudioManager, AudioManagerSettings};
+use kira::manager::backend::cpal::CpalBackend;
 use libsex::bindings::*;
 use crate::renderer::ht_renderer;
 
@@ -20,9 +22,12 @@ pub mod cock_handler;
 pub mod animation;
 pub mod shaders;
 pub mod camera;
+pub mod meshes;
 
 fn main() {
     println!("good day! initialising huskyTech2");
+    let mut sss = AudioManager::<CpalBackend>::new(AudioManagerSettings::default()).expect("failed to initialise audio subsystem");
+    println!("initialised audio subsystem");
     let renderer = ht_renderer::init();
     if renderer.is_err() {
         println!("failed to initialise renderer");
@@ -32,44 +37,14 @@ fn main() {
     let mut renderer = renderer.unwrap();
     println!("initialised renderer");
 
-    // load example shader
-    let example_index = renderer.load_shader("basic").expect("failed to load example shader");
-
     // wait 2 seconds
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    sunlust_intro::animate(renderer.clone());
-    //std::thread::sleep(std::time::Duration::from_millis(2000));
-    //test_render(renderer.clone(), example_index);
+    sunlust_intro::animate(&mut renderer, &mut sss);
 
     loop {
         unsafe {
             glfwPollEvents();
         }
-    }
-}
-
-
-// for testing (:
-fn test_render(mut renderer: ht_renderer, shader: usize) {
-    // load the dae file
-    let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
-    let mut mesh = renderer.initMesh(document, "Cube_001-mesh", shader).unwrap();
-    //let mesh = renderer.gen_testing_triangle();
-
-    println!("{}", mesh.vao);
-    //println!("{}", mesh2.vbo);
-
-    renderer.camera.set_position(Vec3::new(0.0, 0.0, 2.0));
-    renderer.camera.set_fov(45.0);
-
-    // render the mesh
-
-    let mut r = 0.0;
-    loop {
-        mesh.rotation = Quaternion::axis_angle(Vec3::new(1.0, 1.0, 0.0), r);
-        r += 0.01;
-
-        renderer.render_mesh(mesh, shader);
-        renderer.swap_buffers();
     }
 }

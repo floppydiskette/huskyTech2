@@ -10,6 +10,7 @@ glfw = []
 [dependencies]
 dae-parser = "0.8.7"
 gfx-maths = "0.2.8"
+kira = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libsex = { path = "../libsex" }

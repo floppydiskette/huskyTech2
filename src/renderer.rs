@@ -15,6 +15,7 @@ use crate::shaders::*;
 use crate::camera::*;
 #[cfg(feature = "glfw")]
 use libsex::bindings::*;
+use crate::meshes::Mesh;
 
 #[derive(Clone, Copy)]
 pub struct Colour {
@@ -22,18 +23,6 @@ pub struct Colour {
     pub g: u8,
     pub b: u8,
     pub a: u8,
-}
-
-#[derive(Clone, Copy)]
-pub struct Mesh {
-    pub position: Vec3,
-    pub rotation: Quaternion,
-    pub scale: Vec3,
-    pub vao: GLuint,
-    pub vbo: GLuint,
-    pub ebo: GLuint,
-    pub num_vertices: usize,
-    pub num_indices: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -102,8 +91,6 @@ impl ht_renderer {
 
                     glViewport(0, 0, window_width as i32, window_height as i32);
                     // make top left corner as origin
-
-                    glLineWidth(2.0);
 
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                     GLFWBackend {
@@ -278,6 +265,7 @@ impl ht_renderer {
             } else {
                 panic!("unsupported array type");
             }
+            // vertex positions for vertex shader
             let pos = glGetAttribLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_pos").unwrap().as_ptr());
             glVertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
             glEnableVertexAttribArray(0);
@@ -320,7 +308,7 @@ impl ht_renderer {
         }
     }
 
-    pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize) {
+    pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize, as_lines: bool) {
         // load the shader
 
         if self.backend.current_shader != Some(shader_index) {
@@ -347,8 +335,11 @@ impl ht_renderer {
             let mvp_loc = glGetUniformLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_mvp").unwrap().as_ptr());
             glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
 
-
-            glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            if !as_lines {
+                glDrawElements(GL_TRIANGLES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            } else {
+                glDrawElements(GL_LINES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            }
             glDisableVertexAttribArray(0);
         }
 
@@ -371,42 +362,4 @@ impl ht_renderer {
         model_matrix = model_matrix * Mat4::scale(scale);
         model_matrix
     }
-
-    /*
-    // creates a vbo with a single triangle for testing (should no longer be used)
-    pub fn gen_testing_triangle(&mut self) -> Mesh {
-        let mut vbo = 0 as GLuint;
-        let buffer_data: [f32; 9] = [
-            -1.0, -1.0, 0.0,
-            1.0, -1.0, 0.0,
-            0.0, 1.0, 0.0,
-        ];
-        println!("{:?}", buffer_data);
-        unsafe {
-            glGenBuffers(1, &mut vbo);
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(GL_ARRAY_BUFFER, (buffer_data.len() * std::mem::size_of::<GLfloat>()) as GLsizeiptr, buffer_data.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
-            // stuff for shaders (following wikipedia code for now)
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null_mut());
-            glEnableVertexAttribArray(0);
-            //glBindBuffer(GL_ARRAY_BUFFER, 0); // not sure if this is needed
-        };
-        let indices = [0, 1, 2];
-        let num_vertices = 3;
-        let mut ebo = 0 as GLuint;
-        unsafe {
-            glGenBuffers(1, &mut ebo);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * std::mem::size_of::<GLuint>()) as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
-        };
-
-        Mesh {
-            vbo,
-            vao: 0,
-            ebo,
-            num_vertices: 3,
-            num_indices: 3,
-        }
-    }
-     */
 }
