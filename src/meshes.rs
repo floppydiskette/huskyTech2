@@ -1,5 +1,6 @@
 use gfx_maths::*;
 use libsex::bindings::*;
+use crate::textures::Texture;
 
 #[derive(Clone, Copy)]
 pub struct Mesh {
@@ -11,4 +12,6 @@ pub struct Mesh {
     pub ebo: GLuint,
     pub num_vertices: usize,
     pub num_indices: usize,
+
+    pub texture: Texture,
 }

@@ -23,6 +23,7 @@ pub mod animation;
 pub mod shaders;
 pub mod camera;
 pub mod meshes;
+pub mod textures;
 
 fn main() {
     println!("good day! initialising huskyTech2");

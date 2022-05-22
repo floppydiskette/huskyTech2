@@ -6,7 +6,7 @@ use std::ffi::CString;
 use std::ptr::null;
 use std::time::SystemTime;
 use dae_parser::Document;
-use gfx_maths::{Vec2, Vec3};
+use gfx_maths::{Quaternion, Vec2, Vec3};
 use kira::manager::AudioManager;
 use kira::manager::backend::cpal::CpalBackend;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
@@ -62,6 +62,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let normal_time = 9119.0 - rainbow_time; // in milliseconds
     let normal_anim = Animation::new(Vec3::new(0.0, 0.25, 2.0), Vec3::new(0.0, 0.35, 1.7), normal_time);
 
+    let mut dutch = 0.0; // dutch angle or whatever this probably isn't the correct usage of that word
+
     loop {
         // check how long it's been
         current_time = SystemTime::now();
@@ -76,6 +78,9 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         let point = normal_anim.get_point_at_time(time_since_start as f64);
         // set the position of the mesh
         mesh.position = point;
+        // set the rotation of the mesh
+        mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
+        dutch += 0.01;
         // draw the mesh
         renderer.render_mesh(mesh, rainbow_shader, false);
         // swap buffers

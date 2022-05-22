@@ -16,6 +16,7 @@ use crate::camera::*;
 #[cfg(feature = "glfw")]
 use libsex::bindings::*;
 use crate::meshes::Mesh;
+use crate::textures::Texture;
 
 #[derive(Clone, Copy)]
 pub struct Colour {
@@ -207,6 +208,9 @@ impl ht_renderer {
     }
 
     pub fn initMesh(&mut self, doc: Document, mesh_name: &str, shader_index: usize) -> Result<Mesh, String> {
+        // loading the texture (todo: support multiple materials)
+        let texture = Texture::new_from_name(format!("{}/tex", mesh_name)).expect("failed to load texture");
+
         let geom = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
         let mesh = geom.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
         let tris = mesh.elements[0].as_triangles().expect("NO TRIANGLES?");
@@ -214,8 +218,10 @@ impl ht_renderer {
         let vertices = vertices_map.get_raw(&tris.inputs[0].source).expect("no vertices? (2)");
         let source_map = doc.local_map::<Source>().expect("no sources?");
         let source = source_map.get_raw(&vertices.inputs[0].source).expect("no positions?");
+        let uv_source = source_map.get_raw(&tris.inputs[2].source).expect("no uv source?");
 
         let array = source.array.clone().expect("NO ARRAY?");
+        let uv_array = uv_source.array.clone().expect("NO UV ARRAY?");
 
         // get the u32 data from the mesh
         let mut vbo = 0 as GLuint;
@@ -230,10 +236,12 @@ impl ht_renderer {
         // indices for vertex positions are offset by the normal and texcoord indices
         // we need to skip the normal and texcoord indices and fill a new array with the vertex positions
         let mut new_indices = Vec::with_capacity(num_indices);
+        let mut new_uv_indices = Vec::with_capacity(num_indices);
         // skip the normal (offset 1) and texcoord (offset 2) indices
         let mut i = 0;
         while i < num_indices {
             new_indices.push(indices[i] as u32);
+            new_uv_indices.push(indices[i + 2] as u32);
             i += 3;
         }
 
@@ -270,6 +278,25 @@ impl ht_renderer {
             glVertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
             glEnableVertexAttribArray(0);
 
+            // uvs
+            let mut uvbo= 0;
+            glGenBuffers(1, &mut uvbo);
+            glBindBuffer(GL_ARRAY_BUFFER, uvbo);
+            if let ArrayElement::Float(a) = uv_array {
+                println!("uv array: {:?}", a.val);
+                println!("len: {}", a.val.len());
+                println!("type: float");
+                size = a.val.len() * std::mem::size_of::<f32>();
+                glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            } else {
+                panic!("unsupported array type for uvs");
+            }
+            // vertex uvs for fragment shader
+            let uv = glGetAttribLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_uv").unwrap().as_ptr());
+            glVertexAttribPointer(uv as GLuint, 2, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
+            glEnableVertexAttribArray(1);
+
+
             // now the indices
             glGenBuffers(1, &mut ebo);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -290,6 +317,7 @@ impl ht_renderer {
                 ebo,
                 num_vertices,
                 num_indices,
+                texture
             })
         } else if let ArrayElement::Int(array) = array {
             let num_vertices = array.val.len();
@@ -302,6 +330,7 @@ impl ht_renderer {
                 ebo,
                 num_vertices,
                 num_indices,
+                texture
             })
         } else {
             Err("unsupported array type".to_string())
