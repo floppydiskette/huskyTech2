@@ -85,7 +85,6 @@ impl ht_renderer {
                     // Configure culling
                     glEnable(GL_CULL_FACE);
                     glCullFace(GL_BACK);
-                    glFrontFace(GL_CW);
                     glEnable(GL_DEPTH_TEST);
                     glDepthFunc(GL_LESS);
 
@@ -109,6 +108,21 @@ impl ht_renderer {
                 camera,
                 backend,
             })
+        }
+    }
+
+    // closes the window if it needs to, etc.
+    // returns true if the window should close
+    pub fn manage_window(&mut self) -> bool {
+        #[cfg(feature = "glfw")]{
+            unsafe {
+                glfwPollEvents();
+                if glfwWindowShouldClose(self.backend.window) == 1 {
+                    glfwTerminate();
+                    return true;
+                }
+            }
+            false
         }
     }
 
@@ -207,9 +221,10 @@ impl ht_renderer {
         }
     }
 
-    pub fn initMesh(&mut self, doc: Document, mesh_name: &str, shader_index: usize) -> Result<Mesh, String> {
+    pub fn initMesh(&mut self, doc: Document, mesh_name: &str, shader_index: usize, load_textures: bool) -> Result<Mesh, String> {
         // loading the texture (todo: support multiple materials)
-        let texture = Texture::new_from_name(format!("{}/tex", mesh_name)).expect("failed to load texture");
+        let mut texture: Option<Texture> = Option::None;
+        if load_textures { texture = Some(Texture::new_from_name(format!("{}/tex", mesh_name)).expect("failed to load texture")); }
         let geom = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
         let mesh = geom.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
         let tris = mesh.elements[0].as_triangles().expect("NO TRIANGLES?");
@@ -355,8 +370,8 @@ impl ht_renderer {
             glBindVertexArray(mesh.vao);
             if pass_texture {
                 glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, mesh.texture.diffuse_texture);
-                glUniform1i(glGetUniformLocation(self.backend.current_shader.unwrap() as u32, CString::new("u_texture").unwrap().as_ptr()), 0);
+                glBindTexture(GL_TEXTURE_2D, mesh.texture.unwrap().diffuse_texture);
+                glUniform1i(glGetUniformLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_texture").unwrap().as_ptr()), 0);
                 // DON'T PRINT OPEN GL ERRORS HERE! BIGGEST MISTAKE OF MY LIFE
             }
 

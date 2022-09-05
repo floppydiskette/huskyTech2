@@ -2,6 +2,7 @@
 extern crate log;
 
 use std::borrow::BorrowMut;
+use std::process;
 use dae_parser::Document;
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
@@ -27,6 +28,7 @@ pub mod shaders;
 pub mod camera;
 pub mod meshes;
 pub mod textures;
+pub mod uimesh;
 
 fn main() {
     env_logger::init();
@@ -46,8 +48,8 @@ fn main() {
     sunlust_intro::animate(&mut renderer, &mut sss);
 
     loop {
-        unsafe {
-            glfwPollEvents();
+        if renderer.manage_window() {
+            process::exit(0);
         }
     }
 }

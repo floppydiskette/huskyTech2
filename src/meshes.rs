@@ -14,5 +14,5 @@ pub struct Mesh {
     pub num_indices: usize,
     pub uvbo: GLuint,
 
-    pub texture: Texture,
+    pub texture: Option<Texture>,
 }

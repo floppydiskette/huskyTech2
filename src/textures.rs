@@ -11,6 +11,12 @@ pub struct Texture {
     pub roughness_texture: GLuint,
 }
 
+#[derive(Clone, Copy)]
+pub struct UiTexture {
+    pub dimensions: (u32, u32),
+    pub diffuse_texture: GLuint,
+}
+
 pub struct Image {
     pub dimensions: (u32, u32),
     pub data: Vec<u8>,
@@ -63,6 +69,46 @@ impl Texture {
                 normal_texture,
                 metallic_texture,
                 roughness_texture,
+            })
+        }
+    }
+}
+
+impl UiTexture {
+    pub fn new_from_name(name: String) -> Result<UiTexture, String> {
+        let base_file_name = format!("base/textures/ui/{}", name); // substance painter file names
+        let diffuse_file_name = base_file_name.clone() + ".png";
+
+        // load the files
+        let diffuse_data = load_image(diffuse_file_name.as_str())?;
+
+        #[cfg(feature = "glfw")]
+        {
+            // load opengl textures
+            let mut textures: [GLuint; 1] = [0; 1];
+            unsafe {
+                glGenTextures(1, textures.as_mut_ptr());
+            }
+            let diffuse_texture = textures[0];
+
+            // diffuse texture
+            unsafe {
+                glBindTexture(GL_TEXTURE_2D, diffuse_texture);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
+
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
+                glGenerateMipmap(GL_TEXTURE_2D);
+            }
+
+            // todo: for now we're only using diffuse textures
+
+            // return
+            Ok(UiTexture {
+                dimensions: diffuse_data.dimensions,
+                diffuse_texture,
             })
         }
     }

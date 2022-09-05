@@ -3,6 +3,7 @@
 
 
 use std::ffi::CString;
+use std::process;
 use std::ptr::null;
 use std::time::SystemTime;
 use dae_parser::Document;
@@ -14,16 +15,23 @@ use libsex::bindings::*;
 use crate::animation::Animation;
 use crate::helpers::gen_rainbow;
 use crate::renderer::{Colour, ht_renderer};
+use crate::uimesh::UiMesh;
 
 pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
     // load rainbow shader
     let rainbow_shader = renderer.load_shader("rainbow").expect("failed to load rainbow shader");
+    // load red shader
+    let red_shader = renderer.load_shader("red").expect("failed to load red shader");
     // load basic shader
     let basic_shader = renderer.load_shader("basic").expect("failed to load basic shader");
     // load ht2-mesh logo model
     let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
-    let mut mesh = renderer.initMesh(document, "ht2-mesh", basic_shader).unwrap();
-    debug!("loaded ht2-mesh");
+    let mut mesh = renderer.initMesh(document, "ht2-mesh", basic_shader, true).expect("failed to load ht2 mesh");
+    // load master uimesh
+    let mut ui_master = UiMesh::new_master(renderer, basic_shader).expect("failed to load master uimesh");
+    // load poweredby uimesh
+    let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
+
     let mut sunlust_sfx = StaticSoundData::from_file("base/snd/sunlust.wav", StaticSoundSettings::default()).expect("failed to load sunlust.wav");
 
     // wait 2 seconds
@@ -64,6 +72,11 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         renderer.render_mesh(mesh, rainbow_shader, true, false);
         // swap buffers
         renderer.swap_buffers();
+
+        // poll events
+        if renderer.manage_window() {
+            process::exit(0);
+        }
     }
 
     let normal_time = 9119.0 - rainbow_time; // in milliseconds
@@ -89,8 +102,15 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
         dutch += 0.01;
         // draw the mesh
-        renderer.render_mesh(mesh, basic_shader, false, true);
+        //renderer.render_mesh(mesh, basic_shader, false, true);
+        // draw the powered by text
+        ui_poweredby.render_at(ui_master, renderer, basic_shader);
         // swap buffers
         renderer.swap_buffers();
+
+        // poll events
+        if renderer.manage_window() {
+            process::exit(0);
+        }
     }
 }
