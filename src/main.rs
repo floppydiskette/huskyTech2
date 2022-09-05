@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use std::borrow::BorrowMut;
 use dae_parser::Document;
 use gfx_maths::{Quaternion, Vec3};
@@ -26,20 +29,19 @@ pub mod meshes;
 pub mod textures;
 
 fn main() {
-    println!("good day! initialising huskyTech2");
+    env_logger::init();
+
+    info!("good day! initialising huskyTech2");
     let mut sss = AudioManager::<CpalBackend>::new(AudioManagerSettings::default()).expect("failed to initialise audio subsystem");
-    println!("initialised audio subsystem");
+    info!("initialised audio subsystem");
     let renderer = ht_renderer::init();
     if renderer.is_err() {
-        println!("failed to initialise renderer");
-        println!("{:?}", renderer.err());
+        error!("failed to initialise renderer");
+        error!("{:?}", renderer.err());
         return;
     }
     let mut renderer = renderer.unwrap();
-    println!("initialised renderer");
-
-    // wait 2 seconds
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    info!("initialised renderer");
 
     sunlust_intro::animate(&mut renderer, &mut sss);
 

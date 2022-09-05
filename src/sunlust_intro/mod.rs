@@ -18,13 +18,19 @@ use crate::renderer::{Colour, ht_renderer};
 pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
     // load rainbow shader
     let rainbow_shader = renderer.load_shader("rainbow").expect("failed to load rainbow shader");
-    // load ht2 logo model
+    // load basic shader
+    let basic_shader = renderer.load_shader("basic").expect("failed to load basic shader");
+    // load ht2-mesh logo model
     let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
-    let mut mesh = renderer.initMesh(document, "Cube_001-mesh", rainbow_shader).unwrap();
-
+    let mut mesh = renderer.initMesh(document, "ht2-mesh", basic_shader).unwrap();
+    debug!("loaded ht2-mesh");
     let mut sunlust_sfx = StaticSoundData::from_file("base/snd/sunlust.wav", StaticSoundSettings::default()).expect("failed to load sunlust.wav");
+
+    // wait 2 seconds
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
     sss.play(sunlust_sfx.clone());
-    println!("playing sunlust.wav");
+    debug!("playing sunlust.wav");
     let time_of_start = SystemTime::now(); // when the animation started
     let mut current_time = SystemTime::now(); // for later
     let rainbow_time = 1032.0; // in milliseconds
@@ -41,6 +47,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         }
 
         // set colour of mesh
+        #[cfg(feature = "glfw")]
         unsafe {
             let colour = gen_rainbow(time_since_start as f64);
             // get uniform location
@@ -54,7 +61,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set the position of the mesh
         mesh.position = point;
         // draw the mesh
-        renderer.render_mesh(mesh, rainbow_shader, true);
+        renderer.render_mesh(mesh, rainbow_shader, true, false);
         // swap buffers
         renderer.swap_buffers();
     }
@@ -82,7 +89,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
         dutch += 0.01;
         // draw the mesh
-        renderer.render_mesh(mesh, rainbow_shader, false);
+        renderer.render_mesh(mesh, basic_shader, false, true);
         // swap buffers
         renderer.swap_buffers();
     }

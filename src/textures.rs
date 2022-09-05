@@ -4,7 +4,7 @@ use libsex::bindings::*;
 #[cfg(feature = "glfw")]
 #[derive(Clone, Copy)]
 pub struct Texture {
-    pub dimensions: Vec2,
+    pub dimensions: (u32, u32),
     pub diffuse_texture: GLuint,
     pub normal_texture: GLuint,
     pub metallic_texture: GLuint,
@@ -12,7 +12,7 @@ pub struct Texture {
 }
 
 pub struct Image {
-    pub dimensions: Vec2,
+    pub dimensions: (u32, u32),
     pub data: Vec<u8>,
 }
 
@@ -26,9 +26,9 @@ impl Texture {
 
         // load the files
         let diffuse_data = load_image(diffuse_file_name.as_str())?;
-        let normal_data = load_image(normal_file_name.as_str())?;
-        let metallic_data = load_image(metallic_file_name.as_str())?;
-        let roughness_data = load_image(roughness_file_name.as_str())?;
+        //let normal_data = load_image(normal_file_name.as_str())?;
+        //let metallic_data = load_image(metallic_file_name.as_str())?;
+        //let roughness_data = load_image(roughness_file_name.as_str())?;
 
         #[cfg(feature = "glfw")]
         {
@@ -45,7 +45,8 @@ impl Texture {
             // diffuse texture
             unsafe {
                 glBindTexture(GL_TEXTURE_2D, diffuse_texture);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, diffuse_data.dimensions.x as i32, diffuse_data.dimensions.y as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
+
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
@@ -56,13 +57,13 @@ impl Texture {
             // todo: for now we're only using diffuse textures
 
             // return
-            return Ok(Texture {
+            Ok(Texture {
                 dimensions: diffuse_data.dimensions,
                 diffuse_texture,
                 normal_texture,
                 metallic_texture,
                 roughness_texture,
-            });
+            })
         }
     }
 }
@@ -72,7 +73,7 @@ fn load_image(file_name: &str) -> Result<Image, String> { // todo: use dds
     let mut reader = decoder.read_info().map_err(|e| format!("failed to read file: {}", e))?;
     let mut buf = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buf).map_err(|e| format!("failed to read file: {}", e))?;
-    let dimensions = Vec2::new(info.width as f32, info.height as f32);
+    let dimensions = (info.width, info.height);
     let bytes = &buf[0..info.buffer_size()];
     let data = bytes.to_vec();
     Ok(Image { dimensions, data })

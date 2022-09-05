@@ -12,6 +12,7 @@ pub struct Mesh {
     pub ebo: GLuint,
     pub num_vertices: usize,
     pub num_indices: usize,
+    pub uvbo: GLuint,
 
     pub texture: Texture,
 }

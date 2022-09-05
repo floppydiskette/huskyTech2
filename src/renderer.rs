@@ -52,14 +52,14 @@ pub struct ht_renderer {
 impl ht_renderer {
     pub fn init() -> Result<ht_renderer, String> {
         // some constants we can later change (todo: make these configurable?)
-        let window_width = 640;
-        let window_height = 480;
+        let window_width = 1280;
+        let window_height = 720;
 
         let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 100.0);
 
         #[cfg(feature = "glfw")]{
             let backend = {
-                println!("running on linux, using glfw as backend");
+                info!("running on linux, using glfw as backend");
                 unsafe {
                     let result = glfwInit();
                     if result == 0 {
@@ -210,7 +210,6 @@ impl ht_renderer {
     pub fn initMesh(&mut self, doc: Document, mesh_name: &str, shader_index: usize) -> Result<Mesh, String> {
         // loading the texture (todo: support multiple materials)
         let texture = Texture::new_from_name(format!("{}/tex", mesh_name)).expect("failed to load texture");
-
         let geom = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
         let mesh = geom.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
         let tris = mesh.elements[0].as_triangles().expect("NO TRIANGLES?");
@@ -227,6 +226,7 @@ impl ht_renderer {
         let mut vbo = 0 as GLuint;
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
+        let mut uvbo= 0 as GLuint;
         let mut indices = tris.data.clone().prim.expect("no indices?");
         // 9 accounts for the x3 needed to convert to triangles, and the x3 needed to skip the normals and tex coords
         let num_indices = tris.count * 9;
@@ -248,9 +248,15 @@ impl ht_renderer {
 
         let indices = new_indices;
         let num_indices = indices.len();
-        println!("num indices: {}", num_indices);
+        debug!("num indices: {}", num_indices);
         unsafe {
-            println!("indices: {:?}", indices);
+            // set the shader program
+            if self.backend.current_shader != Some(shader_index) {
+                unsafe {
+                    glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
+                    self.backend.current_shader = Some(shader_index);
+                }
+            }
 
             glGenVertexArrays(1, &mut vao);
             glBindVertexArray(vao);
@@ -260,15 +266,13 @@ impl ht_renderer {
             // the array is currently an ArrayElement enum, we need to get the inner value
             let mut size;
             if let ArrayElement::Float(a) = array {
-                println!("array: {:?}", a.val);
-                println!("len: {}", a.val.len());
-                println!("type: float");
+                debug!("len: {}", a.val.len());
+                debug!("type: float");
                 size = a.val.len() * std::mem::size_of::<f32>();
                 glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             } else if let ArrayElement::Int(a) = array {
-                println!("array: {:?}", a);
-                println!("len: {}", a.val.len());
-                println!("type: int");
+                debug!("len: {}", a.val.len());
+                debug!("type: int");
                 size = a.val.len() * std::mem::size_of::<i32>();
             } else {
                 panic!("unsupported array type");
@@ -279,13 +283,11 @@ impl ht_renderer {
             glEnableVertexAttribArray(0);
 
             // uvs
-            let mut uvbo= 0;
             glGenBuffers(1, &mut uvbo);
             glBindBuffer(GL_ARRAY_BUFFER, uvbo);
             if let ArrayElement::Float(a) = uv_array {
-                println!("uv array: {:?}", a.val);
-                println!("len: {}", a.val.len());
-                println!("type: float");
+                debug!("len: {}", a.val.len());
+                debug!("type: float");
                 size = a.val.len() * std::mem::size_of::<f32>();
                 glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             } else {
@@ -315,6 +317,7 @@ impl ht_renderer {
                 vbo,
                 vao,
                 ebo,
+                uvbo,
                 num_vertices,
                 num_indices,
                 texture
@@ -328,6 +331,7 @@ impl ht_renderer {
                 vbo,
                 vao,
                 ebo,
+                uvbo,
                 num_vertices,
                 num_indices,
                 texture
@@ -337,7 +341,7 @@ impl ht_renderer {
         }
     }
 
-    pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize, as_lines: bool) {
+    pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize, as_lines: bool, pass_texture: bool) {
         // load the shader
 
         if self.backend.current_shader != Some(shader_index) {
@@ -349,6 +353,12 @@ impl ht_renderer {
         unsafe {
             glEnableVertexAttribArray(0);
             glBindVertexArray(mesh.vao);
+            if pass_texture {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, mesh.texture.diffuse_texture);
+                glUniform1i(glGetUniformLocation(self.backend.current_shader.unwrap() as u32, CString::new("u_texture").unwrap().as_ptr()), 0);
+                // DON'T PRINT OPEN GL ERRORS HERE! BIGGEST MISTAKE OF MY LIFE
+            }
 
             // transformation time!
             let camera_projection = self.camera.get_projection();
@@ -370,17 +380,6 @@ impl ht_renderer {
                 glDrawElements(GL_LINES, mesh.num_indices as GLsizei, GL_UNSIGNED_INT, null());
             }
             glDisableVertexAttribArray(0);
-        }
-
-        // print any errors
-        let mut error = unsafe {
-            glGetError()
-        };
-        while error != GL_NO_ERROR {
-            println!("GL ERROR: {:?}", error);
-            error = unsafe {
-                glGetError()
-            };
         }
     }
 
