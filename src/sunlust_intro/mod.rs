@@ -31,6 +31,18 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let mut ui_master = UiMesh::new_master(renderer, basic_shader).expect("failed to load master uimesh");
     // load poweredby uimesh
     let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
+    // load developedby uimesh
+    let mut ui_developedby = UiMesh::new_element_from_name("developedby", &ui_master, renderer, basic_shader).expect("failed to load developedby uimesh");
+
+    let poweredby_width = renderer.window_size.y / 2.0;
+    let poweredby_height = poweredby_width / 2.0;
+    let poweredby_x = 15.0;
+    let poweredby_y = renderer.window_size.y - poweredby_height - 15.0;
+    ui_poweredby.position = Vec2::new(poweredby_x, poweredby_y);
+    ui_poweredby.scale = Vec2::new(poweredby_width, poweredby_height);
+    ui_poweredby.opacity = 0.0;
+
+    ui_developedby.scale = renderer.window_size;
 
     let mut sunlust_sfx = StaticSoundData::from_file("base/snd/sunlust.wav", StaticSoundSettings::default()).expect("failed to load sunlust.wav");
 
@@ -79,11 +91,15 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         }
     }
 
-    let normal_time = 9119.0 - rainbow_time; // in milliseconds
+    let normal_time = 10000.0 - rainbow_time; // in milliseconds
     let normal_anim = Animation::new(Vec3::new(0.0, 0.25, 2.0), Vec3::new(0.0, 0.35, 1.7), normal_time);
+
+    let opacity_delay = 1000.0; // in milliseconds
+    let mut opacity_timer = 0.0;
 
     let mut dutch = 0.0; // dutch angle or whatever this probably isn't the correct usage of that word
 
+    let mut last_time = SystemTime::now();
     loop {
         // check how long it's been
         current_time = SystemTime::now();
@@ -102,9 +118,30 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
         dutch += 0.01;
         // draw the mesh
-        //renderer.render_mesh(mesh, basic_shader, false, true);
+        renderer.render_mesh(mesh, basic_shader, false, true);
         // draw the powered by text
         ui_poweredby.render_at(ui_master, renderer, basic_shader);
+
+        if opacity_timer < opacity_delay {
+            opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
+        } else {
+            if ui_poweredby.opacity < 1.0 {
+                ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
+            }
+        }
+
+        // swap buffers
+        renderer.swap_buffers();
+
+        // poll events
+        if renderer.manage_window() {
+            process::exit(0);
+        }
+        last_time = current_time;
+    }
+
+    loop {
+        ui_developedby.render_at(ui_master, renderer, basic_shader);
         // swap buffers
         renderer.swap_buffers();
 

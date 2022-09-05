@@ -88,6 +88,9 @@ impl ht_renderer {
                     glEnable(GL_DEPTH_TEST);
                     glDepthFunc(GL_LESS);
 
+                    // enable blending
+                    glEnable(GL_BLEND);
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
                     glViewport(0, 0, window_width as i32, window_height as i32);
                     // make top left corner as origin

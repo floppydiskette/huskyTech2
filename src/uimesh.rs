@@ -13,6 +13,7 @@ pub struct UiMesh {
     pub rotation: Quaternion,
     pub scale: Vec2,
     pub texture: Option<UiTexture>,
+    pub opacity: f32,
     pub vao: GLuint,
     pub vbo: GLuint,
     pub ebo: GLuint,
@@ -90,6 +91,7 @@ impl UiMesh {
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             scale: Vec2::new(1.0, 1.0),
             texture: Option::None,
+            opacity: 1.0,
             vao,
             vbo,
             ebo,
@@ -108,6 +110,7 @@ impl UiMesh {
             rotation: Quaternion::identity(),
             scale: Vec2::new(128.0, 128.0),
             texture: Option::Some(texture),
+            opacity: 1.0,
             vao: master.vao,
             vbo: master.vbo,
             ebo: master.ebo,
@@ -133,6 +136,9 @@ impl UiMesh {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, self.texture.unwrap().diffuse_texture);
             glUniform1i(glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_texture").unwrap().as_ptr()), 0);
+            if self.opacity != 1.0 {
+                glUniform1f(glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_opacity").unwrap().as_ptr()), self.opacity);
+            }
 
             // transformation time!
             let fake_camera = Camera::new(renderer.window_size, 45.0, 0.1, 100.0);
@@ -152,17 +158,21 @@ impl UiMesh {
 
             glDrawElements(GL_TRIANGLES, master.num_indices as GLsizei, GL_UNSIGNED_INT, std::ptr::null());
             glDisableVertexAttribArray(0);
+
+            if self.opacity != 1.0 {
+                glUniform1f(glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_opacity").unwrap().as_ptr()), 1.0);
+            }
         }
     }
 }
 
 // converts screen coordinates to gl coordinates
 pub fn screen_coords_to_gl_coords(position: Vec2, scale: Vec2, window_size: Vec2) -> (Vec3, Vec3) {
-    let mut x =  (position.x / window_size.x) - 1.0;
-    let mut y = (-position.y / window_size.y) + 1.0;
+    let mut x =  (position.x / window_size.x) * 2.0 - 1.0;
+    let mut y = (-position.y / window_size.y) * 2.0 + 1.0;
     let z = 0.0;
-    let w = scale.x / window_size.x;
-    let h = scale.y / window_size.y;
+    let w = (scale.x / window_size.x);
+    let h = (scale.y / window_size.y);
     let d = 1.0;
     x += w;
     y -= h;
