@@ -33,8 +33,8 @@ impl UiMesh {
             -1.0, 1.0, 0.0,
         ];
         let indices: [u32; 6] = [
-            0, 1, 2,
-            0, 2, 3,
+            2, 1, 0,
+            0, 3, 2,
         ];
         // uvs are vertically upside down to fix the texture
         let uvs: [f32; 8] = [

@@ -20,8 +20,6 @@ use crate::uimesh::UiMesh;
 pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
     // load rainbow shader
     let rainbow_shader = renderer.load_shader("rainbow").expect("failed to load rainbow shader");
-    // load red shader
-    let red_shader = renderer.load_shader("red").expect("failed to load red shader");
     // load basic shader
     let basic_shader = renderer.load_shader("basic").expect("failed to load basic shader");
     // load ht2-mesh logo model

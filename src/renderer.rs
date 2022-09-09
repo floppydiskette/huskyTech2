@@ -84,7 +84,7 @@ impl ht_renderer {
 
                     // Configure culling
                     glEnable(GL_CULL_FACE);
-                    glCullFace(GL_BACK);
+                    glCullFace(GL_FRONT);
                     glEnable(GL_DEPTH_TEST);
                     glDepthFunc(GL_LESS);
 
@@ -360,8 +360,6 @@ impl ht_renderer {
     }
 
     pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize, as_lines: bool, pass_texture: bool) {
-        // load the shader
-
         if self.backend.current_shader != Some(shader_index) {
             unsafe {
                 glUseProgram(self.backend.shaders.as_mut().unwrap()[shader_index].program);
