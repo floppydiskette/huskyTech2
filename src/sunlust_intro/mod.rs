@@ -6,7 +6,6 @@ use std::ffi::CString;
 use std::process;
 use std::ptr::null;
 use std::time::SystemTime;
-use dae_parser::Document;
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use kira::manager::AudioManager;
 use kira::manager::backend::cpal::CpalBackend;
@@ -15,6 +14,7 @@ use libsex::bindings::*;
 use crate::animation::Animation;
 use crate::helpers::gen_rainbow;
 use crate::renderer::{Colour, ht_renderer};
+use crate::textures::Texture;
 use crate::uimesh::UiMesh;
 
 pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
@@ -23,8 +23,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     // load basic shader
     let basic_shader = renderer.load_shader("basic").expect("failed to load basic shader");
     // load ht2-mesh logo model
-    let document = Document::from_file("base/models/ht2.dae").expect("failed to load dae file");
-    let mut mesh = renderer.initMesh(document, "ht2-mesh", basic_shader, true).expect("failed to load ht2 mesh");
+    let texture = Texture::new_from_name("ht2-mesh/tex").expect("failed to load ht2-mesh texture");
+    let mut mesh = renderer.initMesh("base/models/ht2.glb", "ht2", basic_shader, Some(texture)).expect("failed to load ht2 mesh");
     // load master uimesh
     let mut ui_master = UiMesh::new_master(renderer, basic_shader).expect("failed to load master uimesh");
     // load poweredby uimesh

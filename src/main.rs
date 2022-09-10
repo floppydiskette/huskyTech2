@@ -3,7 +3,6 @@ extern crate log;
 
 use std::borrow::BorrowMut;
 use std::process;
-use dae_parser::Document;
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;

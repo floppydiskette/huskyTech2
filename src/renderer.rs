@@ -8,7 +8,6 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr::{null, null_mut};
-use dae_parser::{ArrayElement, Document, FloatArray, Geometry, Source, Vertices};
 use gfx_maths::*;
 use crate::helpers;
 use crate::shaders::*;
@@ -47,6 +46,29 @@ pub struct ht_renderer {
     pub camera: Camera,
     #[cfg(feature = "glfw")]
     pub backend: GLFWBackend,
+}
+
+#[derive(Debug)]
+pub enum MeshComponent {
+    Mesh,
+    Tris,
+    VerticesMap,
+    Vertices,
+    SourceMap,
+    Source,
+    UvSource,
+    SourceArray,
+    UvSourceArray,
+    Indices,
+}
+
+#[derive(Debug)]
+pub enum MeshError {
+    FunctionNotImplemented,
+    MeshNotFound,
+    MeshNameNotFound,
+    MeshComponentNotFound(MeshComponent),
+    UnsupportedArrayType,
 }
 
 impl ht_renderer {
@@ -224,49 +246,47 @@ impl ht_renderer {
         }
     }
 
-    pub fn initMesh(&mut self, doc: Document, mesh_name: &str, shader_index: usize, load_textures: bool) -> Result<Mesh, String> {
-        // loading the texture (todo: support multiple materials)
-        let mut texture: Option<Texture> = Option::None;
-        if load_textures { texture = Some(Texture::new_from_name(format!("{}/tex", mesh_name)).expect("failed to load texture")); }
-        let geom = doc.local_map::<Geometry>().expect("mesh not found").get_str(&*mesh_name).unwrap();
-        let mesh = geom.element.as_mesh().expect("NO MESH?"); // this is a reference to the no bitches meme
-        let tris = mesh.elements[0].as_triangles().expect("NO TRIANGLES?");
-        let vertices_map = doc.local_map::<Vertices>().expect("no vertices?");
-        let vertices = vertices_map.get_raw(&tris.inputs[0].source).expect("no vertices? (2)");
-        let source_map = doc.local_map::<Source>().expect("no sources?");
-        let source = source_map.get_raw(&vertices.inputs[0].source).expect("no positions?");
-        let uv_source = source_map.get_raw(&tris.inputs[2].source).expect("no uv source?");
+    pub fn initMesh(&mut self, path: &str, mesh_name: &str, shader_index: usize, texture: Option<Texture>) -> Result<Mesh, MeshError> {
+        // load from gltf
+        let (document, buffers, images) = gltf::import(path).map_err(|_| MeshError::MeshNotFound)?;
 
-        let array = source.array.clone().expect("NO ARRAY?");
-        let uv_array = uv_source.array.clone().expect("NO UV ARRAY?");
+        // get the mesh
+        let mesh = document.meshes().find(|m| m.name() == Some(mesh_name)).ok_or(MeshError::MeshNameNotFound)?;
+
+        // for each primitive in the mesh
+        let mut vertices_array = Vec::new();
+        let mut indices_array = Vec::new();
+        let mut uvs_array = Vec::new();
+        for primitive in mesh.primitives() {
+            // get the vertex positions
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+            let positions = reader.read_positions().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Vertices))?;
+            let positions = positions.collect::<Vec<_>>();
+
+            // get the indices
+            let indices = reader.read_indices().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Indices))?;
+            let indices = indices.into_u32().collect::<Vec<_>>();
+
+            // get the texture coordinates
+            let tex_coords = reader.read_tex_coords(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::UvSource))?;
+            let tex_coords = tex_coords.into_f32();
+            let tex_coords = tex_coords.collect::<Vec<_>>();
+
+            // add the vertices (with each grouping of three f32s as three separate f32s)
+            vertices_array.extend(positions.iter().flat_map(|v| vec![v[0], v[1], v[2]]));
+
+            // add the indices
+            indices_array.extend_from_slice(&indices);
+
+            // add the uvs (with each grouping of two f32s as two separate f32s)
+            uvs_array.extend(tex_coords.iter().flat_map(|v| vec![v[0], v[1]]));
+        }
 
         // get the u32 data from the mesh
         let mut vbo = 0 as GLuint;
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
         let mut uvbo= 0 as GLuint;
-        let mut indices = tris.data.clone().prim.expect("no indices?");
-        // 9 accounts for the x3 needed to convert to triangles, and the x3 needed to skip the normals and tex coords
-        let num_indices = tris.count * 9;
-
-        // todo: this only counts for triangulated collada meshes made in blender, we cannot assume that everything else will act like this
-
-        // indices for vertex positions are offset by the normal and texcoord indices
-        // we need to skip the normal and texcoord indices and fill a new array with the vertex positions
-        let mut new_indices = Vec::with_capacity(num_indices);
-        let mut new_uv_indices = Vec::with_capacity(num_indices);
-        // skip the normal (offset 1) and texcoord (offset 2) indices
-        let mut i = 0;
-        while i < num_indices {
-            new_indices.push(indices[i] as u32);
-            new_uv_indices.push(indices[i + 2] as u32);
-            i += 3;
-        }
-
-
-        let indices = new_indices;
-        let num_indices = indices.len();
-        debug!("num indices: {}", num_indices);
         unsafe {
             // set the shader program
             if self.backend.current_shader != Some(shader_index) {
@@ -280,21 +300,7 @@ impl ht_renderer {
             glBindVertexArray(vao);
             glGenBuffers(1, &mut vbo);
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            // assuming that the world hasn't imploded, the array should be either a float array or an int array
-            // the array is currently an ArrayElement enum, we need to get the inner value
-            let mut size;
-            if let ArrayElement::Float(a) = array {
-                debug!("len: {}", a.val.len());
-                debug!("type: float");
-                size = a.val.len() * std::mem::size_of::<f32>();
-                glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
-            } else if let ArrayElement::Int(a) = array {
-                debug!("len: {}", a.val.len());
-                debug!("type: int");
-                size = a.val.len() * std::mem::size_of::<i32>();
-            } else {
-                panic!("unsupported array type");
-            }
+            glBufferData(GL_ARRAY_BUFFER, (vertices_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, vertices_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             // vertex positions for vertex shader
             let pos = glGetAttribLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_pos").unwrap().as_ptr());
             glVertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
@@ -303,14 +309,7 @@ impl ht_renderer {
             // uvs
             glGenBuffers(1, &mut uvbo);
             glBindBuffer(GL_ARRAY_BUFFER, uvbo);
-            if let ArrayElement::Float(a) = uv_array {
-                debug!("len: {}", a.val.len());
-                debug!("type: float");
-                size = a.val.len() * std::mem::size_of::<f32>();
-                glBufferData(GL_ARRAY_BUFFER, size as GLsizeiptr, a.val.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
-            } else {
-                panic!("unsupported array type for uvs");
-            }
+            glBufferData(GL_ARRAY_BUFFER, (uvs_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, uvs_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             // vertex uvs for fragment shader
             let uv = glGetAttribLocation(self.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_uv").unwrap().as_ptr());
             glVertexAttribPointer(uv as GLuint, 2, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
@@ -320,43 +319,21 @@ impl ht_renderer {
             // now the indices
             glGenBuffers(1, &mut ebo);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-            size = num_indices * std::mem::size_of::<i32>();
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, size as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices_array.len() * mem::size_of::<GLuint>()) as GLsizeiptr, indices_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
         }
 
-        let array = source.array.clone().expect("NO ARRAY?");
-
-        if let ArrayElement::Float(array) = array {
-            let num_vertices = array.val.len();
-            Ok(Mesh {
-                position: Vec3::new(0.0, 0.0, 0.0),
-                rotation: Quaternion::identity(),
-                scale: Vec3::new(1.0, 1.0, 1.0),
-                vbo,
-                vao,
-                ebo,
-                uvbo,
-                num_vertices,
-                num_indices,
-                texture
-            })
-        } else if let ArrayElement::Int(array) = array {
-            let num_vertices = array.val.len();
-            Ok(Mesh {
-                position: Vec3::new(0.0, 0.0, 0.0),
-                rotation: Quaternion::identity(),
-                scale: Vec3::new(1.0, 1.0, 1.0),
-                vbo,
-                vao,
-                ebo,
-                uvbo,
-                num_vertices,
-                num_indices,
-                texture
-            })
-        } else {
-            Err("unsupported array type".to_string())
-        }
+        Ok(Mesh {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+            vbo,
+            vao,
+            ebo,
+            uvbo,
+            num_vertices: indices_array.len() as usize,
+            num_indices: indices_array.len() as usize,
+            texture,
+        })
     }
 
     pub fn render_mesh(&mut self, mesh: Mesh, shader_index: usize, as_lines: bool, pass_texture: bool) {

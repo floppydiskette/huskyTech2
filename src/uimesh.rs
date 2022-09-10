@@ -1,5 +1,4 @@
 use std::ffi::CString;
-use dae_parser::Document;
 use gfx_maths::*;
 use libsex::bindings::*;
 use crate::camera::Camera;

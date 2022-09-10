@@ -23,7 +23,7 @@ pub struct Image {
 }
 
 impl Texture {
-    pub fn new_from_name(name: String) -> Result<Texture, String> {
+    pub fn new_from_name(name: &str) -> Result<Texture, String> {
         let base_file_name = format!("base/textures/{}_", name); // substance painter file names
         let diffuse_file_name = base_file_name.clone() + "Base_color.png";
         let normal_file_name = base_file_name.clone() + "Normal_OpenGL.png";
