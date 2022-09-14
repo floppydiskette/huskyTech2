@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 use std::borrow::BorrowMut;
 use std::process;
@@ -28,6 +30,9 @@ pub mod camera;
 pub mod meshes;
 pub mod textures;
 pub mod uimesh;
+pub mod map;
+pub mod light;
+pub mod worldmachine;
 
 fn main() {
     env_logger::init();

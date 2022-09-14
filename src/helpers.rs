@@ -1,10 +1,12 @@
 use std::io::Read;
 use std::os::raw::c_int;
 use std::ptr::null_mut;
+use gfx_maths::{Mat4, Quaternion, Vec3};
 use crate::renderer::Colour;
 
 #[cfg(target_os = "linux")]
 use libsex::bindings::*;
+use crate::ht_renderer;
 
 #[cfg(target_os = "linux")]
 pub unsafe fn get_window_fb_config(window: Window, display: *mut Display, screen: *mut Screen) -> GLXFBConfig { //todo: handle errors better
@@ -85,6 +87,15 @@ pub unsafe fn get_window_fb_config(window: Window, display: *mut Display, screen
     *fbconfigs.offset(wanted_config as isize)
 }
 
+pub fn set_shader_if_not_already(renderer: &mut ht_renderer, shader_index: usize) {
+    if renderer.backend.current_shader != Some(shader_index) {
+        unsafe {
+            glUseProgram(renderer.backend.shaders.as_mut().unwrap()[shader_index].program);
+            renderer.backend.current_shader = Some(shader_index);
+        }
+    }
+}
+
 pub fn gen_rainbow(time: f64) -> Colour {
     let frequency = 0.05;
     let r = ((frequency * (time as f64) + 0.0).sin() * 127.0f64 + 128.0f64);
@@ -98,4 +109,12 @@ pub fn load_string_from_file(path: String) -> Result<String, String> {
     let mut contents = String::new();
     file.read_to_string(&mut contents).map_err(|e| e.to_string())?;
     Ok(contents)
+}
+
+pub fn calculate_model_matrix(position: Vec3, rotation: Quaternion, scale: Vec3) -> Mat4 {
+    let mut model_matrix = Mat4::identity();
+    model_matrix = model_matrix * Mat4::translate(position);
+    model_matrix = model_matrix * Mat4::rotate(rotation);
+    model_matrix = model_matrix * Mat4::scale(scale);
+    model_matrix
 }

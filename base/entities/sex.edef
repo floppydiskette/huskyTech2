@@ -1,0 +1,26 @@
+name: sex
+components:
+- name: Transform
+  parameters:
+    position:
+      name: position
+      value: !Vec3
+        x: 0.0
+        y: 0.0
+        z: 0.0
+    rotation:
+      name: rotation
+      value: !Quaternion
+        x: 0.0
+        y: 0.0
+        z: 0.0
+        w: 1.0
+    scale:
+      name: scale
+      value: !Vec3
+        x: 1.0
+        y: 1.0
+        z: 1.0
+  component_type:
+    id: 1
+    name: Transform

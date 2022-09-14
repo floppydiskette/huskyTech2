@@ -18,15 +18,16 @@ use crate::textures::Texture;
 use crate::uimesh::UiMesh;
 
 pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
-    // load rainbow shader
-    let rainbow_shader = renderer.load_shader("rainbow").expect("failed to load rainbow shader");
-    // load basic shader
-    let basic_shader = renderer.load_shader("basic").expect("failed to load basic shader");
     // load ht2-mesh logo model
-    let texture = Texture::new_from_name("ht2-mesh/tex").expect("failed to load ht2-mesh texture");
-    let mut mesh = renderer.initMesh("base/models/ht2.glb", "ht2", basic_shader, Some(texture)).expect("failed to load ht2 mesh");
-    // load master uimesh
-    let mut ui_master = UiMesh::new_master(renderer, basic_shader).expect("failed to load master uimesh");
+    renderer.load_texture_if_not_already_loaded("ht2").expect("failed to load ht2-mesh texture");
+    renderer.load_mesh_if_not_already_loaded("ht2").expect("failed to load ht2 mesh");
+
+    let mut mesh = *renderer.meshes.get("ht2").expect("failed to get ht2 mesh");
+    let mut texture = *renderer.textures.get("ht2").expect("failed to get ht2-mesh texture");
+
+    let ui_master = renderer.backend.ui_master.unwrap();
+    let basic_shader = *renderer.shaders.get("basic").unwrap();
+    let rainbow_shader = *renderer.shaders.get("rainbow").unwrap();
     // load poweredby uimesh
     let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
     // load developedby uimesh
@@ -69,7 +70,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         unsafe {
             let colour = gen_rainbow(time_since_start as f64);
             // get uniform location
-            let colour_loc = glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader].program, CString::new("i_colour").unwrap().as_ptr());
+            let colour_c = CString::new("i_colour").unwrap();
+            let colour_loc = glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader].program, colour_c.as_ptr());
             glUniform4f(colour_loc, colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
         }
 
@@ -79,7 +81,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set the position of the mesh
         mesh.position = point;
         // draw the mesh
-        renderer.render_mesh(mesh, rainbow_shader, true, false);
+        mesh.render(renderer, rainbow_shader, Option::None);
         // swap buffers
         renderer.swap_buffers();
 
@@ -116,16 +118,14 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
         dutch += 0.01;
         // draw the mesh
-        renderer.render_mesh(mesh, basic_shader, false, true);
+        mesh.render(renderer, basic_shader, Some(&texture));
         // draw the powered by text
         ui_poweredby.render_at(ui_master, renderer, basic_shader);
 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
-        } else {
-            if ui_poweredby.opacity < 1.0 {
-                ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
-            }
+        } else if ui_poweredby.opacity < 1.0 {
+            ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
         }
 
         // swap buffers
