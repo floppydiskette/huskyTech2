@@ -146,7 +146,6 @@ impl UiMesh {
             glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
 
             glDrawElements(GL_TRIANGLES, master.num_indices as GLsizei, GL_UNSIGNED_INT, std::ptr::null());
-            glDisableVertexAttribArray(0);
 
             if self.opacity != 1.0 {
                 glUniform1f(glGetUniformLocation(shader.program, CString::new("u_opacity").unwrap().as_ptr()), 1.0);
@@ -155,7 +154,6 @@ impl UiMesh {
             glBindTexture(GL_TEXTURE_2D, 0);
             // unbind the vao
             glBindVertexArray(0);
-            glDisableVertexAttribArray(0);
             // unbind shader
             glUseProgram(0);
 

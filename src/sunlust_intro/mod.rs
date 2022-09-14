@@ -109,7 +109,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         let time_since_start = time_since_start.as_millis() as f32;
         // has it been long enough?
         if time_since_start > normal_time {
-            //break;
+            break;
         }
         let time_since_start =  time_since_start + rainbow_time;
         // get the point at the current time
@@ -127,7 +127,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
         } else if ui_poweredby.opacity < 1.0 {
-            //ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() * 20.0;
+            ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() * 20.0;
         }
         // swap buffers
         renderer.swap_buffers();

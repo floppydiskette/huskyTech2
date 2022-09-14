@@ -396,15 +396,12 @@ impl ht_renderer {
 
     pub fn swap_buffers(&mut self) {
         self.setup_pass_two();
-        #[cfg(target_os = "linux")]
-        {
-            unsafe {
-                glfwSwapBuffers(self.backend.window);
-                let mut width = 0;
-                let mut height = 0;
-                glfwGetFramebufferSize(self.backend.window, &mut width, &mut height);
-                self.window_size = Vec2::new(width as f32, height as f32);
-            }
+        unsafe {
+            glfwSwapBuffers(self.backend.window);
+            let mut width = 0;
+            let mut height = 0;
+            glfwGetFramebufferSize(self.backend.window, &mut width, &mut height);
+            self.window_size = Vec2::new(width as f32, height as f32);
         }
         self.setup_pass_one();
     }
@@ -433,6 +430,7 @@ impl ht_renderer {
     fn setup_pass_two(&mut self) {
         let postbuffer_shader = *self.shaders.get("postbuffer").unwrap();
 
+        set_shader_if_not_already(self, postbuffer_shader);
         unsafe {
             // set framebuffer to the default framebuffer
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -440,7 +438,6 @@ impl ht_renderer {
             glClearColor(1.0, 0.0, 0.0, 1.0);
             glClear(GL_COLOR_BUFFER_BIT);
 
-            set_shader_if_not_already(self, postbuffer_shader);
             let shader  = self.backend.shaders.as_mut().unwrap().get_mut(postbuffer_shader).unwrap();
             // render the post processing framebuffer
             glBindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);
