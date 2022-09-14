@@ -37,13 +37,13 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
 
     let mut light_a = Light {
         position: Vec3::new(0.5, 0.0, 1.6),
-        color: Vec3::new(0.0, 1.0, 1.0),
-        intensity: 0.0
+        color: Vec3::new(1.0, 1.0, 1.0),
+        intensity: 1000.0
     };
     let mut light_b = Light {
         position: Vec3::new(-0.5, 0.0, 1.6),
-        color: Vec3::new(1.0, 0.0, 1.0),
-        intensity: 0.0
+        color: Vec3::new(1.0, 1.0, 1.0),
+        intensity: 1000.0
     };
 
     let poweredby_width = renderer.window_size.y / 2.0;
@@ -111,6 +111,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let opacity_delay = 1000.0; // in milliseconds
     let mut opacity_timer = 0.0;
     let mut intensity_timer = 0.0;
+    let mut intensity_downtimer = 0.0;
 
     let mut dutch = 0.0; // dutch angle or whatever this probably isn't the correct usage of that word
 
@@ -148,11 +149,20 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         }
 
         // increase light intensity
-        if intensity_timer < 1000.0 {
+        if intensity_downtimer < 100.0 {
+            intensity_downtimer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
+            light_a.intensity = (-intensity_downtimer / 100.0) * 888.0;
+            light_b.intensity = (-intensity_downtimer / 100.0) * 888.0;
+        } else if intensity_timer < 1000.0 {
             intensity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
-            light_a.intensity = intensity_timer / 1000.0;
-            light_b.intensity = intensity_timer / 1000.0;
+            light_a.intensity = (intensity_timer / 1000.0) * 1.0;
+            light_b.intensity = (intensity_timer / 1000.0) * 1.0;
+            light_a.color.y = (-intensity_timer / 1000.0) * 0.01;
+            light_b.color.x = (-intensity_timer / 1000.0) * 0.01;
         }
+
+        light_a.position = mesh.position + Vec3::new(-0.5, 0.0, 0.0);
+        light_b.position = mesh.position + Vec3::new(0.5, 0.0, 0.0);
 
         // swap buffers
         renderer.swap_buffers();
