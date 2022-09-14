@@ -10,4 +10,5 @@ uniform float u_opacity = 1.0;
 
 void main() {
     o_colour = texture(u_texture_a, uv);
+    o_colour.a = u_opacity;
 }

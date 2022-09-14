@@ -40,7 +40,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let poweredby_y = renderer.window_size.y - poweredby_height - 15.0;
     ui_poweredby.position = Vec2::new(poweredby_x, poweredby_y);
     ui_poweredby.scale = Vec2::new(poweredby_width, poweredby_height);
-    ui_poweredby.opacity = 1.0;
+    ui_poweredby.opacity = 0.0;
 
     ui_developedby.scale = renderer.window_size;
 
@@ -127,7 +127,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
         } else if ui_poweredby.opacity < 1.0 {
-            ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() * 20.0;
+            ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
         }
         // swap buffers
         renderer.swap_buffers();
