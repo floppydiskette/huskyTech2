@@ -170,13 +170,17 @@ impl Mesh {
             // send the lights to the shader
             let light_count = renderer.lights.len();
             let light_count = if light_count > MAX_LIGHTS { MAX_LIGHTS } else { light_count };
-            let light_count_loc = glGetUniformLocation(shader.program, CString::new("u_light_count").unwrap().as_ptr());
+            let light_count_c = CString::new("u_light_count").unwrap();
+            let light_count_loc = glGetUniformLocation(shader.program, light_count_c.as_ptr());
             glUniform1i(light_count_loc, light_count as i32);
             for (i, light) in renderer.lights.iter().enumerate() {
                 if i >= MAX_LIGHTS { break; }
-                let light_pos = glGetUniformLocation(shader.program, CString::new(format!("u_lights[{}].position", i)).unwrap().as_ptr());
-                let light_color = glGetUniformLocation(shader.program, CString::new(format!("u_lights[{}].colour", i)).unwrap().as_ptr());
-                let light_intensity = glGetUniformLocation(shader.program, CString::new(format!("u_lights[{}].intensity", i)).unwrap().as_ptr());
+                let light_pos_c = CString::new(format!("u_lights[{}].position", i)).unwrap();
+                let light_pos = glGetUniformLocation(shader.program, light_pos_c.as_ptr());
+                let light_colour_c = CString::new(format!("u_lights[{}].colour", i)).unwrap();
+                let light_color = glGetUniformLocation(shader.program, light_colour_c.as_ptr());
+                let light_intensity_c = CString::new(format!("u_lights[{}].intensity", i)).unwrap();
+                let light_intensity = glGetUniformLocation(shader.program, light_intensity_c.as_ptr());
 
                 glUniform3f(light_pos, light.position.x, light.position.y, light.position.z);
                 glUniform3f(light_color, light.color.x, light.color.y, light.color.z);
@@ -194,21 +198,74 @@ impl Mesh {
             let mvp = camera_projection * camera_view * model_matrix;
 
             // send the mvp matrix to the shader
-            let mvp_loc = glGetUniformLocation(shader.program, CString::new("u_mvp").unwrap().as_ptr());
+            let mvp_c = CString::new("u_mvp").unwrap();
+            let mvp_loc = glGetUniformLocation(shader.program, mvp_c.as_ptr());
             glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
 
             // send the model matrix to the shader
-            let model_loc = glGetUniformLocation(shader.program, CString::new("u_model").unwrap().as_ptr());
+            let model_c = CString::new("u_model").unwrap();
+            let model_loc = glGetUniformLocation(shader.program, model_c.as_ptr());
             glUniformMatrix4fv(model_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
 
             // send the camera position to the shader
-            let camera_pos_loc = glGetUniformLocation(shader.program, CString::new("u_camera_pos").unwrap().as_ptr());
+            let camera_pos_c = CString::new("u_camera_pos").unwrap();
+            let camera_pos_loc = glGetUniformLocation(shader.program, camera_pos_c.as_ptr());
             glUniform3f(camera_pos_loc,
                         renderer.camera.get_position().x,
                         renderer.camera.get_position().y,
                         renderer.camera.get_position().z);
 
             glDrawElements(GL_TRIANGLES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+
+            // print opengl errors
+            let mut error = glGetError();
+            while error != GL_NO_ERROR {
+                error!("OpenGL error while rendering: {}", error);
+                error = glGetError();
+            }
+        }
+    }
+
+    pub fn render_basic_lines(&self, renderer: &mut ht_renderer, shader_index: usize) {
+        // load the shader
+        set_shader_if_not_already(renderer, shader_index);
+        let shader = renderer.backend.shaders.as_mut().unwrap()[shader_index].clone();
+        unsafe {
+
+            glEnableVertexAttribArray(0);
+            glBindVertexArray(self.vao);
+
+            // transformation time!
+            let camera_projection = renderer.camera.get_projection();
+            let camera_view = renderer.camera.get_view();
+
+            // calculate the model matrix
+            let model_matrix = calculate_model_matrix(self.position, self.rotation, self.scale);
+
+            // calculate the mvp matrix
+            let mvp = camera_projection * camera_view * model_matrix;
+
+            // send the mvp matrix to the shader
+            let mvp_c = CString::new("u_mvp").unwrap();
+            let mvp_loc = glGetUniformLocation(shader.program, mvp_c.as_ptr());
+            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
+
+            // send the model matrix to the shader
+            /*let model_c = CString::new("u_model").unwrap();
+            let model_loc = glGetUniformLocation(shader.program, model_c.as_ptr());
+            glUniformMatrix4fv(model_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
+
+            // send the camera position to the shader
+            let camera_pos_c = CString::new("u_camera_pos").unwrap();
+            let camera_pos_loc = glGetUniformLocation(shader.program, camera_pos_c.as_ptr());
+            glUniform3f(camera_pos_loc,
+                        renderer.camera.get_position().x,
+                        renderer.camera.get_position().y,
+                        renderer.camera.get_position().z);
+
+             */
+
+            glDrawElements(GL_LINES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
 
             // print opengl errors
             let mut error = glGetError();

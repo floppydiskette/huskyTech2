@@ -60,7 +60,7 @@ impl Texture {
         let roughness_file_name = base_file_name.clone() + "rough.png";
 
         // load the files
-        let diffuse_data = load_image(diffuse_file_name.as_str())?;
+        let diffuse_data = load_image(diffuse_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
 
         {
             // load opengl textures
@@ -85,9 +85,9 @@ impl Texture {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
                 glGenerateMipmap(GL_TEXTURE_2D);
 
-                let normal_data = load_image(normal_file_name.as_str())?;
-                let metallic_data = load_image(metallic_file_name.as_str())?;
-                let roughness_data = load_image(roughness_file_name.as_str())?;
+                let normal_data = load_image(normal_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
+                let metallic_data = load_image(metallic_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
+                let roughness_data = load_image(roughness_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
 
                 assert!(diffuse_data.dimensions.0 == metallic_data.dimensions.0 && diffuse_data.dimensions.1 == metallic_data.dimensions.1);
                 assert!(diffuse_data.dimensions.0 == roughness_data.dimensions.0 && diffuse_data.dimensions.1 == roughness_data.dimensions.1);

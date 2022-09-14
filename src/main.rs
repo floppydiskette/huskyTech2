@@ -23,7 +23,6 @@ pub trait Thingy {
 pub mod sunlust_intro;
 pub mod renderer;
 pub mod helpers;
-pub mod cock_handler;
 pub mod animation;
 pub mod shaders;
 pub mod camera;
@@ -47,6 +46,7 @@ fn main() {
         return;
     }
     let mut renderer = renderer.unwrap();
+    renderer.initialise_basic_resources();
     info!("initialised renderer");
 
     sunlust_intro::animate(&mut renderer, &mut sss);

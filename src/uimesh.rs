@@ -2,6 +2,7 @@ use std::ffi::CString;
 use gfx_maths::*;
 use libsex::bindings::*;
 use crate::camera::Camera;
+use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
 use crate::meshes::Mesh;
 use crate::textures::UiTexture;
@@ -49,12 +50,7 @@ impl UiMesh {
         let mut uvbo: GLuint = 0;
 
         unsafe {
-            if renderer.backend.current_shader != Some(shader_index) {
-                unsafe {
-                    glUseProgram(renderer.backend.shaders.as_mut().unwrap()[shader_index].program);
-                    renderer.backend.current_shader = Some(shader_index);
-                }
-            }
+            set_shader_if_not_already(renderer, shader_index);
 
             // positions, indices, and uvs
             glGenVertexArrays(1, &mut vao);
@@ -120,46 +116,58 @@ impl UiMesh {
     }
 
     #[cfg(feature = "glfw")]
-    pub fn render_at(&mut self, mut master: UiMesh, renderer: &mut ht_renderer, shader_index: usize) {
-        let mut master = master.clone();
+    pub fn render_at(&self, master: UiMesh, renderer: &mut ht_renderer, shader_index: usize) {
+        let master = master;
 
-        if renderer.backend.current_shader != Some(shader_index) {
-            unsafe {
-                glUseProgram(renderer.backend.shaders.as_mut().unwrap()[shader_index].program);
-                renderer.backend.current_shader = Some(shader_index);
-            }
-        }
+        set_shader_if_not_already(renderer, shader_index);
+        let shader = renderer.backend.shaders.as_mut().unwrap()[shader_index].clone();
+
         unsafe {
+            // disable culling and depth testing
+            glDisable(GL_CULL_FACE);
+            glDisable(GL_DEPTH_TEST);
+
             glEnableVertexAttribArray(0);
             glBindVertexArray(master.vao);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, self.texture.unwrap().diffuse_texture);
-            glUniform1i(glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_texture").unwrap().as_ptr()), 0);
+            glUniform1i(glGetUniformLocation(shader.program, "u_texture_a\0".as_ptr() as *const GLchar), 0);
             if self.opacity != 1.0 {
-                glUniform1f(glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_opacity").unwrap().as_ptr()), self.opacity);
+                glUniform1f(glGetUniformLocation(shader.program, CString::new("u_opacity").unwrap().as_ptr()), self.opacity);
             }
 
             // transformation time!
-            let fake_camera = Camera::new(renderer.window_size, 45.0, 0.1, 100.0);
-            let camera_projection = fake_camera.get_projection();
-            let camera_view = fake_camera.get_view();
-
             // calculate the model matrix
             let fake_coords = screen_coords_to_gl_coords(self.position, self.scale, renderer.window_size);
             let model_matrix = calculate_model_matrix(fake_coords.0, self.rotation, fake_coords.1);
 
-            // calculate the mvp matrix
-            let mvp = camera_projection * camera_view * model_matrix;
-
             // send the mvp matrix to the shader
-            let mvp_loc = glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_mvp").unwrap().as_ptr());
+            let mvp_loc = glGetUniformLocation(shader.program, CString::new("u_mvp").unwrap().as_ptr());
             glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
 
             glDrawElements(GL_TRIANGLES, master.num_indices as GLsizei, GL_UNSIGNED_INT, std::ptr::null());
             glDisableVertexAttribArray(0);
 
             if self.opacity != 1.0 {
-                glUniform1f(glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("u_opacity").unwrap().as_ptr()), 1.0);
+                glUniform1f(glGetUniformLocation(shader.program, CString::new("u_opacity").unwrap().as_ptr()), 1.0);
+            }
+            // unbind the texture
+            glBindTexture(GL_TEXTURE_2D, 0);
+            // unbind the vao
+            glBindVertexArray(0);
+            glDisableVertexAttribArray(0);
+            // unbind shader
+            glUseProgram(0);
+
+            // re-enable culling and depth testing
+            glEnable(GL_CULL_FACE);
+            glEnable(GL_DEPTH_TEST);
+
+            // print opengl errors
+            let mut error = glGetError();
+            while error != GL_NO_ERROR {
+                error!("OpenGL error while rendering uimesh: {}", error);
+                error = glGetError();
             }
         }
     }
@@ -169,7 +177,7 @@ impl UiMesh {
 pub fn screen_coords_to_gl_coords(position: Vec2, scale: Vec2, window_size: Vec2) -> (Vec3, Vec3) {
     let mut x =  (position.x / window_size.x) * 2.0 - 1.0;
     let mut y = (-position.y / window_size.y) * 2.0 + 1.0;
-    let z = 0.0;
+    let z = 1.0;
     let w = (scale.x / window_size.x);
     let h = (scale.y / window_size.y);
     let d = 1.0;
@@ -177,12 +185,4 @@ pub fn screen_coords_to_gl_coords(position: Vec2, scale: Vec2, window_size: Vec2
     y -= h;
 
     (Vec3::new(x, y, z), Vec3::new(w, h, d))
-}
-
-fn calculate_model_matrix(position: Vec3, rotation: Quaternion, scale: Vec3) -> Mat4 {
-    let mut model_matrix = Mat4::identity();
-    model_matrix = model_matrix * Mat4::translate(position);
-    model_matrix = model_matrix * Mat4::rotate(rotation);
-    model_matrix = model_matrix * Mat4::scale(scale);
-    model_matrix
 }

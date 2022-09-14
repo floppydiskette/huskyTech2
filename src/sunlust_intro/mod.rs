@@ -12,7 +12,7 @@ use kira::manager::backend::cpal::CpalBackend;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
 use libsex::bindings::*;
 use crate::animation::Animation;
-use crate::helpers::gen_rainbow;
+use crate::helpers::{gen_rainbow, set_shader_if_not_already};
 use crate::renderer::{Colour, ht_renderer};
 use crate::textures::Texture;
 use crate::uimesh::UiMesh;
@@ -28,6 +28,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let ui_master = renderer.backend.ui_master.unwrap();
     let basic_shader = *renderer.shaders.get("basic").unwrap();
     let rainbow_shader = *renderer.shaders.get("rainbow").unwrap();
+    let unlit_shader = *renderer.shaders.get("unlit").unwrap();
     // load poweredby uimesh
     let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
     // load developedby uimesh
@@ -39,7 +40,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let poweredby_y = renderer.window_size.y - poweredby_height - 15.0;
     ui_poweredby.position = Vec2::new(poweredby_x, poweredby_y);
     ui_poweredby.scale = Vec2::new(poweredby_width, poweredby_height);
-    ui_poweredby.opacity = 0.0;
+    ui_poweredby.opacity = 1.0;
 
     ui_developedby.scale = renderer.window_size;
 
@@ -68,6 +69,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set colour of mesh
         #[cfg(feature = "glfw")]
         unsafe {
+            set_shader_if_not_already(renderer, rainbow_shader);
             let colour = gen_rainbow(time_since_start as f64);
             // get uniform location
             let colour_c = CString::new("i_colour").unwrap();
@@ -81,7 +83,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set the position of the mesh
         mesh.position = point;
         // draw the mesh
-        mesh.render(renderer, rainbow_shader, Option::None);
+        mesh.render_basic_lines(renderer, rainbow_shader);
         // swap buffers
         renderer.swap_buffers();
 
@@ -107,7 +109,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         let time_since_start = time_since_start.as_millis() as f32;
         // has it been long enough?
         if time_since_start > normal_time {
-            break;
+            //break;
         }
         let time_since_start =  time_since_start + rainbow_time;
         // get the point at the current time
@@ -120,14 +122,13 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // draw the mesh
         mesh.render(renderer, basic_shader, Some(&texture));
         // draw the powered by text
-        ui_poweredby.render_at(ui_master, renderer, basic_shader);
+        ui_poweredby.render_at(ui_master, renderer, unlit_shader);
 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
         } else if ui_poweredby.opacity < 1.0 {
-            ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
+            //ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() * 20.0;
         }
-
         // swap buffers
         renderer.swap_buffers();
 
@@ -139,7 +140,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     }
 
     loop {
-        ui_developedby.render_at(ui_master, renderer, basic_shader);
+        ui_developedby.render_at(ui_master, renderer, unlit_shader);
         // swap buffers
         renderer.swap_buffers();
 
