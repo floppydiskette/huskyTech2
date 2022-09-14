@@ -13,6 +13,7 @@ use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
 use libsex::bindings::*;
 use crate::animation::Animation;
 use crate::helpers::{gen_rainbow, set_shader_if_not_already};
+use crate::light::Light;
 use crate::renderer::{Colour, ht_renderer};
 use crate::textures::Texture;
 use crate::uimesh::UiMesh;
@@ -26,13 +27,24 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let mut texture = *renderer.textures.get("ht2").expect("failed to get ht2-mesh texture");
 
     let ui_master = renderer.backend.ui_master.unwrap();
-    let basic_shader = *renderer.shaders.get("basic").unwrap();
+    let basic_shader = *renderer.shaders.get("gbuffer").unwrap();
     let rainbow_shader = *renderer.shaders.get("rainbow").unwrap();
     let unlit_shader = *renderer.shaders.get("unlit").unwrap();
     // load poweredby uimesh
     let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
     // load developedby uimesh
     let mut ui_developedby = UiMesh::new_element_from_name("developedby", &ui_master, renderer, basic_shader).expect("failed to load developedby uimesh");
+
+    let mut light_a = Light {
+        position: Vec3::new(0.5, 0.0, 1.6),
+        color: Vec3::new(0.0, 1.0, 1.0),
+        intensity: 0.0
+    };
+    let mut light_b = Light {
+        position: Vec3::new(-0.5, 0.0, 1.6),
+        color: Vec3::new(1.0, 0.0, 1.0),
+        intensity: 0.0
+    };
 
     let poweredby_width = renderer.window_size.y / 2.0;
     let poweredby_height = poweredby_width / 2.0;
@@ -98,6 +110,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
 
     let opacity_delay = 1000.0; // in milliseconds
     let mut opacity_timer = 0.0;
+    let mut intensity_timer = 0.0;
 
     let mut dutch = 0.0; // dutch angle or whatever this probably isn't the correct usage of that word
 
@@ -119,16 +132,28 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set the rotation of the mesh
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
         dutch += 0.01;
+
+        // send the lights to the renderer
+        renderer.set_lights(vec![light_a, light_b]);
+
         // draw the mesh
-        mesh.render(renderer, basic_shader, Some(&texture));
+        mesh.render(renderer, Some(&texture));
         // draw the powered by text
-        ui_poweredby.render_at(ui_master, renderer, unlit_shader);
+        ui_poweredby.render_at(ui_master, renderer);
 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
         } else if ui_poweredby.opacity < 1.0 {
             ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
         }
+
+        // increase light intensity
+        if intensity_timer < 1000.0 {
+            intensity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
+            light_a.intensity = intensity_timer / 1000.0;
+            light_b.intensity = intensity_timer / 1000.0;
+        }
+
         // swap buffers
         renderer.swap_buffers();
 
@@ -140,7 +165,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     }
 
     loop {
-        ui_developedby.render_at(ui_master, renderer, unlit_shader);
+        ui_developedby.render_at(ui_master, renderer);
         // swap buffers
         renderer.swap_buffers();
 

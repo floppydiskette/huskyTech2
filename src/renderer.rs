@@ -73,6 +73,15 @@ pub struct Framebuffers {
     pub depthbuffer_texture: usize,
 
     pub screenquad_vao: usize,
+
+    // gbuffer
+    pub gbuffer: usize,
+    pub gbuffer_position: usize,
+    pub gbuffer_normal: usize,
+    pub gbuffer_albedo: usize, // or colour, call it what you want
+    pub gbuffer_info: usize, // specular, lighting, etc
+    pub gbuffer_rbuffer: usize,
+
 }
 
 impl ht_renderer {
@@ -81,7 +90,7 @@ impl ht_renderer {
         let window_width = 1280;
         let window_height = 720;
 
-        let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 100.0);
+        let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 10000.0);
 
         #[cfg(feature = "glfw")]{
             let backend = {
@@ -114,7 +123,13 @@ impl ht_renderer {
                         postbuffer_rbuffer: 0,
                         depthbuffer: 0,
                         depthbuffer_texture: 0,
-                        screenquad_vao: 0
+                        screenquad_vao: 0,
+                        gbuffer: 0,
+                        gbuffer_position: 0,
+                        gbuffer_normal: 0,
+                        gbuffer_albedo: 0,
+                        gbuffer_info: 0,
+                        gbuffer_rbuffer: 0
                     };
 
                     // get the number of the current framebuffer
@@ -131,6 +146,10 @@ impl ht_renderer {
 
                     // configure stencil test
                     glEnable(GL_STENCIL_TEST);
+
+                    // enable blending
+                    glEnable(GL_BLEND);
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
                     // create the postprocessing framebuffer
                     let mut postbuffer = 0;
@@ -206,9 +225,57 @@ impl ht_renderer {
                     framebuffers.depthbuffer = depthbuffer as usize;
                     framebuffers.depthbuffer_texture = depthtexture as usize;
 
-                    // enable blending
-                    glEnable(GL_BLEND);
-                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    // create the gbuffer
+                    let mut gbuffer = 0;
+                    glGenFramebuffers(1, &mut gbuffer);
+                    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer);
+                    let mut gbuffer_textures = [0; 4];
+                    glGenTextures(4, gbuffer_textures.as_mut_ptr());
+
+                    // position
+                    glBindTexture(GL_TEXTURE_2D, gbuffer_textures[0]);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F as i32, window_width as i32, window_height as i32, 0, GL_RGBA, GL_FLOAT, std::ptr::null());
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST as i32);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST as i32);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gbuffer_textures[0], 0);
+                    // normal
+                    glBindTexture(GL_TEXTURE_2D, gbuffer_textures[1]);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F as i32, window_width as i32, window_height as i32, 0, GL_RGBA, GL_FLOAT, std::ptr::null());
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST as i32);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST as i32);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gbuffer_textures[1], 0);
+                    // color
+                    glBindTexture(GL_TEXTURE_2D, gbuffer_textures[2]);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, window_width as i32, window_height as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, std::ptr::null());
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST as i32);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST as i32);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gbuffer_textures[2], 0);
+                    // info
+                    glBindTexture(GL_TEXTURE_2D, gbuffer_textures[3]);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, window_width as i32, window_height as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, std::ptr::null());
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST as i32);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST as i32);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gbuffer_textures[3], 0);
+
+                    let attachments = [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3];
+                    glDrawBuffers(4, attachments.as_ptr());
+
+                    if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE {
+                        panic!("framebuffer is not complete (gbuffer)!");
+                    }
+
+                    framebuffers.gbuffer = gbuffer as usize;
+                    framebuffers.gbuffer_position = gbuffer_textures[0] as usize;
+                    framebuffers.gbuffer_normal = gbuffer_textures[1] as usize;
+                    framebuffers.gbuffer_albedo = gbuffer_textures[2] as usize;
+                    framebuffers.gbuffer_info = gbuffer_textures[3] as usize;
+
+                    // renderbuffer for gbuffer
+                    let mut gbuffer_renderbuffer = 0;
+                    glGenRenderbuffers(1, &mut gbuffer_renderbuffer);
+                    glBindRenderbuffer(GL_RENDERBUFFER, gbuffer_renderbuffer);
+                    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, window_width as i32, window_height as i32);
+                    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, gbuffer_renderbuffer);
 
                     glViewport(0, 0, window_width as i32, window_height as i32);
                     // make top left corner as origin
@@ -249,6 +316,10 @@ impl ht_renderer {
     pub fn initialise_basic_resources(&mut self) {
         // load postbuffer shader
         self.load_shader("postbuffer").expect("failed to load postbuffer shader");
+        // load gbuffer shader
+        self.load_shader("gbuffer").expect("failed to load gbuffer shader");
+        // load lighting shader
+        self.load_shader("lighting").expect("failed to load lighting shader");
         // load rainbow shader
         self.load_shader("rainbow").expect("failed to load rainbow shader");
         // load basic shader
@@ -394,8 +465,13 @@ impl ht_renderer {
         Ok(self.backend.shaders.as_mut().unwrap().len() - 1)
     }
 
+    pub fn set_lights(&mut self, lights: Vec<Light>) {
+        self.lights = lights;
+    }
+
     pub fn swap_buffers(&mut self) {
         self.setup_pass_two();
+        self.setup_pass_three();
         unsafe {
             glfwSwapBuffers(self.backend.window);
             let mut width = 0;
@@ -406,12 +482,17 @@ impl ht_renderer {
         self.setup_pass_one();
     }
 
+    // geometry pass
     fn setup_pass_one(&mut self) {
+        let gbuffer_shader = *self.shaders.get("gbuffer").unwrap();
+
+        set_shader_if_not_already(self, gbuffer_shader);
+
         unsafe {
             glViewport(0, 0, self.window_size.x as i32, self.window_size.y as i32);
 
             // set framebuffer to the post processing framebuffer
-            glBindFramebuffer(GL_FRAMEBUFFER, self.backend.framebuffers.postbuffer as GLuint);
+            glBindFramebuffer(GL_FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
 
             glEnable(GL_CULL_FACE);
             glCullFace(GL_FRONT);
@@ -423,11 +504,81 @@ impl ht_renderer {
 
             // set the clear color to black
             glClearColor(0.0, 0.0, 0.0, 1.0);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         }
     }
 
+    // lighting pass
     fn setup_pass_two(&mut self) {
+        let lighting_shader = *self.shaders.get("lighting").unwrap();
+
+        set_shader_if_not_already(self, lighting_shader);
+
+        let lighting_shader = self.backend.shaders.as_ref().unwrap().get(lighting_shader).unwrap();
+
+        unsafe {
+            // set framebuffer to the post processing framebuffer
+            glBindFramebuffer(GL_FRAMEBUFFER, self.backend.framebuffers.postbuffer as GLuint);
+            glViewport(0, 0, self.window_size.x as GLsizei, self.window_size.y as GLsizei);
+
+            // set the clear color to black
+            glClearColor(0.0, 0.0, 0.0, 1.0);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            // send the lights to the shader
+            let light_count = self.lights.len();
+            let light_count = if light_count > MAX_LIGHTS { MAX_LIGHTS } else { light_count };
+            let light_count_c = CString::new("u_light_count").unwrap();
+            let light_count_loc = glGetUniformLocation(lighting_shader.program, light_count_c.as_ptr());
+            glUniform1i(light_count_loc, light_count as i32);
+            for (i, light) in self.lights.iter().enumerate() {
+                if i >= MAX_LIGHTS { break; }
+                let light_pos_c = CString::new(format!("u_lights[{}].position", i)).unwrap();
+                let light_pos = glGetUniformLocation(lighting_shader.program, light_pos_c.as_ptr());
+                let light_colour_c = CString::new(format!("u_lights[{}].colour", i)).unwrap();
+                let light_color = glGetUniformLocation(lighting_shader.program, light_colour_c.as_ptr());
+                let light_intensity_c = CString::new(format!("u_lights[{}].intensity", i)).unwrap();
+                let light_intensity = glGetUniformLocation(lighting_shader.program, light_intensity_c.as_ptr());
+
+                glUniform3f(light_pos, light.position.x, light.position.y, light.position.z);
+                glUniform3f(light_color, light.color.x, light.color.y, light.color.z);
+                glUniform1f(light_intensity, light.intensity as f32);
+            }
+
+            // bind the gbuffer textures
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, self.backend.framebuffers.gbuffer_position as GLuint);
+            let gbuffer_position_c = CString::new("position").unwrap();
+            let gbuffer_position_loc = glGetUniformLocation(lighting_shader.program, gbuffer_position_c.as_ptr());
+            glUniform1i(gbuffer_position_loc, 0);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, self.backend.framebuffers.gbuffer_normal as GLuint);
+            let gbuffer_normal_c = CString::new("normal").unwrap();
+            let gbuffer_normal_loc = glGetUniformLocation(lighting_shader.program, gbuffer_normal_c.as_ptr());
+            glUniform1i(gbuffer_normal_loc, 1);
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, self.backend.framebuffers.gbuffer_albedo as GLuint);
+            let gbuffer_albedo_c = CString::new("albedospec").unwrap();
+            let gbuffer_albedo_loc = glGetUniformLocation(lighting_shader.program, gbuffer_albedo_c.as_ptr());
+            glUniform1i(gbuffer_albedo_loc, 2);
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, self.backend.framebuffers.gbuffer_info as GLuint);
+            let gbuffer_info_c = CString::new("info").unwrap();
+            let gbuffer_info_loc = glGetUniformLocation(lighting_shader.program, gbuffer_info_c.as_ptr());
+            glUniform1i(gbuffer_info_loc, 3);
+
+            // draw the quad
+            glBindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);
+            glDisable(GL_DEPTH_TEST);
+            // make sure that gl doesn't cull the back face of the quad
+            glDisable(GL_CULL_FACE);
+            // draw the screen quad
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+    }
+
+    // postprocessing pass
+    fn setup_pass_three(&mut self) {
         let postbuffer_shader = *self.shaders.get("postbuffer").unwrap();
 
         set_shader_if_not_already(self, postbuffer_shader);
@@ -444,7 +595,7 @@ impl ht_renderer {
             glDisable(GL_DEPTH_TEST);
 
             // enable gamma correction
-            //glEnable(GL_FRAMEBUFFER_SRGB);
+            glEnable(GL_FRAMEBUFFER_SRGB);
 
             // make sure that gl doesn't cull the back face of the quad
             glDisable(GL_CULL_FACE);

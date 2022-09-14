@@ -116,11 +116,12 @@ impl UiMesh {
     }
 
     #[cfg(feature = "glfw")]
-    pub fn render_at(&self, master: UiMesh, renderer: &mut ht_renderer, shader_index: usize) {
+    pub fn render_at(&self, master: UiMesh, renderer: &mut ht_renderer) {
         let master = master;
 
-        set_shader_if_not_already(renderer, shader_index);
-        let shader = renderer.backend.shaders.as_mut().unwrap()[shader_index].clone();
+        let gbuffer_shader = *renderer.shaders.get("gbuffer").unwrap();
+        set_shader_if_not_already(renderer, gbuffer_shader);
+        let shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
 
         unsafe {
             // disable culling and depth testing
@@ -131,12 +132,14 @@ impl UiMesh {
             glBindVertexArray(master.vao);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, self.texture.unwrap().diffuse_texture);
-            let texture_c = CString::new("u_texture").unwrap();
+            let texture_c = CString::new("diffuse").unwrap();
             glUniform1i(glGetUniformLocation(shader.program, texture_c.as_ptr() as *const GLchar), 0);
             if self.opacity != 1.0 {
-                let opacity_c = CString::new("u_opacity").unwrap();
+                let opacity_c = CString::new("opacity").unwrap();
                 glUniform1f(glGetUniformLocation(shader.program, opacity_c.as_ptr()), self.opacity);
             }
+            let unlit_c = CString::new("unlit").unwrap();
+            glUniform1i(glGetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 1);
 
             // transformation time!
             // calculate the model matrix
@@ -151,15 +154,11 @@ impl UiMesh {
             glDrawElements(GL_TRIANGLES, master.num_indices as GLsizei, GL_UNSIGNED_INT, std::ptr::null());
 
             if self.opacity != 1.0 {
-                let opacity_c = CString::new("u_opacity").unwrap();
+                let opacity_c = CString::new("opacity").unwrap();
                 glUniform1f(glGetUniformLocation(shader.program, opacity_c.as_ptr()), 1.0);
             }
-            // unbind the texture
-            glBindTexture(GL_TEXTURE_2D, 0);
-            // unbind the vao
-            glBindVertexArray(0);
-            // unbind shader
-            glUseProgram(0);
+            let unlit_c = CString::new("unlit").unwrap();
+            glUniform1i(glGetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 0);
 
             // re-enable culling and depth testing
             glEnable(GL_CULL_FACE);

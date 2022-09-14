@@ -131,10 +131,11 @@ impl Mesh {
         })
     }
 
-    pub fn render(&self, renderer: &mut ht_renderer, shader_index: usize, texture: Option<&Texture>) {
+    pub fn render(&self, renderer: &mut ht_renderer, texture: Option<&Texture>) {
         // load the shader
-        set_shader_if_not_already(renderer, shader_index);
-        let shader = renderer.backend.shaders.as_mut().unwrap()[shader_index].clone();
+        let gbuffer_shader = *renderer.shaders.get("gbuffer").unwrap();
+        set_shader_if_not_already(renderer, gbuffer_shader);
+        let shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
 
             glEnableVertexAttribArray(0);
@@ -142,13 +143,11 @@ impl Mesh {
             if let Some(texture) = texture {
                 // send the material struct to the shader
                 let material = texture.material;
-                let diffuse_c = CString::new("u_material.diffuse").unwrap();
+                let diffuse_c = CString::new("diffuse").unwrap();
                 let material_diffuse = glGetUniformLocation(shader.program, diffuse_c.as_ptr());
-                let roughness_c = CString::new("u_material.roughness").unwrap();
+                let roughness_c = CString::new("specular").unwrap();
                 let material_roughness = glGetUniformLocation(shader.program, roughness_c.as_ptr());
-                let metallic_c = CString::new("u_material.metallic").unwrap();
-                let material_metallic = glGetUniformLocation(shader.program, metallic_c.as_ptr());
-                let normal_c = CString::new("u_material.normal").unwrap();
+                let normal_c = CString::new("normalmap").unwrap();
                 let material_normal = glGetUniformLocation(shader.program, normal_c.as_ptr());
 
                 // load textures
@@ -159,32 +158,9 @@ impl Mesh {
                 glBindTexture(GL_TEXTURE_2D, material.roughness_texture);
                 glUniform1i(material_roughness, 1);
                 glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, material.metallic_texture);
-                glUniform1i(material_metallic, 2);
-                glActiveTexture(GL_TEXTURE3);
                 glBindTexture(GL_TEXTURE_2D, material.normal_texture);
-                glUniform1i(material_normal, 3);
+                glUniform1i(material_normal, 2);
 
-            }
-
-            // send the lights to the shader
-            let light_count = renderer.lights.len();
-            let light_count = if light_count > MAX_LIGHTS { MAX_LIGHTS } else { light_count };
-            let light_count_c = CString::new("u_light_count").unwrap();
-            let light_count_loc = glGetUniformLocation(shader.program, light_count_c.as_ptr());
-            glUniform1i(light_count_loc, light_count as i32);
-            for (i, light) in renderer.lights.iter().enumerate() {
-                if i >= MAX_LIGHTS { break; }
-                let light_pos_c = CString::new(format!("u_lights[{}].position", i)).unwrap();
-                let light_pos = glGetUniformLocation(shader.program, light_pos_c.as_ptr());
-                let light_colour_c = CString::new(format!("u_lights[{}].colour", i)).unwrap();
-                let light_color = glGetUniformLocation(shader.program, light_colour_c.as_ptr());
-                let light_intensity_c = CString::new(format!("u_lights[{}].intensity", i)).unwrap();
-                let light_intensity = glGetUniformLocation(shader.program, light_intensity_c.as_ptr());
-
-                glUniform3f(light_pos, light.position.x, light.position.y, light.position.z);
-                glUniform3f(light_color, light.color.x, light.color.y, light.color.z);
-                glUniform1f(light_intensity, light.intensity as f32);
             }
 
             // transformation time!
@@ -211,9 +187,9 @@ impl Mesh {
             let camera_pos_c = CString::new("u_camera_pos").unwrap();
             let camera_pos_loc = glGetUniformLocation(shader.program, camera_pos_c.as_ptr());
             glUniform3f(camera_pos_loc,
-                        renderer.camera.get_position().x,
-                        renderer.camera.get_position().y,
-                        renderer.camera.get_position().z);
+                        renderer.camera.get_position().x*-1.0,
+                        renderer.camera.get_position().y*-1.0,
+                        renderer.camera.get_position().z*-1.0);
 
             glDrawElements(GL_TRIANGLES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
 

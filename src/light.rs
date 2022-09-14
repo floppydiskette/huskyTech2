@@ -2,11 +2,11 @@ use gfx_maths::Vec3;
 use crate::worldmachine::components::COMPONENT_TYPE_LIGHT;
 use crate::worldmachine::ecs::{Component, ParameterValue};
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct Light {
     pub position: Vec3,
     pub color: Vec3,
-    pub intensity: f64,
+    pub intensity: f32,
 }
 
 impl Light {
@@ -24,7 +24,7 @@ impl Light {
             };
             let intensity = component.get_parameter("intensity").unwrap();
             let intensity = match intensity.value {
-                ParameterValue::Float(intensity) => intensity,
+                ParameterValue::Float(intensity) => intensity as f32,
                 _ => panic!("Invalid parameter type for intensity"),
             };
             Some(Light {
