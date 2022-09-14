@@ -131,9 +131,11 @@ impl UiMesh {
             glBindVertexArray(master.vao);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, self.texture.unwrap().diffuse_texture);
-            glUniform1i(glGetUniformLocation(shader.program, "u_texture_a\0".as_ptr() as *const GLchar), 0);
+            let texture_c = CString::new("u_texture").unwrap();
+            glUniform1i(glGetUniformLocation(shader.program, texture_c.as_ptr() as *const GLchar), 0);
             if self.opacity != 1.0 {
-                glUniform1f(glGetUniformLocation(shader.program, CString::new("u_opacity").unwrap().as_ptr()), self.opacity);
+                let opacity_c = CString::new("u_opacity").unwrap();
+                glUniform1f(glGetUniformLocation(shader.program, opacity_c.as_ptr()), self.opacity);
             }
 
             // transformation time!
@@ -142,13 +144,15 @@ impl UiMesh {
             let model_matrix = calculate_model_matrix(fake_coords.0, self.rotation, fake_coords.1);
 
             // send the mvp matrix to the shader
-            let mvp_loc = glGetUniformLocation(shader.program, CString::new("u_mvp").unwrap().as_ptr());
+            let mvp_c = CString::new("u_mvp").unwrap();
+            let mvp_loc = glGetUniformLocation(shader.program, mvp_c.as_ptr());
             glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
 
             glDrawElements(GL_TRIANGLES, master.num_indices as GLsizei, GL_UNSIGNED_INT, std::ptr::null());
 
             if self.opacity != 1.0 {
-                glUniform1f(glGetUniformLocation(shader.program, CString::new("u_opacity").unwrap().as_ptr()), 1.0);
+                let opacity_c = CString::new("u_opacity").unwrap();
+                glUniform1f(glGetUniformLocation(shader.program, opacity_c.as_ptr()), 1.0);
             }
             // unbind the texture
             glBindTexture(GL_TEXTURE_2D, 0);
