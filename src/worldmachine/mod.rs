@@ -90,11 +90,11 @@ impl WorldMachine {
         self.physics = Some(physics);
         self.is_server = is_server;
 
-        self.blank_slate();
+        self.blank_slate(is_server);
     }
 
     // resets the world to a blank slate
-    pub fn blank_slate(&mut self) {
+    pub fn blank_slate(&mut self, is_server: bool) {
         {
             let mut eid_manager = ENTITY_ID_MANAGER.lock().unwrap();
             eid_manager.borrow_mut().id = 0;
@@ -105,6 +105,9 @@ impl WorldMachine {
         self.lights_changed = true;
         let mut ht2 = new_ht2_entity();
         ht2.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(Vec3::new(0.0, 0.0, 2.0)));
+        if is_server {
+            ht2.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(Vec3::new(0.0, 0.0, 7.0)));
+        }
         let light_component = Light::new(Vec3::new(0.0, 1.0, 0.0), Vec3::new(1.0, 1.0, 1.0), 1.0);
         ht2.add_component(light_component);
         self.world.entities.push(ht2);
@@ -267,10 +270,27 @@ impl WorldMachine {
                             SteadyPacket::Consume(_) => {
                             }
                             SteadyPacket::KeepAlive => {}
-                            SteadyPacket::InitialiseEntity(_, _) => {}
+                            SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
+                                // check if we already have this entity
+                                if self.get_entity(entity_id).is_none() {
+                                    let mut entity = unsafe {
+                                        Entity::new_with_id(entity_data.name.as_str(), entity_id)
+                                    };
+                                    entity.copy_data_from_other_entity(&entity_data);
+                                } else {
+                                    // we already have this entity, so we need to update it
+                                    let entity_index = self.get_entity_index(entity_id).unwrap();
+                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                                    entity.copy_data_from_other_entity(&entity_data);
+                                }
+                            }
                             SteadyPacket::Message(str_message) => {
                                 info!("Received message from server: {}", str_message);
 
+                            }
+                            SteadyPacket::SelfTest => {
+                                self.counter += 1.0;
+                                info!("received {} self test messages", self.counter);
                             }
                         }
                         self.consume_steady_message(message);
@@ -290,7 +310,6 @@ impl WorldMachine {
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer) {
-        self.counter += 1.0;
         let lights = self.send_lights_to_renderer();
         if lights.is_some() {
             renderer.set_lights(lights.unwrap());

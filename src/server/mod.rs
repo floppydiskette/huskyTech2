@@ -36,6 +36,7 @@ pub struct FastPacketData {
 #[derive(Clone, Debug)]
 pub enum SteadyPacket {
     Consume(PacketUUID),
+    SelfTest,
     KeepAlive,
     InitialiseEntity(EntityId, Entity),
     Message(String),
@@ -111,8 +112,6 @@ impl Server {
                             if uuid == packet.clone().uuid.unwrap() {
                                 debug!("packet consumed");
                                 break;
-                            } else {
-                                warn!("packet uuid mismatch");
                             }
                         }
                     }
@@ -169,9 +168,9 @@ impl Server {
     pub async fn begin_connection(&mut self, connection: Connection) {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = self.worldmachine.lock().await.world.clone();
-        let packet = SteadyPacket::Message("hello world!".to_string());
-        debug!("sending packet");
-        self.send_steady_packet(&connection, packet).await;
+        for entity in world_clone.entities.iter() {
+            self.send_steady_packet(&connection, SteadyPacket::InitialiseEntity(entity.uid, entity.clone())).await;
+        }
     }
 
     pub async fn handle_connection(&mut self, connection: Connection) {

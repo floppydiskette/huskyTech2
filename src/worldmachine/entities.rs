@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use gfx_maths::*;
 use crate::worldmachine::components::*;
 use crate::worldmachine::ecs::*;
+use crate::worldmachine::EntityId;
 
 impl Entity {
     pub fn new(name: &str) -> Entity {
@@ -12,6 +13,23 @@ impl Entity {
             children: Vec::new(),
             parent: None,
         }
+    }
+
+    // SHOULD ONLY BE USED IF YOU ARE __SURE__ THAT THIS ENTITY DOESN'T ALREADY EXIST
+    pub unsafe fn new_with_id(name: &str, uid: EntityId) -> Entity {
+        Self {
+            name: name.to_string(),
+            uid,
+            components: Vec::new(),
+            children: Vec::new(),
+            parent: None,
+        }
+    }
+
+    pub fn copy_data_from_other_entity(&mut self, other: &Entity) {
+        self.components = other.components.clone();
+        self.children = other.children.clone();
+        self.parent = other.parent;
     }
 
     pub fn add_component(&mut self, component: Component) {
