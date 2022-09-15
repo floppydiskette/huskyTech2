@@ -32,6 +32,7 @@ pub mod uimesh;
 pub mod map;
 pub mod light;
 pub mod worldmachine;
+pub mod physics;
 
 fn main() {
     env_logger::init();
@@ -61,6 +62,8 @@ fn main() {
     let mut renderer = renderer.unwrap();
     renderer.initialise_basic_resources();
     info!("initialised renderer");
+
+    let mut physics = physics::PhysicsSystem::init();
 
     let mut worldmachine = worldmachine::WorldMachine::default();
     worldmachine.initialise();

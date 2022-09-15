@@ -6,6 +6,7 @@ use gfx_maths::{Quaternion, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer};
+use crate::physics::PhysicsSystem;
 use crate::worldmachine::components::{COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
@@ -48,6 +49,7 @@ impl Clone for World {
 
 pub struct WorldMachine {
     pub world: World,
+    pub physics: Option<PhysicsSystem>,
     pub game_data_path: String,
     pub counter: f32,
     pub entities_wanting_to_load_things: Vec<usize>, // index
@@ -63,6 +65,7 @@ impl Default for WorldMachine {
         };
         Self {
             world,
+            physics: None,
             game_data_path: String::from(""),
             counter: 0.0,
             entities_wanting_to_load_things: Vec::new(),
@@ -72,9 +75,10 @@ impl Default for WorldMachine {
 }
 
 impl WorldMachine {
-    pub fn initialise(&mut self) {
+    pub fn initialise(&mut self, physics: PhysicsSystem) {
         self.game_data_path = String::from("base");
         components::register_component_types();
+        self.physics = Some(physics);
 
         self.blank_slate();
     }
