@@ -4,7 +4,7 @@ extern crate log;
 extern crate lazy_static;
 
 use std::borrow::BorrowMut;
-use std::process;
+use std::{process, thread};
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
@@ -33,8 +33,11 @@ pub mod map;
 pub mod light;
 pub mod worldmachine;
 pub mod physics;
+pub mod server;
 
-fn main() {
+#[tokio::main]
+#[allow(unused_must_use)]
+async fn main() {
     env_logger::init();
 
     // get args
@@ -64,11 +67,20 @@ fn main() {
     info!("initialised renderer");
 
     let mut physics = physics::PhysicsSystem::init();
+    info!("initialised physics");
 
     let mut worldmachine = worldmachine::WorldMachine::default();
-    worldmachine.initialise();
+    worldmachine.initialise(physics);
 
     info!("initialised worldmachine");
+
+    let mut server = server::Server::new();
+    let mut server_clone = server.clone();
+    tokio::spawn(async move {
+        server_clone.run().await;
+    });
+
+    let mut server_connection = server.join_local_server().await;
 
     if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 

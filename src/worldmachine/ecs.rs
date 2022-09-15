@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeStruct;
+use crate::worldmachine::EntityId;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Parameter {
@@ -42,10 +43,10 @@ pub struct Component {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Entity {
     pub name: String,
-    pub uid: u64,
+    pub uid: EntityId,
     pub components: Vec<Component>,
     pub children: Vec<Entity>,
-    pub parent: Option<u64>,
+    pub parent: Option<EntityId>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

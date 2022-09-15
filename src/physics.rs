@@ -1,9 +1,16 @@
 use physx_sys::*;
 
+#[derive(Clone, Copy)]
 pub struct PhysicsSystem {
     pub foundation: *mut PxFoundation,
     pub physics: *mut PxPhysics,
     pub scene: *mut PxScene,
+}
+
+unsafe impl Send for PhysicsSystem {
+}
+
+unsafe impl Sync for PhysicsSystem {
 }
 
 impl PhysicsSystem {

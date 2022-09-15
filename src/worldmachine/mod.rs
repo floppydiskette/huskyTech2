@@ -16,11 +16,13 @@ pub mod components;
 pub mod entities;
 pub mod helpers;
 
+pub type EntityId = u64;
+
 #[derive(Deserialize, Serialize)]
 pub struct World {
     pub entities: Vec<Entity>,
     pub systems: Vec<System>,
-    eid_manager: u64,
+    eid_manager: EntityId,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -102,7 +104,7 @@ impl WorldMachine {
     }
 
     #[allow(clippy::borrowed_box)]
-    pub fn get_entity(&self, entity_id: u64) -> Option<Arc<Mutex<&Entity>>> {
+    pub fn get_entity(&self, entity_id: EntityId) -> Option<Arc<Mutex<&Entity>>> {
         for entity in self.world.entities.iter() {
             if entity.get_id() == entity_id {
                 return Some(Arc::new(Mutex::new(entity)));
@@ -111,7 +113,7 @@ impl WorldMachine {
         None
     }
 
-    pub fn get_entity_index(&self, entity_id: u64) -> Option<usize> {
+    pub fn get_entity_index(&self, entity_id: EntityId) -> Option<usize> {
         for (index, entity) in self.world.entities.iter().enumerate() {
             if entity.get_id() == entity_id {
                 return Some(index);
