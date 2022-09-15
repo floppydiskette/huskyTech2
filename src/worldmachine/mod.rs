@@ -4,9 +4,12 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
-use crate::{ht_renderer, renderer};
+use crate::{ht_renderer, renderer, server};
 use crate::physics::PhysicsSystem;
+use crate::server::{ConnectionClientside, SteadyPacket, SteadyPacketData};
 use crate::worldmachine::components::{COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
@@ -56,6 +59,8 @@ pub struct WorldMachine {
     pub counter: f32,
     pub entities_wanting_to_load_things: Vec<usize>, // index
     lights_changed: bool,
+    is_server: bool,
+    server_connection: Option<crate::server::ConnectionClientside>,
 }
 
 impl Default for WorldMachine {
@@ -72,15 +77,18 @@ impl Default for WorldMachine {
             counter: 0.0,
             entities_wanting_to_load_things: Vec::new(),
             lights_changed: true,
+            is_server: false,
+            server_connection: None
         }
     }
 }
 
 impl WorldMachine {
-    pub fn initialise(&mut self, physics: PhysicsSystem) {
+    pub fn initialise(&mut self, physics: PhysicsSystem, is_server: bool) {
         self.game_data_path = String::from("base");
         components::register_component_types();
         self.physics = Some(physics);
+        self.is_server = is_server;
 
         self.blank_slate();
     }
@@ -189,6 +197,96 @@ impl WorldMachine {
             }
         }
         Some(lights)
+    }
+
+    pub fn connect_to_server(&mut self, connection: ConnectionClientside) {
+        self.server_connection = Some(connection);
+    }
+
+    async unsafe fn send_queued_steady_message(&mut self, message: SteadyPacketData) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    let attempt = connection.steady_update_sender.send(message);
+                    if attempt.is_err() {
+                        error!("send_queued_steady_message: failed to send message");
+                    }
+                    loop {
+                        let try_recv = connection.steady_update_receiver.try_recv();
+                        if let Ok(message) = try_recv {
+                            if let SteadyPacket::Consume(uuid) = message.packet.unwrap().clone() {
+                                if uuid == message.uuid.unwrap() {
+                                    debug!("consume message received");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn send_queued_steady_messages(&mut self) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    let mut queue = connection.steady_sender_queue.lock().await;
+                    while let Some(message) = queue.pop() {
+
+                    }
+                }
+            }
+        }
+    }
+
+    fn consume_steady_message(&mut self, message: SteadyPacketData) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    let attempt = connection.steady_update_sender.send(SteadyPacketData {
+                        packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
+                        uuid: Some(server::generate_uuid()),
+                    });
+                    if attempt.is_err() {
+                        error!("send_queued_steady_message: failed to send message");
+                    }
+                }
+            }
+        }
+    }
+
+    fn process_steady_messages(&mut self) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    // check if we have any messages to process
+                    let try_recv = connection.steady_update_receiver.try_recv();
+                    if let Ok(message) =  try_recv {
+                        match message.clone().packet.unwrap().clone() {
+                            SteadyPacket::Consume(_) => {
+                            }
+                            SteadyPacket::KeepAlive => {}
+                            SteadyPacket::InitialiseEntity(_, _) => {}
+                            SteadyPacket::Message(str_message) => {
+                                info!("Received message from server: {}", str_message);
+
+                            }
+                        }
+                        self.consume_steady_message(message);
+                    } else if let Err(e) = try_recv {
+                        if e != TryRecvError::Empty {
+                            warn!("process_steady_messages: error receiving message: {:?}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn tick_connection(&mut self) {
+        self.process_steady_messages();
+        self.send_queued_steady_messages().await;
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer) {

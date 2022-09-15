@@ -10,6 +10,7 @@ use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
 use libsex::bindings::*;
 use crate::renderer::ht_renderer;
+use crate::server::ConnectionClientside;
 
 pub trait Thingy {
     fn get_x(&self) -> i32;
@@ -70,7 +71,7 @@ async fn main() {
     info!("initialised physics");
 
     let mut worldmachine = worldmachine::WorldMachine::default();
-    worldmachine.initialise(physics);
+    worldmachine.initialise(physics, false);
 
     info!("initialised worldmachine");
 
@@ -81,10 +82,14 @@ async fn main() {
     });
 
     let mut server_connection = server.join_local_server().await;
+    worldmachine.connect_to_server(ConnectionClientside::Local(server_connection));
+
+    debug!("connected to internal server");
 
     if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
     loop {
+        worldmachine.tick_connection().await;
         worldmachine.render(&mut renderer);
         renderer.swap_buffers();
         if renderer.manage_window() {

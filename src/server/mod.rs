@@ -4,9 +4,13 @@ use std::thread;
 use gfx_maths::*;
 use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use async_recursion::async_recursion;
+use libsex::bindings::XConnectionWatchProc;
 use crate::physics::PhysicsSystem;
+use crate::server::connections::SteadyMessageQueue;
 use crate::worldmachine::{EntityId, WorldMachine};
 use crate::worldmachine::ecs::Entity;
+
+pub mod connections;
 
 pub type PacketUUID = String;
 
@@ -34,6 +38,7 @@ pub enum SteadyPacket {
     Consume(PacketUUID),
     KeepAlive,
     InitialiseEntity(EntityId, Entity),
+    Message(String),
 }
 
 #[derive(Clone, Debug)]
@@ -47,12 +52,15 @@ pub struct LocalConnection {
     pub fast_update_sender: mpsc::Sender<FastPacketData>,
     pub steady_update_sender: mpsc::Sender<SteadyPacketData>,
     pub fast_update_receiver: watch::Receiver<FastPacketData>,
-    pub steady_update_receiver: watch::Receiver<SteadyPacketData>,
+    steady_update_receiver: watch::Receiver<SteadyPacketData>,
+    pub steady_receiver_queue: Arc<Mutex<SteadyMessageQueue>>,
+    pub uuid: String,
 }
 
 pub struct LocalConnectionClientSide {
     pub fast_update_sender: watch::Sender<FastPacketData>,
     pub steady_update_sender: watch::Sender<SteadyPacketData>,
+    pub steady_sender_queue: Arc<Mutex<SteadyMessageQueue>>,
     pub fast_update_receiver: mpsc::Receiver<FastPacketData>,
     pub steady_update_receiver: mpsc::Receiver<SteadyPacketData>,
 }
@@ -69,7 +77,7 @@ pub struct Server {
     pub worldmachine: Arc<Mutex<WorldMachine>>,
 }
 
-fn generate_uuid() -> PacketUUID {
+pub fn generate_uuid() -> PacketUUID {
     uuid::Uuid::new_v4().to_string()
 }
 
@@ -77,7 +85,7 @@ impl Server {
     pub fn new() -> Self {
         let mut physics = PhysicsSystem::init();
         let mut worldmachine = WorldMachine::default();
-        worldmachine.initialise(physics);
+        worldmachine.initialise(physics, true);
 
         info!("server started");
 
@@ -89,40 +97,81 @@ impl Server {
     }
 
     #[async_recursion]
-    pub async fn send_steady_packet(&mut self, connection_index: usize, packet: SteadyPacket) {
-        let uuid = generate_uuid();
-        match self.connections.clone() {
-            Connections::Local(connections) => {
-                let connections = connections.lock().await;
-                let connection = connections.get(connection_index).unwrap().clone();
-                let packet_data = SteadyPacketData {
-                    packet: Some(packet.clone()),
-                    uuid: Some(uuid.clone()),
-                };
-                connection.steady_update_sender.send(packet_data).await.unwrap();
+    async unsafe fn send_steady_packet_unsafe(&mut self, connection: &Connection, packet: SteadyPacketData) {
+        match connection.clone() {
+            Connection::Local(connection) => {
+                connection.steady_update_sender.send(packet.clone()).await.unwrap();
+                debug!("sent packet to local connection");
                 // wait for the packet to be consumed
                 loop {
-                    let packet_data = connection.steady_update_receiver.borrow().clone();
-                    if let Some(SteadyPacket::Consume(consumed_uuid)) = packet_data.packet {
-                        if consumed_uuid == uuid {
-                            break;
+                    self.get_received_steady_packets(&Connection::Local(connection.clone())).await;
+                    let mut queue = connection.steady_receiver_queue.lock().await;
+                    if let Some(packet_data) = queue.pop() {
+                        if let SteadyPacket::Consume(uuid) = packet_data.packet.clone().unwrap() {
+                            if uuid == packet.clone().uuid.unwrap() {
+                                debug!("packet consumed");
+                                break;
+                            } else {
+                                warn!("packet uuid mismatch");
+                            }
                         }
-                    } else {
-                        // send the packet back to the receiver
-                        self.send_steady_packet(connection_index, packet.clone()).await;
                     }
                 }
             }
         }
     }
 
-    pub async fn begin_connection(&mut self, connection_index: usize) {
+    async fn send_steady_packet(&mut self, connection: &Connection, packet: SteadyPacket) {
+        match connection.clone() {
+            Connection::Local(connection) => {
+                let uuid = generate_uuid();
+                let packet_data = SteadyPacketData {
+                    packet: Some(packet),
+                    uuid: Some(uuid.clone()),
+                };
+                unsafe {
+                    self.send_steady_packet_unsafe(&Connection::Local(connection), packet_data).await;
+                }
+            }
+        }
+    }
+
+    async unsafe fn queue_received_steady_packet(&mut self, connection: &Connection, packet: SteadyPacket) {
+        let uuid = generate_uuid();
+        match connection.clone() {
+            Connection::Local(connection) => {
+                let packet_data = SteadyPacketData {
+                    packet: Some(packet),
+                    uuid: Some(uuid.clone()),
+                };
+                let mut queue = connection.steady_receiver_queue.lock().await;
+                queue.push(packet_data);
+            }
+        }
+    }
+
+    pub async fn get_received_steady_packets(&mut self, connection: &Connection) {
+        match connection.clone() {
+            Connection::Local(connection) => {
+                if !connection.steady_update_receiver.has_changed().ok().unwrap_or(false) {
+                    return;
+                }
+                let message = connection.steady_update_receiver.borrow().clone();
+                if let Some(packet) = message.packet {
+                    unsafe {
+                        self.queue_received_steady_packet(&Connection::Local(connection.clone()), packet).await;
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn begin_connection(&mut self, connection: Connection) {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = self.worldmachine.lock().await.world.clone();
-        for entity in world_clone.entities.iter() {
-            let packet = SteadyPacket::InitialiseEntity(entity.uid, entity.clone());
-            self.send_steady_packet(connection_index, packet);
-        }
+        let packet = SteadyPacket::Message("hello world!".to_string());
+        debug!("sending packet");
+        self.send_steady_packet(&connection, packet).await;
     }
 
     pub async fn handle_connection(&mut self, connection: Connection) {
@@ -142,6 +191,9 @@ impl Server {
                             _ => {}
                         }
                     }
+
+                    // get steady packets
+                    self.get_received_steady_packets(&Connection::Local(local_connection.clone())).await;
                 }
             }
         }
@@ -166,7 +218,7 @@ impl Server {
                             connections.len() - 1
                         }
                     };
-                    self.begin_connection(connection_index);
+                    self.begin_connection(connection.clone()).await;
                     self.handle_connection(connection).await;
                 }
             }
@@ -184,15 +236,19 @@ impl Server {
         });
         let (fast_update_sender_server, fast_update_receiver_client) = mpsc::channel(100);
         let (steady_update_sender_server, steady_update_receiver_client) = mpsc::channel(100);
+        let uuid = generate_uuid();
         let local_connection = LocalConnection {
             fast_update_sender: fast_update_sender_server,
             steady_update_sender: steady_update_sender_server,
             fast_update_receiver: fast_update_receiver_server,
             steady_update_receiver: steady_update_receiver_server,
+            steady_receiver_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
+            uuid,
         };
         let local_connection_client_side = LocalConnectionClientSide {
             fast_update_sender: fast_update_sender_client,
             steady_update_sender: steady_update_sender_client,
+            steady_sender_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
             fast_update_receiver: fast_update_receiver_client,
             steady_update_receiver: steady_update_receiver_client,
         };
@@ -239,7 +295,7 @@ impl Server {
                             };
                             tokio::spawn(async move {
                                 let mut thread_data = thread_data;
-                                thread_data.server.begin_connection(thread_data.connection_index);
+                                thread_data.server.begin_connection(Connection::Local(thread_data.connection.clone())).await;
                                 thread_data.server.handle_connection(Connection::Local(thread_data.connection)).await;
                             });
                         }
