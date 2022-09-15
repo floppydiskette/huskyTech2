@@ -9,7 +9,7 @@ use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
 use crate::physics::PhysicsSystem;
-use crate::server::{ConnectionClientside, SteadyPacket, SteadyPacketData};
+use crate::server::{ConnectionClientside, FastPacket, SteadyPacket, SteadyPacketData};
 use crate::worldmachine::components::{COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
@@ -32,6 +32,13 @@ pub struct World {
 pub struct WorldDef {
     pub name: String,
     pub world: World,
+}
+
+#[derive(Clone, Debug)]
+pub enum WorldUpdate {
+    SetPosition(EntityId, Vec3),
+    SetRotation(EntityId, Quaternion),
+    SetScale(EntityId, Vec3),
 }
 
 impl Clone for World {
@@ -57,7 +64,8 @@ pub struct WorldMachine {
     pub physics: Option<PhysicsSystem>,
     pub game_data_path: String,
     pub counter: f32,
-    pub entities_wanting_to_load_things: Vec<usize>, // index
+    pub entities_wanting_to_load_things: Vec<usize>,
+    // index
     lights_changed: bool,
     is_server: bool,
     server_connection: Option<crate::server::ConnectionClientside>,
@@ -78,7 +86,7 @@ impl Default for WorldMachine {
             entities_wanting_to_load_things: Vec::new(),
             lights_changed: true,
             is_server: false,
-            server_connection: None
+            server_connection: None,
         }
     }
 }
@@ -132,6 +140,17 @@ impl WorldMachine {
         }
         None
     }
+
+    /*
+    pub fn set_entity_position(&mut self, entity_id: EntityId, position: Vec3) {
+        let entity_index = self.get_entity_index(entity_id).unwrap();
+        let entity = self.world.entities[entity_index].borrow_mut();
+        let res = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(position));
+        if res.is_none() {
+            warn!("attempted to set entity position on an entity that has no transform component");
+        }
+    }
+     */
 
     pub fn remove_entity_at_index(&mut self, index: usize) {
         self.world.entities.remove(index);
@@ -192,7 +211,7 @@ impl WorldMachine {
                     };
                     position = position + trans_position;
                 }
-                lights.push(crate::light::Light{
+                lights.push(crate::light::Light {
                     position,
                     color,
                     intensity: intensity as f32,
@@ -235,9 +254,7 @@ impl WorldMachine {
             match connection {
                 ConnectionClientside::Local(connection) => {
                     let mut queue = connection.steady_sender_queue.lock().await;
-                    while let Some(message) = queue.pop() {
-
-                    }
+                    while let Some(message) = queue.pop() {}
                 }
             }
         }
@@ -265,10 +282,9 @@ impl WorldMachine {
                 ConnectionClientside::Local(connection) => {
                     // check if we have any messages to process
                     let try_recv = connection.steady_update_receiver.try_recv();
-                    if let Ok(message) =  try_recv {
+                    if let Ok(message) = try_recv {
                         match message.clone().packet.unwrap().clone() {
-                            SteadyPacket::Consume(_) => {
-                            }
+                            SteadyPacket::Consume(_) => {}
                             SteadyPacket::KeepAlive => {}
                             SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
                                 // check if we already have this entity
@@ -286,7 +302,6 @@ impl WorldMachine {
                             }
                             SteadyPacket::Message(str_message) => {
                                 info!("Received message from server: {}", str_message);
-
                             }
                             SteadyPacket::SelfTest => {
                                 self.counter += 1.0;
@@ -304,9 +319,75 @@ impl WorldMachine {
         }
     }
 
+    fn process_fast_messages(&mut self) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    // check if we have any messages to process
+                    let try_recv = connection.fast_update_receiver.try_recv();
+                    if let Ok(message) = try_recv {
+                        match message.clone().packet.unwrap().clone() {
+                            FastPacket::ChangePosition(entity_id, vec3) => {
+                                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(vec3));
+                                    if transform.is_none() {
+                                        warn!("process_fast_messages: failed to set transform position");
+                                    }
+                                }
+                            }
+                            FastPacket::ChangeRotation(entity_id, quat) => {
+                                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", ParameterValue::Quaternion(quat));
+                                    if transform.is_none() {
+                                        warn!("process_fast_messages: failed to set transform rotation");
+                                    }
+                                }
+                            }
+                            FastPacket::ChangeScale(entity_id, vec3) => {
+                                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "scale", ParameterValue::Vec3(vec3));
+                                    if transform.is_none() {
+                                        warn!("process_fast_messages: failed to set transform scale");
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Err(e) = try_recv {
+                        if e != TryRecvError::Empty {
+                            warn!("process_steady_messages: error receiving message: {:?}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn tick_connection(&mut self) {
         self.process_steady_messages();
         self.send_queued_steady_messages().await;
+        self.process_fast_messages();
+    }
+
+    pub fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {
+        let mut updates = Vec::new();
+
+        self.counter += 1.0;
+
+        // for debugging, set the rotation of the ht2 entity
+        let entity_index = self.get_entity_index(1).unwrap();
+        let entity = self.world.entities.get_mut(entity_index).unwrap();
+        let quat = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0));
+        entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", ParameterValue::Quaternion(quat));
+        updates.push(WorldUpdate::SetRotation(1, quat));
+
+        if !updates.is_empty() {
+            Some(updates)
+        } else {
+            None
+        }
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer) {

@@ -102,14 +102,16 @@ impl Entity {
         None
     }
 
-    pub fn set_component_parameter(&mut self, component_type: ComponentType, parameter_name: &str, value: ParameterValue) {
+    pub fn set_component_parameter(&mut self, component_type: ComponentType, parameter_name: &str, value: ParameterValue) -> Option<()> {
         for component in self.components.iter_mut() {
             if component.component_type == component_type {
                 if let Some(parameter) = component.parameters.get_mut(parameter_name) {
                     parameter.value = value.clone();
+                    return Some(());
                 }
             }
         }
+        None
     }
 }
 

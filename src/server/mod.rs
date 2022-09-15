@@ -7,7 +7,7 @@ use async_recursion::async_recursion;
 use libsex::bindings::XConnectionWatchProc;
 use crate::physics::PhysicsSystem;
 use crate::server::connections::SteadyMessageQueue;
-use crate::worldmachine::{EntityId, WorldMachine};
+use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::ecs::Entity;
 
 pub mod connections;
@@ -26,6 +26,8 @@ pub enum ConnectionClientside {
 #[derive(Clone, Debug)]
 pub enum FastPacket {
     ChangePosition(EntityId, Vec3),
+    ChangeRotation(EntityId, Quaternion),
+    ChangeScale(EntityId, Vec3),
 }
 
 #[derive(Clone, Debug)]
@@ -165,6 +167,32 @@ impl Server {
         }
     }
 
+    pub async fn send_fast_packet(&mut self, connection: &Connection, packet: FastPacket) {
+        match connection.clone() {
+            Connection::Local(connection) => {
+                let packet_data = FastPacketData {
+                    packet: Some(packet),
+                };
+                connection.fast_update_sender.send(packet_data).await.unwrap();
+            }
+        }
+    }
+
+    pub async fn try_receive_fast_packet(&mut self, connection: &Connection) -> Option<FastPacket> {
+        match connection.clone() {
+            Connection::Local(connection) => {
+                if !connection.fast_update_receiver.has_changed().ok().unwrap_or(false) {
+                    return None;
+                }
+                let message = connection.fast_update_receiver.borrow().clone();
+                if let Some(packet) = message.packet {
+                    return Some(packet);
+                }
+            }
+        }
+        None
+    }
+
     pub async fn begin_connection(&mut self, connection: Connection) {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = self.worldmachine.lock().await.world.clone();
@@ -266,6 +294,45 @@ impl Server {
         local_connection_client_side
     }
 
+    async fn get_connections_affected_from_position(&mut self, position: Vec3) -> Vec<Connection> {
+        let mut connections_affected = Vec::new();
+        match self.connections.clone() {
+            Connections::Local(connections) => {
+                let connections = connections.lock().await;
+                for connection in connections.iter() {
+                    // todo! check if connection is affected by position
+                    connections_affected.push(Connection::Local(connection.clone()));
+                }
+            }
+        }
+        connections_affected
+    }
+
+    pub async fn handle_world_updates(&mut self, updates: Vec<WorldUpdate>) {
+        for update in updates {
+            match update {
+                WorldUpdate::SetPosition(entity_id, vec3) => {
+                    let connections = self.get_connections_affected_from_position(vec3).await;
+                    for connection in connections {
+                        self.send_fast_packet(&connection, FastPacket::ChangePosition(entity_id, vec3)).await;
+                    }
+                }
+                WorldUpdate::SetRotation(entity_id, quat) => {
+                    let connections = self.get_connections_affected_from_position(Vec3::new(0.0, 0.0, 0.0)).await;
+                    for connection in connections {
+                        self.send_fast_packet(&connection, FastPacket::ChangeRotation(entity_id, quat)).await;
+                    }
+                }
+                WorldUpdate::SetScale(entity_id, vec3) => {
+                    let connections = self.get_connections_affected_from_position(Vec3::new(0.0, 0.0, 0.0)).await;
+                    for connection in connections {
+                        self.send_fast_packet(&connection, FastPacket::ChangeScale(entity_id, vec3)).await;
+                    }
+                }
+            }
+        }
+    }
+
     // loop
     // check if there are any new connections to initialise
     // if there are, initialise them
@@ -302,6 +369,10 @@ impl Server {
                 }
             }
             // unlock
+            let updates = self.worldmachine.lock().await.server_tick();
+            if let Some(updates) = updates {
+                self.handle_world_updates(updates).await;
+            }
         }
     }
 }
