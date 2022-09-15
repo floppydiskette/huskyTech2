@@ -36,6 +36,19 @@ pub mod worldmachine;
 fn main() {
     env_logger::init();
 
+    // get args
+    let mut args = std::env::args();
+    let mut skip_intro = false;
+    let mut level_to_load = Option::None;
+
+    while let Some(arg) = args.next() {
+        if arg == "--skip-intro" {
+            skip_intro = true;
+        } else if arg == "--level" {
+            level_to_load = Option::Some(args.next().expect("expected level name after --level"));
+        }
+    }
+
     info!("good day! initialising huskyTech2");
     let mut sss = AudioManager::<CpalBackend>::new(AudioManagerSettings::default()).expect("failed to initialise audio subsystem");
     info!("initialised audio subsystem");
@@ -49,9 +62,16 @@ fn main() {
     renderer.initialise_basic_resources();
     info!("initialised renderer");
 
-    sunlust_intro::animate(&mut renderer, &mut sss);
+    let mut worldmachine = worldmachine::WorldMachine::default();
+    worldmachine.initialise();
+
+    info!("initialised worldmachine");
+
+    if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
     loop {
+        worldmachine.render(&mut renderer);
+        renderer.swap_buffers();
         if renderer.manage_window() {
             process::exit(0);
         }

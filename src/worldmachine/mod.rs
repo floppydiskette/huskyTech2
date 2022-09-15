@@ -3,7 +3,6 @@ use std::borrow::{Borrow, BorrowMut};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
 use gfx_maths::{Quaternion, Vec2, Vec3};
-use png::DecodingError::Parameter;
 use serde::{Deserialize, Serialize};
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer};
@@ -74,8 +73,7 @@ impl Default for WorldMachine {
 
 impl WorldMachine {
     pub fn initialise(&mut self) {
-        // todo! get this from settings
-        self.game_data_path = String::from("../huskyTech2/base");
+        self.game_data_path = String::from("base");
         components::register_component_types();
 
         self.blank_slate();
@@ -96,6 +94,7 @@ impl WorldMachine {
         let light_component = Light::new(Vec3::new(0.0, 1.0, 0.0), Vec3::new(1.0, 1.0, 1.0), 1.0);
         ht2.add_component(light_component);
         self.world.entities.push(ht2);
+        self.entities_wanting_to_load_things.push(0);
     }
 
     #[allow(clippy::borrowed_box)]
@@ -188,6 +187,10 @@ impl WorldMachine {
 
     pub fn render(&mut self, renderer: &mut ht_renderer) {
         self.counter += 1.0;
+        let lights = self.send_lights_to_renderer();
+        if lights.is_some() {
+            renderer.set_lights(lights.unwrap());
+        }
         for index in self.entities_wanting_to_load_things.clone() {
             let entity = &self.world.entities[index];
             let components = entity.get_components();
@@ -212,7 +215,7 @@ impl WorldMachine {
                             }
                         };
                         let texture = texture.unwrap();
-                        let res = renderer.load_mesh_if_not_already_loaded(&mesh);
+                        let res = renderer.load_mesh_if_not_already_loaded(mesh);
                         if res.is_err() {
                             warn!("render: failed to load mesh: {:?}", res);
                         }

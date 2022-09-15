@@ -173,8 +173,17 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         }
         last_time = current_time;
     }
+    let copyright_time = 2000.0 + normal_time; // in milliseconds
 
     loop {
+        // check how long it's been
+        current_time = SystemTime::now();
+        let time_since_start = current_time.duration_since(time_of_start).expect("failed to get time since start");
+        let time_since_start = time_since_start.as_millis() as f32;
+        if time_since_start > copyright_time {
+            break;
+        }
+
         ui_developedby.render_at(ui_master, renderer);
         // swap buffers
         renderer.swap_buffers();

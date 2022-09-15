@@ -53,7 +53,7 @@ impl MeshRenderer {
         }
     }
     pub fn default() -> Component {
-        Self::new("ht2".to_string(), "basic".to_string(), "default".to_string())
+        Self::new("ht2".to_string(), "gbuffer".to_string(), "default".to_string())
     }
 }
 

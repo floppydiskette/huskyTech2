@@ -22,9 +22,9 @@ pub struct GLMaterial {
     pub normal_texture: GLuint,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum TextureError {
-    FileNotFound,
+    LoadingError(String),
     InvalidImage,
 }
 
@@ -60,7 +60,7 @@ impl Texture {
         let roughness_file_name = base_file_name.clone() + "rough.png";
 
         // load the files
-        let diffuse_data = load_image(diffuse_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
+        let diffuse_data = load_image(diffuse_file_name.as_str()).map_err(|e| TextureError::LoadingError(e.clone()))?;
 
         {
             // load opengl textures
@@ -85,9 +85,9 @@ impl Texture {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
                 glGenerateMipmap(GL_TEXTURE_2D);
 
-                let normal_data = load_image(normal_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
-                let metallic_data = load_image(metallic_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
-                let roughness_data = load_image(roughness_file_name.as_str()).map_err(|_| TextureError::FileNotFound)?;
+                let normal_data = load_image(normal_file_name.as_str()).map_err(|e| TextureError::LoadingError(e.clone()))?;
+                let metallic_data = load_image(metallic_file_name.as_str()).map_err(|e| TextureError::LoadingError(e.clone()))?;
+                let roughness_data = load_image(roughness_file_name.as_str()).map_err(|e| TextureError::LoadingError(e.clone()))?;
 
                 assert!(diffuse_data.dimensions.0 == metallic_data.dimensions.0 && diffuse_data.dimensions.1 == metallic_data.dimensions.1);
                 assert!(diffuse_data.dimensions.0 == roughness_data.dimensions.0 && diffuse_data.dimensions.1 == roughness_data.dimensions.1);
@@ -191,12 +191,9 @@ impl UiTexture {
 }
 
 fn load_image(file_name: &str) -> Result<Image, String> { // todo: use dds
-    let decoder = png::Decoder::new(std::fs::File::open(file_name).map_err(|e| format!("failed to open file: {}", e))?);
-    let mut reader = decoder.read_info().map_err(|e| format!("failed to read file: {}", e))?;
-    let mut buf = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).map_err(|e| format!("failed to read file: {}", e))?;
-    let dimensions = (info.width, info.height);
-    let bytes = &buf[0..info.buffer_size()];
-    let data = bytes.to_vec();
+    let img = image::open(file_name).map_err(|e| format!("Failed to load image: {}", e))?;
+    let rgba = img.into_rgba8();
+    let dimensions = rgba.dimensions();
+    let data = rgba.to_vec();
     Ok(Image { dimensions, data })
 }
