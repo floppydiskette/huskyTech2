@@ -97,16 +97,16 @@ async fn main() {
 
     if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
-    renderer.lock_mouse(true);
+   // renderer.lock_mouse(true);
 
     let mut last_frame_time = std::time::Instant::now();
     loop {
         let delta = last_frame_time.elapsed().as_secs_f32();
-        keyboard::tick_keyboard();
-        mouse::tick_mouse();
         let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
         worldmachine.tick_connection(&mut updates).await;
         worldmachine.render(&mut renderer);
+        keyboard::tick_keyboard();
+        mouse::tick_mouse();
         renderer.swap_buffers();
         if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
             process::exit(0);

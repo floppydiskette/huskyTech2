@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::thread;
+use std::time::Instant;
 use gfx_maths::*;
 use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use async_recursion::async_recursion;
 use libsex::bindings::XConnectionWatchProc;
 use crate::physics::PhysicsSystem;
 use crate::server::connections::SteadyMessageQueue;
-use crate::server::server_player::ServerPlayerContainer;
+use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::ecs::Entity;
 use crate::worldmachine::player::PlayerContainer;
@@ -22,11 +23,12 @@ pub type ConnectionUUID = String;
 
 #[derive(Clone, Debug)]
 pub enum Connection {
-    Local(LocalConnection),
+    Local(Arc<Mutex<LocalConnection>>),
 }
 
+#[derive(Clone)]
 pub enum ConnectionClientside {
-    Local(LocalConnectionClientSide),
+    Local(Arc<Mutex<LocalConnectionClientSide>>),
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +80,7 @@ pub struct LocalConnectionClientSide {
 
 #[derive(Clone, Debug)]
 pub enum Connections {
-    Local(Arc<Mutex<Vec<LocalConnection>>>),
+    Local(Arc<Mutex<Vec<Arc<Mutex<LocalConnection>>>>>),
 }
 
 #[derive(Clone)]
@@ -98,6 +100,8 @@ impl Server {
         worldmachine.initialise(physics, true);
         worldmachine.load_map(map_name).expect("failed to load map");
 
+        worldmachine.players = Some(Arc::new(Mutex::new(HashMap::new())));
+
         info!("server started");
 
         Self {
@@ -109,24 +113,33 @@ impl Server {
 
     async fn get_connection_uuid(&mut self, connection: &Connection) -> ConnectionUUID {
         match connection {
-            Connection::Local(local_connection) => local_connection.uuid.clone(),
+            Connection::Local(local_connection) => local_connection.lock().await.uuid.clone(),
         }
     }
 
     async unsafe fn send_steady_packet_unsafe(&mut self, connection: &Connection, packet: SteadyPacketData) {
         match connection.clone() {
             Connection::Local(connection) => {
-                connection.steady_update_sender.send(packet.clone()).await.unwrap();
+                let mut connection_lock = connection.lock().await;
+                connection_lock.steady_update_sender.send(packet.clone()).await.unwrap();
                 debug!("sent packet to local connection");
                 // wait for the packet to be consumed
+                drop(connection_lock);
                 loop {
+                    let mut connection_lock = connection.lock().await;
+                    let mut connection = Arc::new(Mutex::new(connection_lock.clone()));
                     self.get_received_steady_packets(&Connection::Local(connection.clone())).await;
-                    let mut queue = connection.steady_receiver_queue.lock().await;
-                    if let Some(packet_data) = queue.pop() {
-                        if let SteadyPacket::Consume(uuid) = packet_data.packet.clone().unwrap() {
-                            if uuid == packet.clone().uuid.unwrap() {
-                                debug!("packet consumed");
-                                break;
+                    let connection = connection.lock().await;
+                    *connection_lock = connection.clone();
+                    {
+                        let mut queue = connection_lock.steady_receiver_queue.lock().await;
+                        if let Some(packet_data) = queue.pop() {
+                            if let SteadyPacket::Consume(uuid) = packet_data.packet.clone().unwrap() {
+                                if uuid == packet.clone().uuid.unwrap() {
+                                    debug!("packet consumed");
+                                    break;
+                                }
+                                debug!("packet not consumed");
                             }
                         }
                     }
@@ -154,6 +167,7 @@ impl Server {
         let uuid = generate_uuid();
         match connection.clone() {
             Connection::Local(connection) => {
+                let connection = connection.lock().await;
                 let packet_data = SteadyPacketData {
                     packet: Some(packet),
                     uuid: Some(uuid.clone()),
@@ -166,14 +180,16 @@ impl Server {
 
     pub async fn get_received_steady_packets(&mut self, connection: &Connection) {
         match connection.clone() {
-            Connection::Local(connection) => {
+            Connection::Local(connection_raw) => {
+                let mut connection = connection_raw.lock().await;
                 if !connection.steady_update_receiver.has_changed().ok().unwrap_or(false) {
                     return;
                 }
-                let message = connection.steady_update_receiver.borrow().clone();
+                let message = connection.steady_update_receiver.borrow_and_update().clone();
                 if let Some(packet) = message.packet {
                     unsafe {
-                        self.queue_received_steady_packet(&Connection::Local(connection.clone()), packet).await;
+                        drop(connection);
+                        self.queue_received_steady_packet(&Connection::Local(connection_raw.clone()), packet).await;
                     }
                 }
             }
@@ -183,6 +199,7 @@ impl Server {
     pub async fn send_fast_packet(&mut self, connection: &Connection, packet: FastPacket) {
         match connection.clone() {
             Connection::Local(connection) => {
+                let mut connection = connection.lock().await;
                 let packet_data = FastPacketData {
                     packet: Some(packet),
                 };
@@ -194,10 +211,11 @@ impl Server {
     pub async fn try_receive_fast_packet(&mut self, connection: &Connection) -> Option<FastPacket> {
         match connection.clone() {
             Connection::Local(connection) => {
+                let mut connection = connection.lock().await;
                 if !connection.fast_update_receiver.has_changed().ok().unwrap_or(false) {
                     return None;
                 }
-                let message = connection.fast_update_receiver.borrow().clone();
+                let message = connection.fast_update_receiver.borrow_and_update().clone();
                 if let Some(packet) = message.packet {
                     return Some(packet);
                 }
@@ -209,35 +227,46 @@ impl Server {
     pub async fn begin_connection(&mut self, connection: Connection) {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = self.worldmachine.lock().await.world.clone();
+        let physics = self.worldmachine.lock().await.physics.clone().unwrap();
         for entity in world_clone.entities.iter() {
             self.send_steady_packet(&connection, SteadyPacket::InitialiseEntity(entity.uid, entity.clone())).await;
         }
         let uuid = self.get_connection_uuid(&connection).await;
-        self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(uuid.clone(), uuid.clone(),
-                                                                            Vec3::new(0.0, 2.0, 0.0),
-                                                                            Quaternion::identity(),
-                                                                            Vec3::new(1.0, 1.0, 1.0))).await;
+
+        let mut player = ServerPlayer::new(uuid.as_str(), "morbius", Vec3::new(0.0, 2.0, 0.0), Quaternion::identity(), Vec3::new(1.0, 1.0, 1.0));
+
+        player.init(physics.clone());
+
+        self.worldmachine.lock().await.players.as_mut().unwrap().lock().await.insert(uuid.clone(), ServerPlayerContainer {
+            player: player.clone(),
+            entity_id: None
+        });
+
+        self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(player.uuid.clone(), player.name.clone(), player.get_position(), player.get_rotation(), player.scale)).await;
     }
 
     async fn handle_steady_packets(&mut self, connection: Connection) {
         match connection.clone() {
             Connection::Local(local_connection) => {
-                let steady_packet_data = local_connection.steady_update_receiver.borrow().clone();
-                if let Some(steady_packet) = steady_packet_data.packet {
-                    match steady_packet {
-                        SteadyPacket::KeepAlive => {
-                            // do nothing
-                        }
-                        SteadyPacket::InitialiseEntity(uid, entity) => {
-                            // client shouldn't be sending this
-                            debug!("client sent initialise packet");
-                        }
+                let mut local_connection = local_connection.lock().await;
+                if local_connection.steady_update_receiver.has_changed().unwrap_or(false) {
+                    let steady_packet_data = local_connection.steady_update_receiver.borrow_and_update().clone();
+                    if let Some(steady_packet) = steady_packet_data.packet {
+                        match steady_packet {
+                            SteadyPacket::KeepAlive => {
+                                // do nothing
+                            }
+                            SteadyPacket::InitialiseEntity(uid, entity) => {
+                                // client shouldn't be sending this
+                                debug!("client sent initialise packet");
+                            }
 
-                        // client shouldn't be sending these
-                        SteadyPacket::Consume(_) => {}
-                        SteadyPacket::SelfTest => {}
-                        SteadyPacket::InitialisePlayer(_, _, _, _, _) => {}
-                        SteadyPacket::Message(_) => {}
+                            // client shouldn't be sending these
+                            SteadyPacket::Consume(_) => {}
+                            SteadyPacket::SelfTest => {}
+                            SteadyPacket::InitialisePlayer(_, _, _, _, _) => {}
+                            SteadyPacket::Message(_) => {}
+                        }
                     }
                 }
             }
@@ -249,26 +278,29 @@ impl Server {
     async fn handle_fast_packets(&mut self, connection: Connection) {
         match connection.clone() {
             Connection::Local(local_connection) => {
-                let fast_packet_data = local_connection.fast_update_receiver.borrow().clone();
-                if let Some(fast_packet) = fast_packet_data.packet {
-                    match fast_packet {
-                        FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation) => {
-                            let mut worldmachine = self.worldmachine.lock().await;
-                            let mut players = worldmachine.players.clone();
-                            let mut players = players.as_mut().unwrap().lock().await;
-                            let player = players.get_mut(&uuid).unwrap();
-                            let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, &mut worldmachine).await;
-                            if success {
-                                debug!("player moved successfully");
-                            } else {
-                                debug!("player move failed");
+                let mut connection = local_connection.lock().await;
+                if connection.fast_update_receiver.has_changed().unwrap_or(false) {
+                    let fast_packet_data = connection.fast_update_receiver.borrow_and_update().clone();
+                    if let Some(fast_packet) = fast_packet_data.packet {
+                        match fast_packet {
+                            FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation) => {
+                                let mut worldmachine = self.worldmachine.lock().await;
+                                let mut players = worldmachine.players.clone();
+                                let mut players = players.as_mut().unwrap().lock().await;
+                                let player = players.get_mut(&uuid).unwrap();
+                                let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, &mut worldmachine).await;
+                                if success {
+                                    debug!("player moved successfully");
+                                } else {
+                                    debug!("player move failed");
+                                }
                             }
-                        }
 
-                        // client shouldn't be sending these
-                        FastPacket::ChangePosition(_, _) => {}
-                        FastPacket::ChangeRotation(_, _) => {}
-                        FastPacket::ChangeScale(_, _) => {}
+                            // client shouldn't be sending these
+                            FastPacket::ChangePosition(_, _) => {}
+                            FastPacket::ChangeRotation(_, _) => {}
+                            FastPacket::ChangeScale(_, _) => {}
+                        }
                     }
                 }
             }
@@ -301,7 +333,7 @@ impl Server {
                     let connection_index = match self.connections.clone() {
                         Connections::Local(connections) => {
                             let mut connections = connections.lock().await;
-                            connections.push(local_connection);
+                            connections.push(local_connection.clone());
                             connections.len() - 1
                         }
                     };
@@ -312,7 +344,7 @@ impl Server {
         }
     }
 
-    pub async fn join_local_server(&mut self) -> LocalConnectionClientSide {
+    pub async fn join_local_server(&mut self) -> Arc<Mutex<LocalConnectionClientSide>> {
         info!("joining local server");
         let (fast_update_sender_client, fast_update_receiver_server) = watch::channel(FastPacketData {
             packet: None,
@@ -341,17 +373,19 @@ impl Server {
         };
         struct ThreadData {
             server: Server,
-            connection: LocalConnection,
+            connection: Arc<Mutex<LocalConnectionClientSide>>,
         }
+        let connection = Arc::new(Mutex::new(local_connection_client_side));
         let thread_data = ThreadData {
             server: self.clone(),
-            connection: local_connection.clone(),
+            connection: connection.clone(),
         };
         tokio::spawn(async move {
             let mut thread_data = thread_data;
-            thread_data.server.new_connection(Connection::Local(local_connection)).await;
+            let connection = Arc::new(Mutex::new(local_connection));
+            thread_data.server.new_connection(Connection::Local(connection)).await;
         });
-        local_connection_client_side
+        connection
     }
 
     async fn get_connections_affected_from_position(&mut self, position: Vec3) -> Vec<Connection> {
@@ -430,7 +464,7 @@ impl Server {
                             let connection = connections.get(connection_index).unwrap().clone();
                             struct ThreadData {
                                 server: Server,
-                                connection: LocalConnection,
+                                connection: Arc<Mutex<LocalConnection>>,
                             }
                             let thread_data = ThreadData {
                                 server: self.clone(),
@@ -450,6 +484,12 @@ impl Server {
             if let Some(updates) = updates {
                 self.handle_world_updates(updates).await;
             }
+            // do physics tick
+            let mut worldmachine = self.worldmachine.lock().await;
+            let last_physics_tick = worldmachine.last_physics_update;
+            let delta = Instant::now().duration_since(last_physics_tick).as_secs_f32();
+            worldmachine.physics.as_mut().unwrap().tick(delta);
+            worldmachine.last_physics_update = Instant::now();
         }
     }
 }

@@ -271,9 +271,11 @@ pub fn init(renderer: &mut ht_renderer) {
 }
 
 pub fn tick_keyboard() {
-    let mut keyboard = KEYBOARD.lock().unwrap();
-    for (_, state) in keyboard.key_state.iter_mut() {
-        *state = KeyState::TakenCareOf;
+    {
+        let mut keyboard = KEYBOARD.lock().unwrap();
+        for (_, state) in keyboard.key_state.iter_mut() {
+            *state = KeyState::TakenCareOf;
+        }
     }
     unsafe {
         glfwPollEvents();

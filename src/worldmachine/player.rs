@@ -137,6 +137,7 @@ impl Player {
         }
         self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
         if movement != Vec3::new(0.0, 0.0, 0.0) {
+            debug!("movement: {:?}", movement);
             Some(movement)
         } else {
             None

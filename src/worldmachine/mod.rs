@@ -297,6 +297,7 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
                     let attempt = connection.steady_update_sender.send(message);
                     if attempt.is_err() {
                         error!("send_queued_steady_message: failed to send message");
@@ -321,6 +322,7 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
                     let mut queue = connection.steady_sender_queue.lock().await;
                     while let Some(message) = queue.pop() {}
                 }
@@ -332,6 +334,7 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
                     let attempt = connection.fast_update_sender.send(message);
                     if attempt.is_err() {
                         error!("send_fast_message: failed to send message");
@@ -341,10 +344,11 @@ impl WorldMachine {
         }
     }
 
-    fn consume_steady_message(&mut self, message: SteadyPacketData) {
+    async fn consume_steady_message(&mut self, message: SteadyPacketData) {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
                     let attempt = connection.steady_update_sender.send(SteadyPacketData {
                         packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
                         uuid: Some(server::generate_uuid()),
@@ -352,15 +356,19 @@ impl WorldMachine {
                     if attempt.is_err() {
                         error!("send_queued_steady_message: failed to send message");
                     }
+                    debug!("consume message sent");
                 }
             }
+        } else {
+            error!("consume_steady_message: no connection");
         }
     }
 
-    fn process_steady_messages(&mut self) {
-        if let Some(connection) = &mut self.server_connection {
+    async fn process_steady_messages(&mut self) {
+        if let Some(connection) = self.server_connection.clone() {
             match connection {
                 ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
                     // check if we have any messages to process
                     let try_recv = connection.steady_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
@@ -402,7 +410,8 @@ impl WorldMachine {
                                 });
                             }
                         }
-                        self.consume_steady_message(message);
+                        drop(connection);
+                        self.consume_steady_message(message).await;
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
                             warn!("process_steady_messages: error receiving message: {:?}", e);
@@ -413,10 +422,11 @@ impl WorldMachine {
         }
     }
 
-    fn process_fast_messages(&mut self) {
-        if let Some(connection) = &mut self.server_connection {
+    async fn process_fast_messages(&mut self) {
+        if let Some(connection) = self.server_connection.clone() {
             match connection {
                 ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
                     // check if we have any messages to process
                     let try_recv = connection.fast_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
@@ -493,16 +503,16 @@ impl WorldMachine {
                     let packet = FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation);
                     self.send_fast_message(FastPacketData {
                         packet: Some(packet),
-                    });
+                    }).await;
                 }
             }
         }
     }
 
     pub async fn tick_connection(&mut self, client_updates: &mut Vec<ClientUpdate>) {
-        self.process_steady_messages();
+        self.process_steady_messages().await;
         self.send_queued_steady_messages().await;
-        self.process_fast_messages();
+        self.process_fast_messages().await;
         self.process_client_updates(client_updates).await;
     }
 
@@ -563,7 +573,6 @@ impl WorldMachine {
         // simulate a physics tick
         let current_time = Instant::now();
         let time_since_last_tick = current_time.duration_since(self.last_physics_update).as_secs_f32();
-        debug!("delta_time: {}", time_since_last_tick);
         physics_engine.tick(time_since_last_tick);
         self.last_physics_update = Instant::now();
 

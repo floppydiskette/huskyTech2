@@ -45,9 +45,9 @@ impl Default for ServerPlayer {
 }
 
 impl ServerPlayer {
-    pub fn new(name: &str, position: Vec3, rotation: Quaternion, scale: Vec3) -> Self {
+    pub fn new(uuid: &str, name: &str, position: Vec3, rotation: Quaternion, scale: Vec3) -> Self {
         Self {
-            uuid: uuid::Uuid::new_v4().to_string(),
+            uuid: uuid.to_string(),
             name: name.to_string(),
             position,
             head_rotation: rotation,

@@ -44,6 +44,7 @@ impl PhysicsSystem {
         Self { foundation, physics, dispatcher, scene, controller_manager, physics_materials }
     }
 
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn init_materials(physics: *mut PxPhysics) -> HashMap<Materials, PhysicsMaterial> {
         let mut physics_materials = HashMap::new();
 
@@ -93,13 +94,7 @@ impl PhysicsSystem {
             if PxCapsuleControllerDesc_isValid(controller_desc) {
                 let mut controller = PxControllerManager_createController_mut(self.controller_manager, controller_desc as *mut _);
 
-                let filters = PxControllerFilters_new(
-                    null(),
-                    null::<PxQueryFilterCallback> as *mut _,
-                    null::<PxControllerFilterCallback> as *mut _,
-                );
-
-                Some(PhysicsCharacterController { controller, filters, flags: CollisionFlags::default() })
+                Some(PhysicsCharacterController { controller, flags: CollisionFlags::default() })
             } else {
                 None
             }
@@ -114,21 +109,11 @@ pub enum ClimbingMode {
     Last
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CollisionFlags {
     pub colliding_side: bool,
     pub colliding_top: bool,
     pub colliding_bottom: bool,
-}
-
-impl Default for CollisionFlags {
-    fn default() -> Self {
-        Self {
-            colliding_side: false,
-            colliding_top: false,
-            colliding_bottom: false,
-        }
-    }
 }
 
 impl CollisionFlags {
@@ -144,7 +129,6 @@ impl CollisionFlags {
 #[derive(Clone)]
 pub struct PhysicsCharacterController {
     pub controller: *mut PxController,
-    pub filters: PxControllerFilters,
     pub flags: CollisionFlags,
 }
 
@@ -163,8 +147,11 @@ impl PhysicsCharacterController {
         };
 
         unsafe {
-            let filters_ptr = &mut self.filters as *mut _;
-            let flags = PxController_move_mut(self.controller, &mut displacement, 0.0, delta_time, filters_ptr, null_mut());
+            let flags = PxController_move_mut(self.controller,
+                                              &mut displacement,
+                                              0.0,
+                                              delta_time,
+                                              &PxControllerFilters_new(null_mut(), null_mut(), null_mut()), null_mut());
             self.flags = CollisionFlags::from_bits(flags.mBits);
         }
     }
@@ -180,13 +167,13 @@ impl PhysicsCharacterController {
     }
 
     pub fn set_position(&self, position: Vec3) {
-        let mut position = PxExtendedVec3 {
+        let position = PxExtendedVec3 {
             x: position.x as f64,
             y: position.y as f64,
             z: position.z as f64,
         };
         unsafe {
-            PxController_setPosition_mut(self.controller, &mut position);
+            PxController_setPosition_mut(self.controller, &position);
         }
     }
 }
