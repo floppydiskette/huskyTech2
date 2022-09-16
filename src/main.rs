@@ -2,6 +2,7 @@
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
+extern crate core;
 
 use std::borrow::BorrowMut;
 use std::{process, thread};
@@ -9,6 +10,7 @@ use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
 use libsex::bindings::*;
+use crate::keyboard::{Key, Keyboard};
 use crate::renderer::ht_renderer;
 use crate::server::ConnectionClientside;
 
@@ -35,6 +37,7 @@ pub mod light;
 pub mod worldmachine;
 pub mod physics;
 pub mod server;
+pub mod keyboard;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -75,7 +78,7 @@ async fn main() {
 
     info!("initialised worldmachine");
 
-    let mut server = server::Server::new();
+    let mut server = server::Server::new("test", physics);
     let mut server_clone = server.clone();
     tokio::spawn(async move {
         server_clone.run().await;
@@ -86,14 +89,23 @@ async fn main() {
 
     debug!("connected to internal server");
 
+    keyboard::init(&mut renderer);
+
+    debug!("initialised keyboard");
+
     if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
+    let mut last_frame_time = std::time::Instant::now();
     loop {
+        let delta = last_frame_time.elapsed().as_secs_f32();
         worldmachine.tick_connection().await;
+        worldmachine.client_tick(&mut renderer, delta);
+        keyboard::tick_keyboard();
         worldmachine.render(&mut renderer);
         renderer.swap_buffers();
-        if renderer.manage_window() {
+        if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
             process::exit(0);
         }
+        last_frame_time = std::time::Instant::now();
     }
 }

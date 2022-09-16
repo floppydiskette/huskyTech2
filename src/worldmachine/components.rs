@@ -1,8 +1,11 @@
+#![allow(clippy::new_ret_no_self)]
+
 use std::collections::BTreeMap;
 use gfx_maths::*;
 use crate::worldmachine::ecs::*;
 
 lazy_static! {
+    pub static ref COMPONENT_TYPE_PLAYER: ComponentType = ComponentType::create_if_not_exists("Player");
     pub static ref COMPONENT_TYPE_TRANSFORM: ComponentType = ComponentType::create_if_not_exists("Transform");
     pub static ref COMPONENT_TYPE_MESH_RENDERER: ComponentType = ComponentType::create_if_not_exists("MeshRenderer");
     pub static ref COMPONENT_TYPE_TERRAIN: ComponentType = ComponentType::create_if_not_exists("Terrain");
@@ -11,11 +14,14 @@ lazy_static! {
 
 pub fn register_component_types() {
     // this is kinda dumb, but in order to get all component types registered, we need to make them all be referenced
+    let _ = COMPONENT_TYPE_PLAYER.clone();
     let _ = COMPONENT_TYPE_TRANSFORM.clone();
     let _ = COMPONENT_TYPE_MESH_RENDERER.clone();
     let _ = COMPONENT_TYPE_TERRAIN.clone();
     let _ = COMPONENT_TYPE_LIGHT.clone();
 }
+
+// player component is defined in src/worldmachine/player.rs
 
 pub struct Transform {}
 

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::thread;
@@ -9,10 +10,12 @@ use crate::physics::PhysicsSystem;
 use crate::server::connections::SteadyMessageQueue;
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::ecs::Entity;
+use crate::worldmachine::player::PlayerContainer;
 
 pub mod connections;
 
 pub type PacketUUID = String;
+pub type ConnectionUUID = String;
 
 #[derive(Clone, Debug)]
 pub enum Connection {
@@ -57,7 +60,7 @@ pub struct LocalConnection {
     pub fast_update_receiver: watch::Receiver<FastPacketData>,
     steady_update_receiver: watch::Receiver<SteadyPacketData>,
     pub steady_receiver_queue: Arc<Mutex<SteadyMessageQueue>>,
-    pub uuid: String,
+    pub uuid: ConnectionUUID,
 }
 
 pub struct LocalConnectionClientSide {
@@ -76,6 +79,7 @@ pub enum Connections {
 #[derive(Clone)]
 pub struct Server {
     pub connections: Connections,
+    players: Arc<Mutex<HashMap<Connection, PlayerContainer>>>,
     pub connections_to_initialise: Arc<Mutex<Vec<usize>>>,
     pub worldmachine: Arc<Mutex<WorldMachine>>,
 }
@@ -85,15 +89,16 @@ pub fn generate_uuid() -> PacketUUID {
 }
 
 impl Server {
-    pub fn new() -> Self {
-        let mut physics = PhysicsSystem::init();
+    pub fn new(map_name: &str, physics: PhysicsSystem) -> Self {
         let mut worldmachine = WorldMachine::default();
         worldmachine.initialise(physics, true);
+        worldmachine.load_map(map_name).expect("failed to load map");
 
         info!("server started");
 
         Self {
             connections: Connections::Local(Arc::new(Mutex::new(Vec::new()))),
+            players: Arc::new(Mutex::new(HashMap::new())),
             connections_to_initialise: Arc::new(Mutex::new(Vec::new())),
             worldmachine: Arc::new(Mutex::new(worldmachine)),
         }
@@ -308,6 +313,19 @@ impl Server {
         connections_affected
     }
 
+    async fn get_all_connections(&mut self) -> Vec<Connection> {
+        let mut connections_final = Vec::new();
+        match self.connections.clone() {
+            Connections::Local(connections) => {
+                let connections = connections.lock().await;
+                for connection in connections.iter() {
+                    connections_final.push(Connection::Local(connection.clone()));
+                }
+            }
+        }
+        connections_final
+    }
+
     pub async fn handle_world_updates(&mut self, updates: Vec<WorldUpdate>) {
         for update in updates {
             match update {
@@ -327,6 +345,12 @@ impl Server {
                     let connections = self.get_connections_affected_from_position(Vec3::new(0.0, 0.0, 0.0)).await;
                     for connection in connections {
                         self.send_fast_packet(&connection, FastPacket::ChangeScale(entity_id, vec3)).await;
+                    }
+                }
+                WorldUpdate::InitEntity(entity_id, entity_data) => {
+                    let connections = self.get_all_connections().await;
+                    for connection in connections {
+                        self.send_steady_packet(&connection, SteadyPacket::InitialiseEntity(entity_id, entity_data.clone())).await;
                     }
                 }
             }
@@ -369,7 +393,7 @@ impl Server {
                 }
             }
             // unlock
-            let updates = self.worldmachine.lock().await.server_tick();
+            let updates = self.worldmachine.lock().await.server_tick().await;
             if let Some(updates) = updates {
                 self.handle_world_updates(updates).await;
             }

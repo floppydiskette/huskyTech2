@@ -16,6 +16,7 @@ use crate::camera::*;
 #[cfg(feature = "glfw")]
 use libsex::bindings::*;
 use crate::helpers::set_shader_if_not_already;
+use crate::keyboard::Key;
 use crate::light::Light;
 use crate::meshes::Mesh;
 use crate::textures::Texture;
@@ -311,6 +312,20 @@ impl ht_renderer {
                 backend,
             })
         }
+    }
+
+    pub fn get_mouse_coords(&mut self) -> Vec2 {
+        let mut x = 0.0;
+        let mut y = 0.0;
+        unsafe {
+            #[cfg(feature = "glfw")]
+            {
+                let mut window = 0;
+                glfwGetCursorPos(self.backend.window, &mut x, &mut y);
+                glfwGetWindowPos(self.backend.window, &mut window, &mut window);
+            }
+        }
+        Vec2::new(x as f32, y as f32)
     }
 
     pub fn initialise_basic_resources(&mut self) {

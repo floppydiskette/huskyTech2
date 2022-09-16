@@ -1,10 +1,11 @@
 use std::any::Any;
 use std::borrow::{Borrow, BorrowMut};
+use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
@@ -13,11 +14,14 @@ use crate::server::{ConnectionClientside, FastPacket, SteadyPacket, SteadyPacket
 use crate::worldmachine::components::{COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
+use crate::worldmachine::MapLoadError::FolderNotFound;
+use crate::worldmachine::player::PlayerContainer;
 
 pub mod ecs;
 pub mod components;
 pub mod entities;
 pub mod helpers;
+pub mod player;
 
 pub type EntityId = u64;
 
@@ -36,9 +40,15 @@ pub struct WorldDef {
 
 #[derive(Clone, Debug)]
 pub enum WorldUpdate {
+    InitEntity(EntityId, Entity),
     SetPosition(EntityId, Vec3),
     SetRotation(EntityId, Quaternion),
     SetScale(EntityId, Vec3),
+}
+
+#[derive(Clone, Debug)]
+pub enum MapLoadError {
+    FolderNotFound(String),
 }
 
 impl Clone for World {
@@ -69,6 +79,8 @@ pub struct WorldMachine {
     lights_changed: bool,
     is_server: bool,
     server_connection: Option<crate::server::ConnectionClientside>,
+    world_update_queue: Arc<Mutex<VecDeque<WorldUpdate>>>,
+    player: Option<PlayerContainer>,
 }
 
 impl Default for WorldMachine {
@@ -87,6 +99,8 @@ impl Default for WorldMachine {
             lights_changed: true,
             is_server: false,
             server_connection: None,
+            world_update_queue: Arc::new(Mutex::new(VecDeque::new())),
+            player: None
         }
     }
 }
@@ -111,15 +125,44 @@ impl WorldMachine {
         self.world.systems.clear();
         self.counter = 0.0;
         self.lights_changed = true;
-        let mut ht2 = new_ht2_entity();
-        ht2.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(Vec3::new(0.0, 0.0, 2.0)));
-        if is_server {
-            ht2.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(Vec3::new(0.0, 0.0, 7.0)));
+
+        if !is_server {
+            self.player = Some(PlayerContainer{
+                player: Default::default(),
+                entity_id: None
+            });
         }
-        let light_component = Light::new(Vec3::new(0.0, 1.0, 0.0), Vec3::new(1.0, 1.0, 1.0), 1.0);
-        ht2.add_component(light_component);
-        self.world.entities.push(ht2);
-        self.entities_wanting_to_load_things.push(0);
+    }
+
+    pub fn load_map(&mut self, map_name: &str) -> Result<(), MapLoadError> {
+        self.blank_slate(self.is_server);
+        let map_dir = format!("{}/maps/{}", self.game_data_path, map_name);
+        if !std::path::Path::new(&map_dir).exists() {
+            return Err(FolderNotFound(map_dir));
+        }
+        let mut deserializer = rmp_serde::Deserializer::new(std::fs::File::open(format!("{}/worlddef", map_dir)).unwrap());
+        let world_def: WorldDef = Deserialize::deserialize(&mut deserializer).unwrap();
+
+        // load entities
+        for entity in world_def.world.entities {
+            self.world.entities.push(entity);
+        }
+
+        // if we're a server, queue entity init packets
+        if self.is_server {
+            let mut entity_init_packets = Vec::new();
+            for entity in &self.world.entities {
+                entity_init_packets.push(WorldUpdate::InitEntity(entity.uid, entity.clone()));
+            }
+            self.queue_updates(entity_init_packets);
+        }
+
+        // load systems
+        for system in world_def.world.systems {
+            self.world.systems.push(system);
+        }
+
+        Ok(())
     }
 
     #[allow(clippy::borrowed_box)]
@@ -371,22 +414,48 @@ impl WorldMachine {
         self.process_fast_messages();
     }
 
-    pub fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {
+    pub async fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {
         let mut updates = Vec::new();
 
-        self.counter += 1.0;
-
-        // for debugging, set the rotation of the ht2 entity
-        let entity_index = self.get_entity_index(1).unwrap();
-        let entity = self.world.entities.get_mut(entity_index).unwrap();
-        let quat = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0));
-        entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", ParameterValue::Quaternion(quat));
-        updates.push(WorldUpdate::SetRotation(1, quat));
+        let mut world_updates = self.world_update_queue.lock().await;
+        world_updates.drain(..).for_each(|update| {
+            updates.push(update);
+        });
 
         if !updates.is_empty() {
             Some(updates)
         } else {
             None
+        }
+    }
+
+    pub async fn queue_update(&mut self, update: WorldUpdate) {
+        if !self.is_server {
+            warn!("queue_update: called on client");
+        } else {
+            let mut world_updates = self.world_update_queue.lock().await;
+            world_updates.push_back(update);
+        }
+    }
+
+    pub fn queue_updates(&mut self, updates: Vec<WorldUpdate>) {
+        if !self.is_server {
+            warn!("queue_update: called on client");
+        } else {
+            let world_updates = self.world_update_queue.clone();
+            tokio::spawn(async move {
+                let mut world_updates = world_updates.lock().await;
+                updates.iter().for_each(|update| {
+                    world_updates.push_back(update.clone());
+                });
+            });
+        }
+    }
+
+    pub fn client_tick(&mut self, renderer: &mut ht_renderer, delta_time: f32) {
+        if let Some(player_container) = self.player.as_mut() {
+            let player = &mut player_container.player;
+            player.handle_input(renderer, delta_time);
         }
     }
 
@@ -449,7 +518,7 @@ impl WorldMachine {
             }
         }
         self.entities_wanting_to_load_things.clear();
-        for entity in self.world.entities.iter_mut() {
+        for (i, entity) in self.world.entities.iter_mut().enumerate() {
             if let Some(mesh_renderer) = entity.get_component(COMPONENT_TYPE_MESH_RENDERER.clone()) {
                 if let Some(mesh) = mesh_renderer.get_parameter("mesh") {
                     // get the string value of the mesh
@@ -532,6 +601,9 @@ impl WorldMachine {
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
                         mesh.render(renderer, Some(texture));
+                    } else {
+                        // if not, add it to the list of things to load
+                        self.entities_wanting_to_load_things.push(i);
                     }
                 }
             }

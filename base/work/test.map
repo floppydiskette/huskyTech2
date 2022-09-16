@@ -91,5 +91,68 @@ entities:
       name: Light
   children: []
   parent: null
+- name: ht2
+  uid: 5
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 1.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 1
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String ht2
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String default
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      intensity:
+        name: intensity
+        value: !Float 1.0
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 1.0
+          z: 0.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
 systems: []
-eid_manager: 4
+eid_manager: 5
