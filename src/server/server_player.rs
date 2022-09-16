@@ -88,6 +88,9 @@ impl ServerPlayer {
             self.physics_controller.as_mut().unwrap().set_position(new_position);
             true
         } else {
+            self.position = new_position_calculated;
+            self.rotation = new_rotation;
+            self.head_rotation = new_head_rotation;
             false
         }
     }
