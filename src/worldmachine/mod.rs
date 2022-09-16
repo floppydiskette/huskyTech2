@@ -107,7 +107,7 @@ impl Default for WorldMachine {
 
 impl WorldMachine {
     pub fn initialise(&mut self, physics: PhysicsSystem, is_server: bool) {
-        _ = components::COMPONENTS_INITIALISED.clone();
+        let _ = *components::COMPONENTS_INITIALISED;
         self.game_data_path = String::from("base");
         self.physics = Some(physics);
         self.is_server = is_server;

@@ -314,18 +314,17 @@ impl ht_renderer {
         }
     }
 
-    pub fn get_mouse_coords(&mut self) -> Vec2 {
-        let mut x = 0.0;
-        let mut y = 0.0;
+    pub fn lock_mouse(&mut self, lock: bool) {
         unsafe {
             #[cfg(feature = "glfw")]
             {
-                let mut window = 0;
-                glfwGetCursorPos(self.backend.window, &mut x, &mut y);
-                glfwGetWindowPos(self.backend.window, &mut window, &mut window);
+                if lock {
+                    glfwSetInputMode(self.backend.window, GLFW_CURSOR as c_int, GLFW_CURSOR_DISABLED as c_int);
+                } else {
+                    glfwSetInputMode(self.backend.window, GLFW_CURSOR as c_int, GLFW_CURSOR_NORMAL as c_int);
+                }
             }
         }
-        Vec2::new(x as f32, y as f32)
     }
 
     pub fn initialise_basic_resources(&mut self) {

@@ -38,6 +38,7 @@ pub mod worldmachine;
 pub mod physics;
 pub mod server;
 pub mod keyboard;
+pub mod mouse;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -90,17 +91,21 @@ async fn main() {
     debug!("connected to internal server");
 
     keyboard::init(&mut renderer);
+    mouse::init(&mut renderer);
 
     debug!("initialised keyboard");
 
     if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
+    renderer.lock_mouse(true);
+
     let mut last_frame_time = std::time::Instant::now();
     loop {
         let delta = last_frame_time.elapsed().as_secs_f32();
+        keyboard::tick_keyboard();
+        mouse::tick_mouse();
         worldmachine.tick_connection().await;
         worldmachine.client_tick(&mut renderer, delta);
-        keyboard::tick_keyboard();
         worldmachine.render(&mut renderer);
         renderer.swap_buffers();
         if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {

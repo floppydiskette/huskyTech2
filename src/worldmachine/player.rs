@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use gfx_maths::*;
-use crate::{helpers, ht_renderer};
+use crate::{helpers, ht_renderer, mouse};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::{EntityId};
@@ -63,7 +63,7 @@ impl Default for Player {
 
 impl Player {
     pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) {
-        let mut mouse_pos = renderer.get_mouse_coords();
+        let mouse_pos = mouse::get_mouse_pos();
 
         if self.last_mouse_pos.is_none() {
             self.last_mouse_pos = Some(mouse_pos);
