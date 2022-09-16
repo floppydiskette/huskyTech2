@@ -107,8 +107,8 @@ impl Default for WorldMachine {
 
 impl WorldMachine {
     pub fn initialise(&mut self, physics: PhysicsSystem, is_server: bool) {
+        _ = components::COMPONENTS_INITIALISED.clone();
         self.game_data_path = String::from("base");
-        components::register_component_types();
         self.physics = Some(physics);
         self.is_server = is_server;
 
@@ -145,7 +145,16 @@ impl WorldMachine {
 
         // load entities
         for entity in world_def.world.entities {
-            self.world.entities.push(entity);
+            let mut entity_new = unsafe {
+                Entity::new_with_id(&*entity.name, entity.uid)
+            };
+            for component in entity.components {
+                let component_type = ComponentType::get(component.get_type().name).expect("component type not found");
+                let mut component = component;
+                component.component_type = component_type;
+                entity_new.add_component(component);
+            }
+            self.world.entities.push(entity_new);
         }
 
         // if we're a server, queue entity init packets
@@ -336,12 +345,17 @@ impl WorldMachine {
                                         Entity::new_with_id(entity_data.name.as_str(), entity_id)
                                     };
                                     entity.copy_data_from_other_entity(&entity_data);
+                                    self.world.entities.push(entity);
+                                    self.entities_wanting_to_load_things.push(self.world.entities.len() - 1);
                                 } else {
                                     // we already have this entity, so we need to update it
                                     let entity_index = self.get_entity_index(entity_id).unwrap();
                                     let entity = self.world.entities.get_mut(entity_index).unwrap();
                                     entity.copy_data_from_other_entity(&entity_data);
+                                    self.entities_wanting_to_load_things.push(entity_index);
                                 }
+                                debug!("initialise entity message received");
+                                debug!("world entities: {:?}", self.world.entities);
                             }
                             SteadyPacket::Message(str_message) => {
                                 info!("Received message from server: {}", str_message);

@@ -10,6 +10,11 @@ lazy_static! {
     pub static ref COMPONENT_TYPE_MESH_RENDERER: ComponentType = ComponentType::create_if_not_exists("MeshRenderer");
     pub static ref COMPONENT_TYPE_TERRAIN: ComponentType = ComponentType::create_if_not_exists("Terrain");
     pub static ref COMPONENT_TYPE_LIGHT: ComponentType = ComponentType::create_if_not_exists("Light");
+
+    pub static ref COMPONENTS_INITIALISED: bool = {
+        register_component_types();
+        true
+    };
 }
 
 pub fn register_component_types() {

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use gfx_maths::*;
-use crate::ht_renderer;
+use crate::{helpers, ht_renderer};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::*;
-use crate::worldmachine::EntityId;
+use crate::worldmachine::{EntityId};
 
 pub struct PlayerComponent {}
 
@@ -44,6 +44,7 @@ pub struct Player {
     pub head_rotation: Quaternion,
     pub rotation: Quaternion,
     pub scale: Vec3,
+    last_mouse_pos: Option<Vec2>
 }
 
 impl Default for Player {
@@ -55,6 +56,7 @@ impl Default for Player {
             head_rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             scale: Vec3::new(1.0, 1.0, 1.0),
+            last_mouse_pos: None
         }
     }
 }
@@ -62,6 +64,28 @@ impl Default for Player {
 impl Player {
     pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) {
         let mut mouse_pos = renderer.get_mouse_coords();
-        debug!("mouse pos: {:?}", mouse_pos);
+
+        if self.last_mouse_pos.is_none() {
+            self.last_mouse_pos = Some(mouse_pos);
+        }
+        let last_mouse_pos = self.last_mouse_pos.unwrap();
+        let mouse_x_offset = mouse_pos.x - last_mouse_pos.x;
+        let mouse_y_offset = mouse_pos.y - last_mouse_pos.y;
+
+        let camera = &mut renderer.camera;
+
+        let mut yaw = helpers::get_quaternion_yaw(camera.get_rotation());
+        let mut pitch = helpers::get_quaternion_pitch(camera.get_rotation());
+        yaw += -mouse_x_offset;
+        pitch += -mouse_y_offset;
+        if pitch > 89.0 {
+            pitch = 89.0;
+        }
+        if pitch < -89.0 {
+            pitch = -89.0;
+        }
+        let mut rotation = Quaternion::identity();
+        rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(pitch, 0.0, 0.0)) * rotation * Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw, 0.0));
+        camera.set_rotation(rotation);
     }
 }
