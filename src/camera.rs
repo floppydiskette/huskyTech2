@@ -2,6 +2,8 @@ use std::ops::Deref;
 use gfx_maths::*;
 use crate::helpers;
 
+pub const EYE_HEIGHT: f32 = 1.68;
+
 #[derive(Clone)]
 pub struct Camera {
     position: Vec3,
@@ -82,6 +84,11 @@ impl Camera {
 
     pub fn set_position(&mut self, position: Vec3) {
         self.position = position;
+        self.recalculate_view();
+    }
+
+    pub fn set_position_from_player_position(&mut self, player_position: Vec3) {
+        self.position = player_position + Vec3::new(0.0, EYE_HEIGHT, 0.0);
         self.recalculate_view();
     }
 

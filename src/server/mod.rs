@@ -138,8 +138,10 @@ impl Server {
                                 if uuid == packet.clone().uuid.unwrap() {
                                     debug!("packet consumed");
                                     break;
+                                } else {
+                                    // put the packet back in the queue
+                                    queue.push(packet_data);
                                 }
-                                debug!("packet not consumed");
                             }
                         }
                     }

@@ -97,7 +97,7 @@ async fn main() {
 
     if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
-   // renderer.lock_mouse(true);
+    renderer.lock_mouse(true);
 
     let mut last_frame_time = std::time::Instant::now();
     loop {

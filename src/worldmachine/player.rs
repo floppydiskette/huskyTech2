@@ -49,6 +49,7 @@ pub struct Player {
     last_mouse_pos: Option<Vec2>,
     physics_controller: Option<PhysicsCharacterController>,
     movement_speed: f32,
+    wasd: [bool; 4],
 }
 
 impl Default for Player {
@@ -63,6 +64,7 @@ impl Default for Player {
             last_mouse_pos: None,
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
+            wasd: [false; 4],
         }
     }
 }
@@ -123,19 +125,44 @@ impl Player {
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
         let speed = self.movement_speed;
-        if keyboard::check_key_down(Key::W) {
+        if keyboard::check_key_pressed(Key::W) {
+            self.wasd[0] = true;
+        }
+        if keyboard::check_key_released(Key::W) {
+            self.wasd[0] = false;
+        }
+        if keyboard::check_key_pressed(Key::A) {
+            self.wasd[1] = true;
+        }
+        if keyboard::check_key_released(Key::A) {
+            self.wasd[1] = false;
+        }
+        if keyboard::check_key_pressed(Key::S) {
+            self.wasd[2] = true;
+        }
+        if keyboard::check_key_released(Key::S) {
+            self.wasd[2] = false;
+        }
+        if keyboard::check_key_pressed(Key::D) {
+            self.wasd[3] = true;
+        }
+        if keyboard::check_key_released(Key::D) {
+            self.wasd[3] = false;
+        }
+        if self.wasd[0] {
             movement += camera_forward * speed;
         }
-        if keyboard::check_key_down(Key::S) {
-            movement -= camera_forward * speed;
-        }
-        if keyboard::check_key_down(Key::A) {
-            movement -= camera_right * speed;
-        }
-        if keyboard::check_key_down(Key::D) {
+        if self.wasd[1] {
             movement += camera_right * speed;
         }
+        if self.wasd[2] {
+            movement += camera_forward * -speed;
+        }
+        if self.wasd[3] {
+            movement += camera_right * -speed;
+        }
         self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
+        camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
             debug!("movement: {:?}", movement);
             Some(movement)
