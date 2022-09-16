@@ -1,9 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use gfx_maths::*;
-use crate::{helpers, ht_renderer, mouse};
+use crate::{helpers, ht_renderer, Key, keyboard, mouse};
+use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
+use crate::server::server_player::{DEFAULT_HEIGHT, DEFAULT_MOVESPEED, DEFAULT_RADIUS, DEFAULT_STEPHEIGHT};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::*;
-use crate::worldmachine::{EntityId};
+use crate::worldmachine::{ClientUpdate, EntityId, WorldMachine};
 
 pub struct PlayerComponent {}
 
@@ -30,21 +32,23 @@ impl PlayerComponent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PlayerContainer {
     pub player: Player,
     pub entity_id: Option<EntityId>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Player {
     pub uuid: String,
     pub name: String,
-    pub position: Vec3,
-    pub head_rotation: Quaternion,
-    pub rotation: Quaternion,
+    position: Vec3,
+    head_rotation: Quaternion,
+    rotation: Quaternion,
     pub scale: Vec3,
-    last_mouse_pos: Option<Vec2>
+    last_mouse_pos: Option<Vec2>,
+    physics_controller: Option<PhysicsCharacterController>,
+    movement_speed: f32,
 }
 
 impl Default for Player {
@@ -56,13 +60,28 @@ impl Default for Player {
             head_rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             scale: Vec3::new(1.0, 1.0, 1.0),
-            last_mouse_pos: None
+            last_mouse_pos: None,
+            physics_controller: None,
+            movement_speed: DEFAULT_MOVESPEED,
         }
     }
 }
 
 impl Player {
-    pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) {
+    pub fn init(&mut self, physics_system: PhysicsSystem, uuid: String, name: String, position: Vec3, rotation: Quaternion, scale: Vec3) {
+        self.physics_controller = physics_system.create_character_controller(DEFAULT_RADIUS, DEFAULT_HEIGHT, DEFAULT_STEPHEIGHT, Materials::Player);
+        if self.physics_controller.is_none() {
+            warn!("failed to create physics controller for player");
+        }
+        self.uuid = uuid;
+        self.name = name;
+        self.position = position;
+        self.head_rotation = rotation;
+        self.rotation = rotation;
+        self.scale = scale;
+    }
+
+    fn handle_mouse_movement(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Quaternion> {
         let mouse_pos = mouse::get_mouse_pos();
 
         if self.last_mouse_pos.is_none() {
@@ -73,6 +92,7 @@ impl Player {
         let mouse_y_offset = mouse_pos.y - last_mouse_pos.y;
 
         let camera = &mut renderer.camera;
+        let camera_rotation = camera.get_rotation();
 
         let mut yaw = helpers::get_quaternion_yaw(camera.get_rotation());
         let mut pitch = helpers::get_quaternion_pitch(camera.get_rotation());
@@ -87,5 +107,85 @@ impl Player {
         let mut rotation = Quaternion::identity();
         rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(pitch, 0.0, 0.0)) * rotation * Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw, 0.0));
         camera.set_rotation(rotation);
+
+        if camera.get_rotation() != camera_rotation {
+            Some(camera.get_rotation())
+        } else {
+            None
+        }
+    }
+
+    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec3> {
+        let mut movement = Vec3::new(0.0, 0.0, 0.0);
+        let camera = &mut renderer.camera;
+        let camera_rotation = camera.get_rotation();
+        let camera_forward = camera.get_front();
+        let camera_right = camera.get_right();
+        let camera_up = camera.get_up();
+        let speed = self.movement_speed;
+        if keyboard::check_key_down(Key::W) {
+            movement += camera_forward * speed;
+        }
+        if keyboard::check_key_down(Key::S) {
+            movement -= camera_forward * speed;
+        }
+        if keyboard::check_key_down(Key::A) {
+            movement -= camera_right * speed;
+        }
+        if keyboard::check_key_down(Key::D) {
+            movement += camera_right * speed;
+        }
+        self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
+        if movement != Vec3::new(0.0, 0.0, 0.0) {
+            Some(movement)
+        } else {
+            None
+        }
+    }
+
+    pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec<ClientUpdate>> {
+        let look = self.handle_mouse_movement(renderer, delta_time);
+        let movement = self.handle_keyboard_movement(renderer, delta_time);
+
+        let mut updates = Vec::new();
+        if let Some(look) = look {
+            updates.push(ClientUpdate::ILooked(look));
+        }
+        if let Some(movement) = movement {
+            updates.push(ClientUpdate::IDisplaced(movement)); // using displaced as the returned value is a displacement vector for the physics engine
+        }
+
+        if updates.is_empty() {
+            None
+        } else {
+            Some(updates)
+        }
+    }
+
+    pub fn get_position(&mut self) -> Vec3 {
+        let position = self.physics_controller.as_mut().unwrap().get_position();
+        self.position = position;
+        position
+    }
+
+    pub fn set_position(&mut self, position: Vec3) {
+        self.physics_controller.as_mut().unwrap().set_position(position);
+        self.position = position;
+    }
+
+    pub fn get_rotation(&mut self) -> Quaternion {
+        self.rotation
+    }
+
+    pub fn set_rotation(&mut self, rotation: Quaternion) {
+        self.rotation = rotation;
+    }
+
+    pub fn get_head_rotation(&mut self) -> Quaternion {
+        self.head_rotation
+    }
+
+    pub fn set_head_rotation(&mut self, head_rotation: Quaternion) {
+        self.head_rotation = head_rotation;
     }
 }

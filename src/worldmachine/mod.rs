@@ -1,21 +1,24 @@
 use std::any::Any;
 use std::borrow::{Borrow, BorrowMut};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::time::Instant;
 use gfx_maths::{Quaternion, Vec2, Vec3};
+use gl_matrix::common::Quat;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
 use crate::physics::PhysicsSystem;
-use crate::server::{ConnectionClientside, FastPacket, SteadyPacket, SteadyPacketData};
+use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
+use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::components::{COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
 use crate::worldmachine::MapLoadError::FolderNotFound;
-use crate::worldmachine::player::PlayerContainer;
+use crate::worldmachine::player::{Player, PlayerContainer};
 
 pub mod ecs;
 pub mod components;
@@ -47,6 +50,15 @@ pub enum WorldUpdate {
 }
 
 #[derive(Clone, Debug)]
+pub enum ClientUpdate {
+    // internal
+    IDisplaced(Vec3),
+    ILooked(Quaternion),
+    // external
+    IMoved(Vec3, Option<Vec3>, Quaternion, Quaternion), // position, displacement vector, rotation, head rotation
+}
+
+#[derive(Clone, Debug)]
 pub enum MapLoadError {
     FolderNotFound(String),
 }
@@ -72,6 +84,7 @@ impl Clone for World {
 pub struct WorldMachine {
     pub world: World,
     pub physics: Option<PhysicsSystem>,
+    pub last_physics_update: std::time::Instant,
     pub game_data_path: String,
     pub counter: f32,
     pub entities_wanting_to_load_things: Vec<usize>,
@@ -80,7 +93,9 @@ pub struct WorldMachine {
     is_server: bool,
     server_connection: Option<crate::server::ConnectionClientside>,
     world_update_queue: Arc<Mutex<VecDeque<WorldUpdate>>>,
+    client_update_queue: Arc<Mutex<VecDeque<ClientUpdate>>>,
     player: Option<PlayerContainer>,
+    pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>
 }
 
 impl Default for WorldMachine {
@@ -93,6 +108,7 @@ impl Default for WorldMachine {
         Self {
             world,
             physics: None,
+            last_physics_update: std::time::Instant::now(),
             game_data_path: String::from(""),
             counter: 0.0,
             entities_wanting_to_load_things: Vec::new(),
@@ -100,7 +116,9 @@ impl Default for WorldMachine {
             is_server: false,
             server_connection: None,
             world_update_queue: Arc::new(Mutex::new(VecDeque::new())),
-            player: None
+            client_update_queue: Arc::new(Mutex::new(VecDeque::new())),
+            player: None,
+            players: None,
         }
     }
 }
@@ -111,6 +129,11 @@ impl WorldMachine {
         self.game_data_path = String::from("base");
         self.physics = Some(physics);
         self.is_server = is_server;
+
+        if self.is_server {
+            let physics = self.physics.as_mut().unwrap().copy_with_new_scene();
+            self.physics = Some(physics);
+        }
 
         self.blank_slate(is_server);
     }
@@ -125,13 +148,6 @@ impl WorldMachine {
         self.world.systems.clear();
         self.counter = 0.0;
         self.lights_changed = true;
-
-        if !is_server {
-            self.player = Some(PlayerContainer{
-                player: Default::default(),
-                entity_id: None
-            });
-        }
     }
 
     pub fn load_map(&mut self, map_name: &str) -> Result<(), MapLoadError> {
@@ -312,6 +328,19 @@ impl WorldMachine {
         }
     }
 
+    async fn send_fast_message(&mut self, message: FastPacketData) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    let attempt = connection.fast_update_sender.send(message);
+                    if attempt.is_err() {
+                        error!("send_fast_message: failed to send message");
+                    }
+                }
+            }
+        }
+    }
+
     fn consume_steady_message(&mut self, message: SteadyPacketData) {
         if let Some(connection) = &mut self.server_connection {
             match connection {
@@ -364,6 +393,14 @@ impl WorldMachine {
                                 self.counter += 1.0;
                                 info!("received {} self test messages", self.counter);
                             }
+                            SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) => {
+                                let mut player = Player::default();
+                                player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
+                                self.player = Some(PlayerContainer {
+                                    player,
+                                    entity_id: None
+                                });
+                            }
                         }
                         self.consume_steady_message(message);
                     } else if let Err(e) = try_recv {
@@ -411,6 +448,7 @@ impl WorldMachine {
                                     }
                                 }
                             }
+                            FastPacket::PlayerMove(_, _, _, _, _) => {}
                         }
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
@@ -422,10 +460,50 @@ impl WorldMachine {
         }
     }
 
-    pub async fn tick_connection(&mut self) {
+    async fn process_client_updates(&mut self, client_updates: &mut Vec<ClientUpdate>) {
+        let mut updates = Vec::new();
+        let mut movement_updates = Vec::new();
+        for client_update in client_updates {
+            match client_update {
+                ClientUpdate::IDisplaced(displacement_vector) => {
+                    let position = self.player.as_mut().unwrap().player.get_position();
+                    let rotation = self.player.as_mut().unwrap().player.get_rotation();
+                    let head_rotation = self.player.as_mut().unwrap().player.get_head_rotation();
+                    movement_updates.push(ClientUpdate::IMoved(position, Some(*displacement_vector), rotation, head_rotation));
+                }
+                ClientUpdate::ILooked(look_quat) => {}
+                _ => {
+                    updates.push(client_update.clone());
+                }
+            }
+        }
+        // get the latest movement update and append it to the end of the updates
+        if movement_updates.len() > 0 {
+            let latest_movement_update = movement_updates.last().unwrap();
+            updates.push(latest_movement_update.clone());
+        }
+        // send the updates to the server
+        for update in updates {
+            match update {
+                ClientUpdate::IDisplaced(_) => {}
+                ClientUpdate::ILooked(_) => {}
+                ClientUpdate::IMoved(position, displacement_vector, rotation, head_rotation) => {
+                    let uuid = self.player.as_ref().unwrap().player.uuid.clone();
+                    let displacement_vector = displacement_vector.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
+                    let packet = FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation);
+                    self.send_fast_message(FastPacketData {
+                        packet: Some(packet),
+                    });
+                }
+            }
+        }
+    }
+
+    pub async fn tick_connection(&mut self, client_updates: &mut Vec<ClientUpdate>) {
         self.process_steady_messages();
         self.send_queued_steady_messages().await;
         self.process_fast_messages();
+        self.process_client_updates(client_updates).await;
     }
 
     pub async fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {
@@ -466,11 +544,30 @@ impl WorldMachine {
         }
     }
 
-    pub fn client_tick(&mut self, renderer: &mut ht_renderer, delta_time: f32) {
+    pub fn client_tick(&mut self, renderer: &mut ht_renderer, physics_engine: PhysicsSystem, delta_time: f32) -> Vec<ClientUpdate> {
+        if self.is_server {
+            warn!("client_tick: called on server");
+            return vec![];
+        }
+
+        let mut updates = Vec::new();
+
         if let Some(player_container) = self.player.as_mut() {
             let player = &mut player_container.player;
-            player.handle_input(renderer, delta_time);
+            let player_updates = player.handle_input(renderer, delta_time);
+            if let Some(mut player_updates) = player_updates {
+                updates.append(&mut player_updates);
+            }
         }
+
+        // simulate a physics tick
+        let current_time = Instant::now();
+        let time_since_last_tick = current_time.duration_since(self.last_physics_update).as_secs_f32();
+        debug!("delta_time: {}", time_since_last_tick);
+        physics_engine.tick(time_since_last_tick);
+        self.last_physics_update = Instant::now();
+
+        updates
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer) {

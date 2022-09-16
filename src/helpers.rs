@@ -165,3 +165,10 @@ pub fn rotate_vector_by_quaternion(vector: Vec3, quat: Quaternion) -> Vec3 {
     quat_v = conjugate_quaternion(quat) * quat_v;
     Vec3::new(quat_v.x, quat_v.y, quat_v.z)
 }
+
+pub fn distance(a: Vec3, b: Vec3) -> f32 {
+    let x = a.x - b.x;
+    let y = a.y - b.y;
+    let z = a.z - b.z;
+    (x * x + y * y + z * z).abs().sqrt()
+}

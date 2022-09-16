@@ -75,11 +75,11 @@ async fn main() {
     info!("initialised physics");
 
     let mut worldmachine = worldmachine::WorldMachine::default();
-    worldmachine.initialise(physics, false);
+    worldmachine.initialise(physics.clone(), false);
 
     info!("initialised worldmachine");
 
-    let mut server = server::Server::new("test", physics);
+    let mut server = server::Server::new("test", physics.clone());
     let mut server_clone = server.clone();
     tokio::spawn(async move {
         server_clone.run().await;
@@ -104,8 +104,8 @@ async fn main() {
         let delta = last_frame_time.elapsed().as_secs_f32();
         keyboard::tick_keyboard();
         mouse::tick_mouse();
-        worldmachine.tick_connection().await;
-        worldmachine.client_tick(&mut renderer, delta);
+        let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
+        worldmachine.tick_connection(&mut updates).await;
         worldmachine.render(&mut renderer);
         renderer.swap_buffers();
         if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
