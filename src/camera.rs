@@ -39,21 +39,28 @@ impl Camera {
     }
 
     pub fn get_front(&self) -> Vec3 {
-        let mut front = Vec3::new(0.0, 0.0, -1.0);
+        let mut front = Vec3::new(0.0, 0.0, 1.0);
         front = helpers::rotate_vector_by_quaternion(front, self.rotation);
-        front.normalize().deref().clone()
+        *front.normalize().deref()
+    }
+
+    pub fn get_forward_no_pitch(&self) -> Vec3 {
+        let mut front = Vec3::new(0.0, 0.0, 1.0);
+        front = helpers::rotate_vector_by_quaternion(front, self.rotation);
+        front.y = 0.0;
+        *front.normalize().deref()
     }
 
     pub fn get_right(&self) -> Vec3 {
-        let mut right = Vec3::new(1.0, 0.0, 0.0);
+        let mut right = Vec3::new(-1.0, 0.0, 0.0);
         right = helpers::rotate_vector_by_quaternion(right, self.rotation);
-        right.normalize().deref().clone()
+        *right.normalize().deref()
     }
 
     pub fn get_up(&self) -> Vec3 {
-        let mut up = Vec3::new(0.0, 1.0, 0.0);
+        let mut up = Vec3::new(0.0, -1.0, 0.0);
         up = helpers::rotate_vector_by_quaternion(up, self.rotation);
-        up.normalize().deref().clone()
+        *up.normalize().deref()
     }
 
     // sets rotation to be looking at the target, with the up vector being up, and recalculates the view matrix
@@ -88,7 +95,7 @@ impl Camera {
     }
 
     pub fn set_position_from_player_position(&mut self, player_position: Vec3) {
-        self.position = player_position + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+        self.position = Vec3::new(0.0, -EYE_HEIGHT, 0.0) - player_position;
         self.recalculate_view();
     }
 

@@ -172,3 +172,13 @@ pub fn distance(a: Vec3, b: Vec3) -> f32 {
     let z = a.z - b.z;
     (x * x + y * y + z * z).abs().sqrt()
 }
+
+// make sure to preserve negative vectors
+pub fn clamp_magnitude(vector: Vec3, max_magnitude: f32) -> Vec3 {
+    let magnitude = vector.magnitude();
+    if magnitude > max_magnitude {
+        vector / magnitude * max_magnitude
+    } else {
+        vector
+    }
+}

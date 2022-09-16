@@ -121,10 +121,10 @@ impl Player {
         let mut movement = Vec3::new(0.0, 0.0, 0.0);
         let camera = &mut renderer.camera;
         let camera_rotation = camera.get_rotation();
-        let camera_forward = camera.get_front();
+        let camera_forward = camera.get_forward_no_pitch();
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
-        let speed = self.movement_speed;
+        let speed = 2.0;//self.movement_speed;
         if keyboard::check_key_pressed(Key::W) {
             self.wasd[0] = true;
         }
@@ -150,21 +150,23 @@ impl Player {
             self.wasd[3] = false;
         }
         if self.wasd[0] {
-            movement += camera_forward * speed;
+            movement += camera_forward;
         }
         if self.wasd[1] {
-            movement += camera_right * speed;
+            movement += camera_right;
         }
         if self.wasd[2] {
-            movement += camera_forward * -speed;
+            movement -= camera_forward;
         }
         if self.wasd[3] {
-            movement += camera_right * -speed;
+            movement -= camera_right;
         }
+        movement.y = 0.0;
+        movement = helpers::clamp_magnitude(movement, 1.0);
+        movement *= speed;
         self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
-            debug!("movement: {:?}", movement);
             Some(movement)
         } else {
             None

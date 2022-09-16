@@ -4,7 +4,7 @@ use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, Physic
 use crate::server::Server;
 use crate::worldmachine::{EntityId, WorldMachine};
 
-pub const DEFAULT_MOVESPEED: f32 = 0.1;
+pub const DEFAULT_MOVESPEED: f32 = 0.2;
 pub const DEFAULT_RADIUS: f32 = 0.5;
 pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
@@ -69,9 +69,12 @@ impl ServerPlayer {
     pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, worldmachine: &mut WorldMachine) -> bool {
         // TODO!! IMPORTANT!! remember to check that the player is not trying to move vertically, or through a wall! displacement_vector should not contain a y value, and the new_position should be checked against the world to make sure it is not inside a wall.
 
+        let mut displacement_vector = displacement_vector;
+        displacement_vector.y = 0.0;
+        displacement_vector = helpers::clamp_magnitude(displacement_vector, 1.0 * self.movement_speed);
+
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
-        debug!("delta_time: {}", delta);
         self.physics_controller.as_mut().unwrap().move_by(displacement_vector, delta);
         worldmachine.physics.as_mut().unwrap().tick(delta);
         worldmachine.last_physics_update = current_time;

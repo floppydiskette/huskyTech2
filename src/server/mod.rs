@@ -37,6 +37,7 @@ pub enum FastPacket {
     ChangeRotation(EntityId, Quaternion),
     ChangeScale(EntityId, Vec3),
     PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion), // connection uuid, position, displacement_vector, rotation, head rotation
+    PlayerFuckYouMoveHere(Vec3), // connection uuid, position,
 }
 
 #[derive(Clone, Debug)]
@@ -280,13 +281,14 @@ impl Server {
     async fn handle_fast_packets(&mut self, connection: Connection) {
         match connection.clone() {
             Connection::Local(local_connection) => {
-                let mut connection = local_connection.lock().await;
-                if connection.fast_update_receiver.has_changed().unwrap_or(false) {
-                    let fast_packet_data = connection.fast_update_receiver.borrow_and_update().clone();
+                let mut local_connection = local_connection.lock().await;
+                if local_connection.fast_update_receiver.has_changed().unwrap_or(false) {
+                    let fast_packet_data = local_connection.fast_update_receiver.borrow_and_update().clone();
                     if let Some(fast_packet) = fast_packet_data.packet {
                         match fast_packet {
                             FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation) => {
-                                let mut worldmachine = self.worldmachine.lock().await;
+                                let mut worldmachine = self.worldmachine.clone();
+                                let mut worldmachine = worldmachine.lock().await;
                                 let mut players = worldmachine.players.clone();
                                 let mut players = players.as_mut().unwrap().lock().await;
                                 let player = players.get_mut(&uuid).unwrap();
@@ -295,6 +297,9 @@ impl Server {
                                     debug!("player moved successfully");
                                 } else {
                                     debug!("player move failed");
+                                    drop(local_connection);
+                                    let mut connection = connection.clone();
+                                    self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
                                 }
                             }
 
@@ -302,6 +307,7 @@ impl Server {
                             FastPacket::ChangePosition(_, _) => {}
                             FastPacket::ChangeRotation(_, _) => {}
                             FastPacket::ChangeScale(_, _) => {}
+                            FastPacket::PlayerFuckYouMoveHere(_) => {}
                         }
                     }
                 }

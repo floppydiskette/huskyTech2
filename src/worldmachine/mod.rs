@@ -459,6 +459,12 @@ impl WorldMachine {
                                 }
                             }
                             FastPacket::PlayerMove(_, _, _, _, _) => {}
+                            FastPacket::PlayerFuckYouMoveHere(new_position) => {
+                                if let Some(player) = self.player.as_mut() {
+                                    warn!("we moved too fast, so the server is telling us to move to a new position");
+                                    player.player.set_position(new_position);
+                                }
+                            }
                         }
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
@@ -580,6 +586,23 @@ impl WorldMachine {
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer) {
+
+        // todo! actual good player rendering
+        if let Some(player) = &mut self.player {
+            let position = player.player.get_position();
+            let rotation = player.player.get_rotation();
+            let meshes = renderer.meshes.clone();
+            let textures = renderer.textures.clone();
+            if let Some(mesh) = meshes.get("ht2") {
+                let texture = textures.get("default").unwrap();
+                let mut mesh = *mesh;
+                mesh.position = position;
+                mesh.rotation = rotation;
+
+                mesh.render(renderer, Some(texture));
+            }
+        }
+
         let lights = self.send_lights_to_renderer();
         if lights.is_some() {
             renderer.set_lights(lights.unwrap());
