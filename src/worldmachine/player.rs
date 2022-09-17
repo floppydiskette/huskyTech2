@@ -50,6 +50,7 @@ pub struct Player {
     physics_controller: Option<PhysicsCharacterController>,
     movement_speed: f32,
     wasd: [bool; 4],
+    head_rotation_changed: bool,
 }
 
 impl Default for Player {
@@ -65,6 +66,7 @@ impl Default for Player {
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
             wasd: [false; 4],
+            head_rotation_changed: false
         }
     }
 }
@@ -90,10 +92,14 @@ impl Player {
             self.last_mouse_pos = Some(mouse_pos);
         }
         let last_mouse_pos = self.last_mouse_pos.unwrap();
-        let mouse_x_offset = mouse_pos.x - last_mouse_pos.x;
-        let mouse_y_offset = mouse_pos.y - last_mouse_pos.y;
+        let mouse_x_offset = (mouse_pos.x - last_mouse_pos.x) as f64;
+        let mouse_y_offset = (mouse_pos.y - last_mouse_pos.y) as f64;
 
         let camera = &mut renderer.camera;
+        if self.head_rotation_changed {
+            self.head_rotation_changed = false;
+            camera.set_rotation(self.get_head_rotation());
+        }
         let camera_rotation = camera.get_rotation();
 
         let mut yaw = helpers::get_quaternion_yaw(camera.get_rotation());
@@ -107,7 +113,11 @@ impl Player {
             pitch = -89.0;
         }
         let mut rotation = Quaternion::identity();
-        rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(pitch, 0.0, 0.0)) * rotation * Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw, 0.0));
+        rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(pitch as f32, 0.0, 0.0)) * rotation * Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw as f32, 0.0));
+        self.set_head_rotation(rotation);
+        let rotation_no_pitch = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw as f32, 0.0));
+        self.set_rotation(rotation_no_pitch);
+        self.head_rotation_changed = false;
         camera.set_rotation(rotation);
 
         if camera.get_rotation() != camera_rotation {
@@ -124,7 +134,7 @@ impl Player {
         let camera_forward = camera.get_forward_no_pitch();
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
-        let speed = 2.0;//self.movement_speed;
+        let speed = self.movement_speed;
         if keyboard::check_key_pressed(Key::W) {
             self.wasd[0] = true;
         }

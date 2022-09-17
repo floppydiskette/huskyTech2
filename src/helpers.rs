@@ -119,34 +119,38 @@ pub fn calculate_model_matrix(position: Vec3, rotation: Quaternion, scale: Vec3)
     model_matrix
 }
 
-pub fn get_quaternion_yaw(quat: Quaternion) -> f32 {
-    let mut yaw = 0.0;
-    let test = quat.x * quat.y + quat.z * quat.w;
+// takes a quaternion and returns its yaw
+pub fn get_quaternion_yaw(quat: Quaternion) -> f64 {
+    let mut yaw = 0.0f64;
+    let test = quat.x as f64 * quat.y as f64 + quat.z as f64 * quat.w as f64;
     if test > 0.499 {
-        yaw = 2.0 * (quat.x).atan2(quat.w);
+        yaw = 2.0 * (quat.x as f64).atan2(quat.w as f64);
     } else if test < -0.499 {
-        yaw = -2.0 * (quat.x).atan2(quat.w);
+        yaw = -2.0 * (quat.x as f64).atan2(quat.w as f64);
     } else {
-        let sqx = quat.x * quat.x;
-        let sqy = quat.y * quat.y;
-        let sqz = quat.z * quat.z;
-        yaw = (sqy + sqx - sqz - quat.w * quat.w).atan2(2.0 * quat.y * quat.x + 2.0 * quat.z * quat.w);
+        let sqx = quat.x as f64 * quat.x as f64;
+        let sqy = quat.y as f64 * quat.y as f64;
+        let sqz = quat.z as f64 * quat.z as f64;
+        yaw = (sqx - sqy - sqz + quat.w as f64 * quat.w as f64).asin() * 2.0;
+        yaw = (sqx + sqy - sqz - quat.w as f64 * quat.w as f64).asin() * 2.0;
     }
     yaw
 }
 
-pub fn get_quaternion_pitch(quat: Quaternion) -> f32 {
-    let mut pitch = 0.0;
-    let test = quat.x * quat.y + quat.z * quat.w;
+// takes a quaternion and returns its pitch
+pub fn get_quaternion_pitch(quat: Quaternion) -> f64 {
+    let mut pitch = 0.0f64;
+    let test = quat.x as f64 * quat.y as f64 + quat.z as f64 * quat.w as f64;
     if test > 0.499 {
-        pitch = std::f32::consts::PI / 2.0;
+        pitch = std::f64::consts::FRAC_PI_2;
     } else if test < -0.499 {
-        pitch = -std::f32::consts::PI / 2.0;
+        pitch = -std::f64::consts::FRAC_PI_2;
     } else {
-        let sqx = quat.x * quat.x;
-        let sqy = quat.y * quat.y;
-        let sqz = quat.z * quat.z;
-        pitch = (sqz - sqx - sqy + quat.w * quat.w).atan2(2.0 * quat.z * quat.y + 2.0 * quat.x * quat.w);
+        let sqx = quat.x as f64 * quat.x as f64;
+        let sqy = quat.y as f64 * quat.y as f64;
+        let sqz = quat.z as f64 * quat.z as f64;
+        pitch = (sqx - sqy - sqz + quat.w as f64 * quat.w as f64).asin() * 2.0;
+        pitch = (sqx + sqy - sqz - quat.w as f64 * quat.w as f64).asin() * 2.0;
     }
     pitch
 }

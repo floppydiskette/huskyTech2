@@ -458,13 +458,21 @@ impl WorldMachine {
                                     }
                                 }
                             }
-                            FastPacket::PlayerMove(_, _, _, _, _) => {}
                             FastPacket::PlayerFuckYouMoveHere(new_position) => {
                                 if let Some(player) = self.player.as_mut() {
                                     warn!("we moved too fast, so the server is telling us to move to a new position");
                                     player.player.set_position(new_position);
                                 }
                             }
+                            FastPacket::PlayerFuckYouSetRotation(new_rotation) => {
+                                if let Some(player) = self.player.as_mut() {
+                                    warn!("we did something wrong, so the server is telling us to set our rotation");
+                                    player.player.set_rotation(new_rotation);
+                                    player.player.set_head_rotation(new_rotation);
+                                }
+                            }
+                            FastPacket::PlayerCheckPosition(_, _) => {}
+                            FastPacket::PlayerMove(_, _, _, _, _) => {}
                         }
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
