@@ -69,7 +69,7 @@ impl ServerPlayer {
     }
 
     /// attempts to move the player to the given position, returning true if the move was successful, or false if the move was too fast.
-    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, worldmachine: &mut WorldMachine) -> bool {
+    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, jumped: bool, worldmachine: &mut WorldMachine) -> bool {
         // TODO!! IMPORTANT!! remember to check that the player is not trying to move vertically, or through a wall! displacement_vector should not contain a y value, and the new_position should be checked against the world to make sure it is not inside a wall.
 
         let mut displacement_vector = displacement_vector;
@@ -79,6 +79,9 @@ impl ServerPlayer {
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(displacement_vector, delta);
+        if jumped {
+            self.physics_controller.as_mut().unwrap().jump();
+        }
         self.last_move_call = current_time;
         worldmachine.physics.as_mut().unwrap().tick(delta);
         worldmachine.last_physics_update = current_time;
@@ -98,9 +101,20 @@ impl ServerPlayer {
         }
     }
 
+    pub fn attempt_jump(&mut self) -> bool {
+        self.physics_controller.as_mut().unwrap().jump();
+        true
+    }
+
     pub fn gravity_tick(&mut self) {
         let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), delta);
+        self.last_move_call = std::time::Instant::now();
+    }
+
+    pub fn jump_tick(&mut self) {
+        let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
+        self.physics_controller.as_mut().unwrap().tick_jump(delta);
         self.last_move_call = std::time::Instant::now();
     }
 

@@ -53,6 +53,7 @@ pub struct Player {
     movement_speed: f32,
     last_move_call: std::time::Instant,
     wasd: [bool; 4],
+    jump: bool,
     head_rotation_changed: bool,
 }
 
@@ -72,6 +73,7 @@ impl Default for Player {
             movement_speed: DEFAULT_MOVESPEED,
             last_move_call: std::time::Instant::now(),
             wasd: [false; 4],
+            jump: false,
             head_rotation_changed: false
         }
     }
@@ -216,11 +218,30 @@ impl Player {
         }
     }
 
+    fn handle_jump(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> bool {
+        if keyboard::check_key_down(Key::Space) {
+            self.jump = true;
+        } else {
+            self.jump = false;
+        }
+        if self.jump {
+            let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
+            self.physics_controller.as_mut().unwrap().jump();
+            self.last_move_call = std::time::Instant::now();
+        }
+        false
+    }
+
     pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec<ClientUpdate>> {
         let look = self.handle_mouse_movement(renderer, delta_time);
         let movement = self.handle_keyboard_movement(renderer, delta_time);
+        let jump = self.handle_jump(renderer, delta_time);
+        self.physics_controller.as_mut().unwrap().tick_jump(delta_time);
 
         let mut updates = Vec::new();
+        if jump {
+            updates.push(ClientUpdate::IJumped);
+        }
         if let Some(look) = look {
             updates.push(ClientUpdate::ILooked(look));
         }

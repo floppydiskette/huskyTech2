@@ -36,7 +36,8 @@ pub enum FastPacket {
     ChangePosition(EntityId, Vec3),
     ChangeRotation(EntityId, Quaternion),
     ChangeScale(EntityId, Vec3),
-    PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion), // connection uuid, position, displacement_vector, rotation, head rotation
+    PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion, bool), // connection uuid, position, displacement_vector, rotation, head rotation, jumped
+    PlayerJump(ConnectionUUID),
     PlayerFuckYouMoveHere(Vec3), // connection uuid, position,
     PlayerCheckPosition(ConnectionUUID, Vec3), // connection uuid, position
     PlayerFuckYouSetRotation(Quaternion), // connection uuid, rotation
@@ -292,13 +293,13 @@ impl Server {
                     if let Some(fast_packet) = fast_packet_data.packet {
                         match fast_packet {
                             /// sent when the player wants to move
-                            FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation) => {
+                            FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped) => {
                                 let mut worldmachine = self.worldmachine.clone();
                                 let mut worldmachine = worldmachine.lock().await;
                                 let mut players = worldmachine.players.clone();
                                 let mut players = players.as_mut().unwrap().lock().await;
                                 let player = players.get_mut(&uuid).unwrap();
-                                let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, &mut worldmachine).await;
+                                let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, jumped, &mut worldmachine).await;
                                 if success {
                                 } else {
                                     drop(local_connection);
@@ -321,6 +322,20 @@ impl Server {
                                     let mut connection = connection.clone();
                                     self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
                                 }
+                            }
+
+                            /// sent when the player jumps
+                            FastPacket::PlayerJump(uuid) => {
+                                let mut worldmachine = self.worldmachine.clone();
+                                let mut worldmachine = worldmachine.lock().await;
+                                let mut players = worldmachine.players.clone();
+                                let mut players = players.as_mut().unwrap().lock().await;
+                                let player = players.get_mut(&uuid).unwrap();
+                                 if player.player.attempt_jump() {
+                                    // do nothing
+                                 } else {
+                                    // do nothing
+                                 }
                             }
 
                             // client shouldn't be sending these
@@ -519,6 +534,7 @@ impl Server {
                 let mut players = players.lock().await;
                 for (_uuid, player) in players.iter_mut() {
                     player.player.gravity_tick();
+                    player.player.jump_tick();
                 }
             }
 

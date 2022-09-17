@@ -1,10 +1,15 @@
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ptr::{null, null_mut};
+use std::sync::{Arc, Mutex};
 use gfx_maths::{Quaternion, Vec3};
 use physx_sys::*;
 
 pub const GRAVITY: f32 = -9.81;
 pub const PLAYER_GRAVITY: f32 = -11.81;
+pub const PLAYER_JUMP_GRAVITY: f32 = -20.0;
+pub const PLAYER_JUMP_TIME: f32 = 0.01;
+pub const PLAYER_JUMP_VELOCITY: f32 = 15.0;
 
 #[derive(Clone)]
 pub struct PhysicsSystem {
@@ -105,7 +110,12 @@ impl PhysicsSystem {
             if PxCapsuleControllerDesc_isValid(controller_desc) {
                 let mut controller = PxControllerManager_createController_mut(self.controller_manager, controller_desc as *mut _);
 
-                Some(PhysicsCharacterController { controller, flags: CollisionFlags::default() })
+                Some(PhysicsCharacterController {
+                    controller,
+                    flags: Arc::new(Mutex::new(CollisionFlags::default())),
+                    jump_time: Arc::new(UnsafeCell::new(std::time::Instant::now())),
+                    jumping: Arc::new(UnsafeCell::new(false))
+                })
             } else {
                 None
             }
@@ -185,7 +195,9 @@ impl CollisionFlags {
 #[derive(Clone)]
 pub struct PhysicsCharacterController {
     pub controller: *mut PxController,
-    pub flags: CollisionFlags,
+    pub flags: Arc<Mutex<CollisionFlags>>,
+    jump_time: Arc<UnsafeCell<std::time::Instant>>,
+    jumping: Arc<UnsafeCell<bool>>,
 }
 
 unsafe impl Send for PhysicsCharacterController {
@@ -207,7 +219,50 @@ impl PhysicsCharacterController {
                                               0.0,
                                               delta_time,
                                               &PxControllerFilters_new(null_mut(), null_mut(), null_mut()), null_mut());
-            self.flags = CollisionFlags::from_bits(flags.mBits);
+            *self.flags.lock().unwrap() = CollisionFlags::from_bits(flags.mBits);
+        }
+    }
+
+    fn start_jump(&mut self) {
+        self.jump_time = Arc::new(UnsafeCell::new(std::time::Instant::now()));
+        self.jumping = Arc::new(UnsafeCell::new(true));
+    }
+
+    fn get_jump_displacement(&mut self, delta_time: f32) -> Vec3 {
+        unsafe {
+            let jump_time = self.jump_time.get();
+            let jump_time = std::time::Instant::now().duration_since(*jump_time).as_secs_f32();
+            let jumping = self.jumping.get();
+            if *jumping && jump_time > PLAYER_JUMP_TIME {
+                *jumping = false;
+            }
+            let mut displacement = Vec3::new(0.0, 0.0, 0.0);
+            if *jumping {
+                displacement.y = PLAYER_JUMP_VELOCITY * jump_time + 0.5 * PLAYER_JUMP_GRAVITY * jump_time * jump_time;
+            }
+            displacement
+        }
+    }
+
+    pub fn jump(&mut self) {
+        unsafe {
+            if self.flags.lock().unwrap().colliding_bottom && !*self.jumping.get() {
+                self.start_jump();
+            }
+        }
+    }
+
+    pub fn tick_jump(&mut self, delta_time: f32) {
+        unsafe {
+            if *self.jumping.get() {
+                let displacement = self.get_jump_displacement(delta_time);
+                let displacement = self.get_position() + displacement;
+                self.set_position(displacement);
+                debug!("jumping at height {}", displacement.y);
+            }
+            if self.flags.lock().unwrap().colliding_bottom {
+                *self.jumping.get() = false;
+            }
         }
     }
 

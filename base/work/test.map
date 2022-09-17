@@ -51,12 +51,12 @@ entities:
       size:
         name: size
         value: !Vec3
-          x: 2.0
+          x: 2.105
           y: 4.0
-          z: 2.0
+          z: 2.105
       visualise:
         name: visualise
-        value: !Bool false
+        value: !Bool true
     component_type:
       id: 5
       name: BoxCollider
