@@ -40,6 +40,26 @@ entities:
     component_type:
       id: 1
       name: Transform
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -21.0
+          y: -4.0
+          z: 21.0
+      size:
+        name: size
+        value: !Vec3
+          x: 2.0
+          y: 4.0
+          z: 2.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
   children: []
   parent: null
 - name: light
@@ -91,8 +111,71 @@ entities:
       name: Light
   children: []
   parent: null
+- name: banana
+  uid: 6
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String banana
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String default
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: -1.0
+          z: -10.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 1
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 0.0
+          y: 1.0
+          z: 0.0
+      intensity:
+        name: intensity
+        value: !Float 1.0
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 2.0
+          z: 0.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
 - name: ht2
-  uid: 5
+  uid: 7
   components:
   - name: Transform
     parameters:
@@ -152,7 +235,27 @@ entities:
     component_type:
       id: 4
       name: Light
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -0.786848
+          y: -0.6
+          z: 0.04
+      size:
+        name: size
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      visualise:
+        name: visualise
+        value: !Bool true
+    component_type:
+      id: 5
+      name: BoxCollider
   children: []
   parent: null
 systems: []
-eid_manager: 5
+eid_manager: 7

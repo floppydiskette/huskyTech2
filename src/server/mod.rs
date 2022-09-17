@@ -53,6 +53,7 @@ pub enum SteadyPacket {
     SelfTest,
     KeepAlive,
     InitialiseEntity(EntityId, Entity),
+    FinaliseMapLoad,
     InitialisePlayer(ConnectionUUID, String, Vec3, Quaternion, Vec3), // uuid, name, position, rotation, scale
     Message(String),
 }
@@ -247,6 +248,7 @@ impl Server {
             entity_id: None
         });
 
+        self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
         self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(player.uuid.clone(), player.name.clone(), player.get_position(), player.get_rotation(), player.scale)).await;
     }
 
@@ -271,6 +273,7 @@ impl Server {
                             SteadyPacket::SelfTest => {}
                             SteadyPacket::InitialisePlayer(_, _, _, _, _) => {}
                             SteadyPacket::Message(_) => {}
+                            SteadyPacket::FinaliseMapLoad => {}
                         }
                     }
                 }
@@ -297,9 +300,7 @@ impl Server {
                                 let player = players.get_mut(&uuid).unwrap();
                                 let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, &mut worldmachine).await;
                                 if success {
-                                    debug!("player moved successfully");
                                 } else {
-                                    debug!("player move failed");
                                     drop(local_connection);
                                     let mut connection = connection.clone();
                                     self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
@@ -315,9 +316,7 @@ impl Server {
                                 let server_position = player.player.get_position();
                                 let success = server_position == position;
                                 if success {
-                                    debug!("player position check successful");
                                 } else {
-                                    debug!("player position check failed");
                                     drop(local_connection);
                                     let mut connection = connection.clone();
                                     self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
@@ -514,6 +513,15 @@ impl Server {
             if let Some(updates) = updates {
                 self.handle_world_updates(updates).await;
             }
+            // do a player physics tick for each player
+            {
+                let players = self.worldmachine.lock().await.players.clone().unwrap();
+                let mut players = players.lock().await;
+                for (_uuid, player) in players.iter_mut() {
+                    player.player.gravity_tick();
+                }
+            }
+
             // do physics tick
             let mut worldmachine = self.worldmachine.lock().await;
             let last_physics_tick = worldmachine.last_physics_update;

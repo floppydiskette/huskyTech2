@@ -51,6 +51,7 @@ pub struct Player {
     last_mouse_pos: Option<Vec2>,
     physics_controller: Option<PhysicsCharacterController>,
     movement_speed: f32,
+    last_move_call: std::time::Instant,
     wasd: [bool; 4],
     head_rotation_changed: bool,
 }
@@ -69,6 +70,7 @@ impl Default for Player {
             last_mouse_pos: None,
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
+            last_move_call: std::time::Instant::now(),
             wasd: [false; 4],
             head_rotation_changed: false
         }
@@ -202,7 +204,10 @@ impl Player {
         movement.y = 0.0;
         movement = helpers::clamp_magnitude(movement, 1.0);
         movement *= speed;
+        //movement.y = 10.0; // uncomment to cheat!
+        let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
+        self.last_move_call = std::time::Instant::now();
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
             Some(movement)

@@ -10,6 +10,7 @@ lazy_static! {
     pub static ref COMPONENT_TYPE_MESH_RENDERER: ComponentType = ComponentType::create_if_not_exists("MeshRenderer");
     pub static ref COMPONENT_TYPE_TERRAIN: ComponentType = ComponentType::create_if_not_exists("Terrain");
     pub static ref COMPONENT_TYPE_LIGHT: ComponentType = ComponentType::create_if_not_exists("Light");
+    pub static ref COMPONENT_TYPE_BOX_COLLIDER: ComponentType = ComponentType::create_if_not_exists("BoxCollider");
 
     pub static ref COMPONENTS_INITIALISED: bool = {
         register_component_types();
@@ -24,6 +25,7 @@ pub fn register_component_types() {
     let _ = COMPONENT_TYPE_MESH_RENDERER.clone();
     let _ = COMPONENT_TYPE_TERRAIN.clone();
     let _ = COMPONENT_TYPE_LIGHT.clone();
+    let _ = COMPONENT_TYPE_BOX_COLLIDER.clone();
 }
 
 // player component is defined in src/worldmachine/player.rs

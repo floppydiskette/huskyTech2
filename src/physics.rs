@@ -3,6 +3,9 @@ use std::ptr::{null, null_mut};
 use gfx_maths::{Quaternion, Vec3};
 use physx_sys::*;
 
+pub const GRAVITY: f32 = -9.81;
+pub const PLAYER_GRAVITY: f32 = -11.81;
+
 #[derive(Clone)]
 pub struct PhysicsSystem {
     pub foundation: *mut PxFoundation,
@@ -26,7 +29,7 @@ impl PhysicsSystem {
         let mut scene_desc = unsafe { PxSceneDesc_new(PxPhysics_getTolerancesScale(physics)) };
         scene_desc.gravity = PxVec3 {
             x: 0.0,
-            y: -9.81,
+            y: GRAVITY,
             z: 0.0,
         };
 
@@ -38,6 +41,10 @@ impl PhysicsSystem {
         let scene = unsafe { PxPhysics_createScene_mut(physics, &scene_desc) };
 
         let controller_manager = unsafe { phys_PxCreateControllerManager(scene, true) };
+
+        unsafe {
+            PxControllerManager_setOverlapRecoveryModule_mut(controller_manager, true);
+        }
 
         let physics_materials = Self::init_materials(physics);
 
@@ -59,7 +66,7 @@ impl PhysicsSystem {
         let mut scene_desc = unsafe { PxSceneDesc_new(PxPhysics_getTolerancesScale(self.physics)) };
         scene_desc.gravity = PxVec3 {
             x: 0.0,
-            y: -9.81,
+            y: GRAVITY,
             z: 0.0,
         };
 
@@ -69,6 +76,10 @@ impl PhysicsSystem {
         let scene = unsafe { PxPhysics_createScene_mut(self.physics, &scene_desc) };
 
         let controller_manager = unsafe { phys_PxCreateControllerManager(scene, true) };
+
+        unsafe {
+            PxControllerManager_setOverlapRecoveryModule_mut(controller_manager, true);
+        }
 
         Self { foundation: self.foundation, physics: self.physics, dispatcher: self.dispatcher, scene, controller_manager, physics_materials: self.physics_materials.clone() }
     }
@@ -99,6 +110,51 @@ impl PhysicsSystem {
                 None
             }
         }
+    }
+
+    pub fn create_box_collider_static(&self, position: Vec3, size: Vec3, material: Materials) -> Option<PhysicsBoxColliderStatic> {
+        // physx defines the center of the box as the center of the bottom face
+        // ht2 defines the center of the box as the top right of the bottom face
+        let position = position + Vec3::new(size.x / 2.0, size.y / 2.0, -size.z / 2.0);
+        let size = size;
+
+        let transform = PxTransform {
+            p: PxVec3 {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            },
+            q: PxQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            },
+        };
+
+        let mut geometry = unsafe { PxBoxGeometry_new() };
+        geometry.halfExtents = PxVec3 {
+            x: size.x / 2.0,
+            y: size.y / 2.0,
+            z: size.z / 2.0,
+        };
+
+        let material = self.physics_materials.get(&material).unwrap();
+
+        let box_actor = unsafe { PxPhysics_createRigidStatic_mut(self.physics, &transform) };
+        let shape_flags = PxShapeFlag::eSIMULATION_SHAPE | PxShapeFlag::eSCENE_QUERY_SHAPE;
+        let shape_flags = unsafe { PxShapeFlags {
+            mBits: shape_flags as u8,
+        } };
+        let box_shape = unsafe {
+            PxRigidActorExt_createExclusiveShape_mut(
+                box_actor as *mut PxRigidActor,
+                &geometry as *const PxBoxGeometry as *const PxGeometry,
+                &material.material, 1, shape_flags) };
+        Some(PhysicsBoxColliderStatic {
+            actor: box_actor,
+            shape: box_shape,
+        })
     }
 }
 
@@ -142,13 +198,12 @@ impl PhysicsCharacterController {
     pub fn move_by(&mut self, displacement: Vec3, delta_time: f32) {
         let mut displacement = PxVec3 {
             x: displacement.x,
-            y: displacement.y,
+            y: displacement.y + (PLAYER_GRAVITY * delta_time),
             z: displacement.z,
         };
-
         unsafe {
             let flags = PxController_move_mut(self.controller,
-                                              &mut displacement,
+                                              &displacement,
                                               0.0,
                                               delta_time,
                                               &PxControllerFilters_new(null_mut(), null_mut(), null_mut()), null_mut());
@@ -192,4 +247,18 @@ unsafe impl Send for PhysicsMaterial {
 }
 
 unsafe impl Sync for PhysicsMaterial {
+}
+
+#[derive(Clone)]
+pub struct PhysicsBoxColliderStatic {
+    pub actor: *mut PxRigidStatic,
+    pub shape: *mut PxShape,
+}
+
+impl PhysicsBoxColliderStatic {
+    pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
+        unsafe {
+            PxScene_addActor_mut(physics.scene, self.actor as *mut PxActor, null_mut());
+        }
+    }
 }

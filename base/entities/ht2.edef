@@ -58,3 +58,23 @@ components:
   component_type:
     id: 4
     name: Light
+- name: BoxCollider
+  parameters:
+    position:
+      name: position
+      value: !Vec3
+        x: -0.786848
+        y: -0.6
+        z: 0.04
+    size:
+      name: size
+      value: !Vec3
+        x: 0.778661
+        y: 0.383664
+        z: 0.224825
+    visualise:
+      name: visualise
+      value: !Bool true
+  component_type:
+    id: 5
+    name: BoxCollider

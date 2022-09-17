@@ -11,10 +11,10 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
-use crate::physics::PhysicsSystem;
+use crate::physics::{Materials, PhysicsSystem};
 use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
-use crate::worldmachine::components::{COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
+use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
 use crate::worldmachine::MapLoadError::FolderNotFound;
@@ -167,11 +167,15 @@ impl WorldMachine {
             for component in entity.components {
                 let component_type = ComponentType::get(component.get_type().name).expect("component type not found");
                 let mut component = component;
-                component.component_type = component_type;
+                component.component_type = component_type.clone();
+
                 entity_new.add_component(component);
             }
             self.world.entities.push(entity_new);
         }
+
+        // initialise entities
+        self.initialise_entities();
 
         // if we're a server, queue entity init packets
         if self.is_server {
@@ -188,6 +192,42 @@ impl WorldMachine {
         }
 
         Ok(())
+    }
+
+    /// this should only be called once per map load
+    pub fn initialise_entities(&mut self) {
+        for entity in &mut self.world.entities {
+            if let Some(box_collider) = entity.get_component(COMPONENT_TYPE_BOX_COLLIDER.clone()) {
+                let box_collider = box_collider.borrow();
+                let position = box_collider.get_parameter("position").unwrap().borrow().clone();
+                let mut position = match position.value {
+                    ParameterValue::Vec3(position) => position,
+                    _ => panic!("position is not a vec3"),
+                };
+                let scale = box_collider.get_parameter("size").unwrap().borrow().clone();
+                let mut scale = match scale.value {
+                    ParameterValue::Vec3(scale) => scale,
+                    _ => panic!("scale is not a vec3"),
+                };
+                if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
+                    let transform = transform.borrow();
+                    let trans_position = transform.get_parameter("position").unwrap().borrow().clone();
+                    let trans_position = match trans_position.value {
+                        ParameterValue::Vec3(position) => position,
+                        _ => panic!("position is not a vec3"),
+                    };
+                    let trans_scale = transform.get_parameter("scale").unwrap().borrow().clone();
+                    let trans_scale = match trans_scale.value {
+                        ParameterValue::Vec3(scale) => scale,
+                        _ => panic!("scale is not a vec3"),
+                    };
+                    position += trans_position;
+                    scale *= trans_scale;
+                }
+                let box_collider_physics = self.physics.as_ref().unwrap().create_box_collider_static(position, scale, Materials::Player).unwrap();
+                box_collider_physics.add_self_to_scene(self.physics.clone().unwrap());
+            }
+        }
     }
 
     #[allow(clippy::borrowed_box)]
@@ -408,6 +448,9 @@ impl WorldMachine {
                                     player,
                                     entity_id: None
                                 });
+                            }
+                            SteadyPacket::FinaliseMapLoad => {
+                                self.initialise_entities();
                             }
                         }
                         drop(connection);

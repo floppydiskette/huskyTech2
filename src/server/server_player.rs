@@ -27,6 +27,7 @@ pub struct ServerPlayer {
     pub scale: Vec3,
     physics_controller: Option<PhysicsCharacterController>,
     movement_speed: f32,
+    last_move_call: std::time::Instant,
 }
 
 impl Default for ServerPlayer {
@@ -40,6 +41,7 @@ impl Default for ServerPlayer {
             scale: Vec3::new(1.0, 1.0, 1.0),
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
+            last_move_call: std::time::Instant::now(),
         }
     }
 }
@@ -55,6 +57,7 @@ impl ServerPlayer {
             scale,
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
+            last_move_call: std::time::Instant::now(),
         }
     }
 
@@ -76,11 +79,11 @@ impl ServerPlayer {
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(displacement_vector, delta);
+        self.last_move_call = current_time;
         worldmachine.physics.as_mut().unwrap().tick(delta);
         worldmachine.last_physics_update = current_time;
         let new_position_calculated = self.physics_controller.as_mut().unwrap().get_position();
         let distance = helpers::distance(new_position_calculated, new_position);
-        debug!("distance: {}", distance);
         if distance < ERROR_MARGIN {
             self.position = new_position;
             self.rotation = new_rotation;
@@ -93,6 +96,12 @@ impl ServerPlayer {
             self.head_rotation = new_head_rotation;
             false
         }
+    }
+
+    pub fn gravity_tick(&mut self) {
+        let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
+        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), delta);
+        self.last_move_call = std::time::Instant::now();
     }
 
     pub fn set_position(&mut self, position: Vec3) {
