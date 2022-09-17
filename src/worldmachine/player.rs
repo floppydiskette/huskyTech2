@@ -46,6 +46,7 @@ pub struct Player {
     head_rotation: Quaternion,
     rotation: Quaternion,
     pitch: f64,
+    yaw: f64,
     pub scale: Vec3,
     last_mouse_pos: Option<Vec2>,
     physics_controller: Option<PhysicsCharacterController>,
@@ -63,6 +64,7 @@ impl Default for Player {
             head_rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             pitch: 0.0,
+            yaw: 0.0,
             scale: Vec3::new(1.0, 1.0, 1.0),
             last_mouse_pos: None,
             physics_controller: None,
@@ -76,6 +78,7 @@ impl Default for Player {
 impl Player {
     pub fn init(&mut self, physics_system: PhysicsSystem, uuid: String, name: String, position: Vec3, rotation: Quaternion, scale: Vec3) {
         self.physics_controller = physics_system.create_character_controller(DEFAULT_RADIUS, DEFAULT_HEIGHT, DEFAULT_STEPHEIGHT, Materials::Player);
+        self.calculate_pitch_and_yaw_from_rotation(rotation);
         if self.physics_controller.is_none() {
             warn!("failed to create physics controller for player");
         }
@@ -106,7 +109,7 @@ impl Player {
         }
         let camera_rotation = camera.get_rotation();
         let mut pitch = self.pitch;
-        let mut yaw = 0.0;
+        let mut yaw = self.yaw;
         let original_yaw = yaw;
         let original_pitch = pitch;
         yaw += ang_x;
@@ -122,7 +125,12 @@ impl Player {
             pitch -= 360.0;
         }
 
+        if yaw > 360.0 {
+            yaw -= 360.0;
+        }
+
         self.pitch = pitch;
+        self.yaw = yaw;
 
         yaw -= original_yaw;
         pitch -= original_pitch;
@@ -135,9 +143,8 @@ impl Player {
 
         camera.set_rotation(new_camera_rotation);
 
-        let head_rotation = horiz * camera_rotation * vert;
-        self.set_head_rotation(head_rotation);
-        let rotation_no_pitch = horiz * camera_rotation;
+        self.set_head_rotation(new_camera_rotation);
+        let rotation_no_pitch = self.rotation * -horiz;
         self.set_rotation(rotation_no_pitch);
         self.head_rotation_changed = false;
 
@@ -238,8 +245,14 @@ impl Player {
         self.rotation
     }
 
+    fn calculate_pitch_and_yaw_from_rotation(&mut self, rotation: Quaternion) {
+        let rotation = rotation.to_euler_angles_zyx();
+        // todo! make this do something
+    }
+
     pub fn set_rotation(&mut self, rotation: Quaternion) {
         self.rotation = rotation;
+        self.calculate_pitch_and_yaw_from_rotation(rotation);
     }
 
     pub fn get_head_rotation(&mut self) -> Quaternion {
