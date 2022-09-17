@@ -119,44 +119,10 @@ pub fn calculate_model_matrix(position: Vec3, rotation: Quaternion, scale: Vec3)
     model_matrix
 }
 
-// takes a quaternion and returns its yaw
-pub fn get_quaternion_yaw(quat: Quaternion) -> f64 {
-    let mut yaw = 0.0f64;
-    let test = quat.x as f64 * quat.y as f64 + quat.z as f64 * quat.w as f64;
-    if test > 0.499 {
-        yaw = 2.0 * (quat.x as f64).atan2(quat.w as f64);
-    } else if test < -0.499 {
-        yaw = -2.0 * (quat.x as f64).atan2(quat.w as f64);
-    } else {
-        let sqx = quat.x as f64 * quat.x as f64;
-        let sqy = quat.y as f64 * quat.y as f64;
-        let sqz = quat.z as f64 * quat.z as f64;
-        yaw = (sqx - sqy - sqz + quat.w as f64 * quat.w as f64).asin() * 2.0;
-        yaw = (sqx + sqy - sqz - quat.w as f64 * quat.w as f64).asin() * 2.0;
-    }
-    yaw
-}
-
-// takes a quaternion and returns its pitch
-pub fn get_quaternion_pitch(quat: Quaternion) -> f64 {
-    let mut pitch = 0.0f64;
-    let test = quat.x as f64 * quat.y as f64 + quat.z as f64 * quat.w as f64;
-    if test > 0.499 {
-        pitch = std::f64::consts::FRAC_PI_2;
-    } else if test < -0.499 {
-        pitch = -std::f64::consts::FRAC_PI_2;
-    } else {
-        let sqx = quat.x as f64 * quat.x as f64;
-        let sqy = quat.y as f64 * quat.y as f64;
-        let sqz = quat.z as f64 * quat.z as f64;
-        pitch = (sqx - sqy - sqz + quat.w as f64 * quat.w as f64).asin() * 2.0;
-        pitch = (sqx + sqy - sqz - quat.w as f64 * quat.w as f64).asin() * 2.0;
-    }
-    pitch
-}
-
-pub fn yaw_pitch_to_quaternion(yaw: f32, pitch: f32) -> Quaternion {
-    Quaternion::from_euler_angles_zyx(&Vec3::new(pitch, yaw, 0.0))
+pub fn largest_angle_between(a: Vec3, b: Vec3) -> f64 {
+    let dot = a.dot(b) as f64;
+    let angle = dot.acos() as f64;
+    angle
 }
 
 pub fn conjugate_quaternion(quat: Quaternion) -> Quaternion {

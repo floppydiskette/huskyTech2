@@ -45,6 +45,7 @@ pub struct Player {
     position: Vec3,
     head_rotation: Quaternion,
     rotation: Quaternion,
+    pitch: f64,
     pub scale: Vec3,
     last_mouse_pos: Option<Vec2>,
     physics_controller: Option<PhysicsCharacterController>,
@@ -61,6 +62,7 @@ impl Default for Player {
             position: Vec3::new(0.0, 0.0, 0.0),
             head_rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
+            pitch: 0.0,
             scale: Vec3::new(1.0, 1.0, 1.0),
             last_mouse_pos: None,
             physics_controller: None,
@@ -92,33 +94,52 @@ impl Player {
             self.last_mouse_pos = Some(mouse_pos);
         }
         let last_mouse_pos = self.last_mouse_pos.unwrap();
-        let mouse_x_offset = (mouse_pos.x - last_mouse_pos.x) as f64;
-        let mouse_y_offset = (mouse_pos.y - last_mouse_pos.y) as f64;
+
+        let ang_x = -(mouse_pos.x as f64 - last_mouse_pos.x as f64);
+        let ang_y = -(mouse_pos.y as f64 - last_mouse_pos.y as f64);
+        self.last_mouse_pos = Some(mouse_pos);
 
         let camera = &mut renderer.camera;
         if self.head_rotation_changed {
             self.head_rotation_changed = false;
-            camera.set_rotation(self.get_head_rotation());
+            //camera.set_rotation(self.get_head_rotation());
         }
         let camera_rotation = camera.get_rotation();
+        let mut pitch = self.pitch;
+        let mut yaw = 0.0;
+        let original_yaw = yaw;
+        let original_pitch = pitch;
+        yaw += ang_x;
+        pitch += ang_y;
 
-        let mut yaw = helpers::get_quaternion_yaw(camera.get_rotation());
-        let mut pitch = helpers::get_quaternion_pitch(camera.get_rotation());
-        yaw += -mouse_x_offset;
-        pitch += -mouse_y_offset;
         if pitch > 89.0 {
             pitch = 89.0;
         }
         if pitch < -89.0 {
             pitch = -89.0;
         }
-        let mut rotation = Quaternion::identity();
-        rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(pitch as f32, 0.0, 0.0)) * rotation * Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw as f32, 0.0));
-        self.set_head_rotation(rotation);
-        let rotation_no_pitch = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw as f32, 0.0));
+        if pitch > 360.0 {
+            pitch -= 360.0;
+        }
+
+        self.pitch = pitch;
+
+        yaw -= original_yaw;
+        pitch -= original_pitch;
+
+
+        let horiz = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, yaw as f32, 0.0));
+        let vert = Quaternion::from_euler_angles_zyx(&Vec3::new(pitch as f32, 0.0, 0.0));
+
+        let new_camera_rotation = vert * camera_rotation * horiz;
+
+        camera.set_rotation(new_camera_rotation);
+
+        let head_rotation = horiz * camera_rotation * vert;
+        self.set_head_rotation(head_rotation);
+        let rotation_no_pitch = horiz * camera_rotation;
         self.set_rotation(rotation_no_pitch);
         self.head_rotation_changed = false;
-        camera.set_rotation(rotation);
 
         if camera.get_rotation() != camera_rotation {
             Some(camera.get_rotation())
