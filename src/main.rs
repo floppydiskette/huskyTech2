@@ -6,13 +6,16 @@ extern crate core;
 
 use std::borrow::BorrowMut;
 use std::{process, thread};
+use std::sync::Arc;
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
 use libsex::bindings::*;
+use tokio::sync::Mutex;
 use crate::keyboard::{Key, Keyboard};
 use crate::renderer::ht_renderer;
 use crate::server::ConnectionClientside;
+use crate::server::lan::ClientLanConnection;
 
 pub trait Thingy {
     fn get_x(&self) -> i32;
@@ -49,69 +52,99 @@ async fn main() {
     let mut args = std::env::args();
     let mut skip_intro = false;
     let mut level_to_load = Option::None;
+    let mut run_as_lan_server = false;
+    let mut connect_to_lan_server = Option::None;
 
     while let Some(arg) = args.next() {
-        if arg == "--skip-intro" {
-            skip_intro = true;
-        } else if arg == "--level" {
-            level_to_load = Option::Some(args.next().expect("expected level name after --level"));
+        match arg.as_str() {
+            "--skip-intro" => skip_intro = true,
+            "--level" => {
+                level_to_load = Option::Some(args.next().expect("expected level name after --level"));
+            }
+            "--lan-server" => {
+                run_as_lan_server = true;
+            }
+            "--connect-to-lan-server" => {
+                connect_to_lan_server = Option::Some(args.next().expect("expected ip after --connect-to-lan-server"));
+            }
+            _ => {}
         }
     }
 
-    info!("good day! initialising huskyTech2");
-    let mut sss = AudioManager::<CpalBackend>::new(AudioManagerSettings::default()).expect("failed to initialise audio subsystem");
-    info!("initialised audio subsystem");
-    let renderer = ht_renderer::init();
-    if renderer.is_err() {
-        error!("failed to initialise renderer");
-        error!("{:?}", renderer.err());
-        return;
-    }
-    let mut renderer = renderer.unwrap();
-    renderer.initialise_basic_resources();
-    info!("initialised renderer");
+    if run_as_lan_server {
+        info!("good day! running as lan server");
 
-    let mut physics = physics::PhysicsSystem::init();
-    info!("initialised physics");
+        let mut physics = physics::PhysicsSystem::init();
+        info!("initialised physics");
 
-    let mut worldmachine = worldmachine::WorldMachine::default();
-    worldmachine.initialise(physics.clone(), false);
-
-    info!("initialised worldmachine");
-
-    let mut server = server::Server::new("test", physics.clone());
-    let mut server_clone = server.clone();
-    tokio::spawn(async move {
+        let mut server = server::Server::new_host_lan_server("test", physics, 25565, 25566, "0.0.0.0").await;
+        let mut server_clone = server.clone();
+        info!("initialised server");
         server_clone.run().await;
-    });
+    } else {
+        info!("good day! initialising huskyTech2");
+        let mut sss = AudioManager::<CpalBackend>::new(AudioManagerSettings::default()).expect("failed to initialise audio subsystem");
+        info!("initialised audio subsystem");
+        let renderer = ht_renderer::init();
+        if renderer.is_err() {
+            error!("failed to initialise renderer");
+            error!("{:?}", renderer.err());
+            return;
+        }
+        let mut renderer = renderer.unwrap();
+        renderer.initialise_basic_resources();
+        info!("initialised renderer");
 
-    let mut server_connection = server.join_local_server().await;
-    worldmachine.connect_to_server(ConnectionClientside::Local(server_connection));
+        let mut physics = physics::PhysicsSystem::init();
+        info!("initialised physics");
 
-    debug!("connected to internal server");
+        let mut worldmachine = worldmachine::WorldMachine::default();
+        worldmachine.initialise(physics.clone(), false);
 
-    keyboard::init(&mut renderer);
-    mouse::init(&mut renderer);
+        info!("initialised worldmachine");
 
-    debug!("initialised keyboard");
+        let mut server = server::Server::new("test", physics.clone());
+        let mut server_clone = server.clone();
+        tokio::spawn(async move {
+            server_clone.run().await;
+        });
 
-    if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
+        if let Some(ip) = connect_to_lan_server {
+            let server_connection = ClientLanConnection::connect(ip.as_str(), 25565, 25566).await.expect("failed to connect to server");
+            worldmachine.connect_to_server(ConnectionClientside::Lan(Arc::new(Mutex::new(server_connection.clone()))));
+            tokio::spawn(async move {
+                server_connection.udp_listener_thread().await;
+            });
+        } else {
+            let server_connection = server.join_local_server().await;
+            worldmachine.connect_to_server(ConnectionClientside::Local(server_connection.clone()));
+        }
 
-    renderer.lock_mouse(true);
-    renderer.camera.set_fov(120.0);
+        debug!("connected to internal server");
 
-    let mut last_frame_time = std::time::Instant::now();
-    loop {
-        let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
-        let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
-        worldmachine.tick_connection(&mut updates).await;
-        worldmachine.render(&mut renderer);
-        keyboard::tick_keyboard();
-        mouse::tick_mouse();
-        last_frame_time = std::time::Instant::now();
-        renderer.swap_buffers();
-        if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
-            process::exit(0);
+        keyboard::init(&mut renderer);
+        mouse::init(&mut renderer);
+
+        debug!("initialised keyboard");
+
+        if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
+
+        //renderer.lock_mouse(true);
+        renderer.camera.set_fov(120.0);
+
+        let mut last_frame_time = std::time::Instant::now();
+        loop {
+            let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
+            let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
+            worldmachine.tick_connection(&mut updates).await;
+            worldmachine.render(&mut renderer);
+            keyboard::tick_keyboard();
+            mouse::tick_mouse();
+            last_frame_time = std::time::Instant::now();
+            renderer.swap_buffers();
+            if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
+                process::exit(0);
+            }
         }
     }
 }

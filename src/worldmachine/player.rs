@@ -55,6 +55,7 @@ pub struct Player {
     wasd: [bool; 4],
     jump: bool,
     head_rotation_changed: bool,
+    locked_mouse: bool,
 }
 
 impl Default for Player {
@@ -74,7 +75,8 @@ impl Default for Player {
             last_move_call: std::time::Instant::now(),
             wasd: [false; 4],
             jump: false,
-            head_rotation_changed: false
+            head_rotation_changed: false,
+            locked_mouse: true,
         }
     }
 }
@@ -95,6 +97,9 @@ impl Player {
     }
 
     fn handle_mouse_movement(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Quaternion> {
+        if !self.locked_mouse {
+            return None;
+        }
         let mouse_pos = mouse::get_mouse_pos();
 
         if self.last_mouse_pos.is_none() {
@@ -167,6 +172,7 @@ impl Player {
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
         let speed = self.movement_speed;
+        let speed = 10.0; // uncomment to cheat!
         if keyboard::check_key_pressed(Key::W) {
             self.wasd[0] = true;
         }
@@ -228,6 +234,17 @@ impl Player {
         let jump = self.handle_jump(renderer, delta_time);
         let look = self.handle_mouse_movement(renderer, delta_time);
         let movement = self.handle_keyboard_movement(renderer, jump, delta_time);
+
+        // FOR DEBUGGING, REMOVE LATER
+        if keyboard::check_key_released(Key::Comma) {
+            debug!("unlocking mouse");
+            renderer.lock_mouse(false);
+            self.locked_mouse = false;
+        } else if keyboard::check_key_released(Key::Period) {
+            debug!("locking mouse");
+            renderer.lock_mouse(true);
+            self.locked_mouse = true;
+        }
 
         let mut updates = Vec::new();
         if jump {

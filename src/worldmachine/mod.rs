@@ -355,6 +355,24 @@ impl WorldMachine {
                         }
                     }
                 }
+                ConnectionClientside::Lan(connection) => {
+                    let mut connection = connection.lock().await;
+                    let attempt = connection.send_steady_and_serialise(message).await;
+                    if attempt.is_err() {
+                        error!("send_queued_steady_message: failed to send message");
+                    }
+                    loop {
+                        let try_recv = connection.attempt_receive_steady_and_deserialise().await;
+                        if let Some(message) = try_recv {
+                            if let SteadyPacket::Consume(uuid) = message.packet.unwrap().clone() {
+                                if uuid == message.uuid.unwrap() {
+                                    debug!("consume message received");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -366,6 +384,18 @@ impl WorldMachine {
                     let mut connection = connection.lock().await;
                     let mut queue = connection.steady_sender_queue.lock().await;
                     while let Some(message) = queue.pop() {}
+                }
+                ConnectionClientside::Lan(connection) => {
+                    let mut connection = connection.lock().await;
+                    let mut queue = connection.steady_sender_queue.lock().await;
+                    while let Some(message) = queue.pop() {
+                        debug!("sending queued steady message");
+                        debug!("message: {:?}", message);
+                        let attempt = connection.send_steady_and_serialise(message).await;
+                        if attempt.is_err() {
+                            error!("send_queued_steady_messages: failed to send message");
+                        }
+                    }
                 }
             }
         }
@@ -380,6 +410,10 @@ impl WorldMachine {
                     if attempt.is_err() {
                         error!("send_fast_message: failed to send message");
                     }
+                }
+                ConnectionClientside::Lan(connection) => {
+                    let mut connection = connection.lock().await;
+                    let attempt = connection.send_fast_and_serialise(message).await;
                 }
             }
         }
@@ -399,9 +433,55 @@ impl WorldMachine {
                     }
                     debug!("consume message sent");
                 }
+                ConnectionClientside::Lan(connection) => {
+                    let mut connection = connection.lock().await;
+                    let attempt = connection
+                        .send_steady_and_serialise(SteadyPacketData {
+                            packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
+                            uuid: Some(server::generate_uuid()),
+                        })
+                        .await;
+                    if attempt.is_err() {
+                        error!("send_queued_steady_message: failed to send message");
+                    }
+                    debug!("consume message sent");
+                }
             }
         } else {
             error!("consume_steady_message: no connection");
+        }
+    }
+
+    async fn initialise_entity(&mut self, packet: SteadyPacket) {
+        if let SteadyPacket::InitialiseEntity(entity_id, entity_data) = packet {
+            // check if we already have this entity
+            if self.get_entity(entity_id).is_none() {
+                let mut entity = unsafe {
+                    Entity::new_with_id(entity_data.name.as_str(), entity_id)
+                };
+                entity.copy_data_from_other_entity(&entity_data);
+                self.world.entities.push(entity);
+                self.entities_wanting_to_load_things.push(self.world.entities.len() - 1);
+            } else {
+                // we already have this entity, so we need to update it
+                let entity_index = self.get_entity_index(entity_id).unwrap();
+                let entity = self.world.entities.get_mut(entity_index).unwrap();
+                entity.copy_data_from_other_entity(&entity_data);
+                self.entities_wanting_to_load_things.push(entity_index);
+            }
+            debug!("initialise entity message received");
+            debug!("world entities: {:?}", self.world.entities);
+        }
+    }
+
+    async fn initialise_player(&mut self, packet: SteadyPacket) {
+        if let SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) = packet {
+            let mut player = Player::default();
+            player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
+            self.player = Some(PlayerContainer {
+                player,
+                entity_id: None
+            });
         }
     }
 
@@ -417,23 +497,7 @@ impl WorldMachine {
                             SteadyPacket::Consume(_) => {}
                             SteadyPacket::KeepAlive => {}
                             SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
-                                // check if we already have this entity
-                                if self.get_entity(entity_id).is_none() {
-                                    let mut entity = unsafe {
-                                        Entity::new_with_id(entity_data.name.as_str(), entity_id)
-                                    };
-                                    entity.copy_data_from_other_entity(&entity_data);
-                                    self.world.entities.push(entity);
-                                    self.entities_wanting_to_load_things.push(self.world.entities.len() - 1);
-                                } else {
-                                    // we already have this entity, so we need to update it
-                                    let entity_index = self.get_entity_index(entity_id).unwrap();
-                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
-                                    entity.copy_data_from_other_entity(&entity_data);
-                                    self.entities_wanting_to_load_things.push(entity_index);
-                                }
-                                debug!("initialise entity message received");
-                                debug!("world entities: {:?}", self.world.entities);
+                                self.initialise_entity(message.clone().packet.unwrap()).await;
                             }
                             SteadyPacket::Message(str_message) => {
                                 info!("Received message from server: {}", str_message);
@@ -443,12 +507,7 @@ impl WorldMachine {
                                 info!("received {} self test messages", self.counter);
                             }
                             SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) => {
-                                let mut player = Player::default();
-                                player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
-                                self.player = Some(PlayerContainer {
-                                    player,
-                                    entity_id: None
-                                });
+                                self.initialise_player(message.clone().packet.unwrap()).await;
                             }
                             SteadyPacket::FinaliseMapLoad => {
                                 self.initialise_entities();
@@ -462,7 +521,78 @@ impl WorldMachine {
                         }
                     }
                 }
+                ConnectionClientside::Lan(connection) => {
+                    let mut connection = connection.lock().await;
+                    // check if we have any messages to process
+                    let try_recv = connection.attempt_receive_steady_and_deserialise().await;
+                    if let Some(message) = try_recv {
+                        match message.clone().packet.unwrap().clone() {
+                            SteadyPacket::Consume(_) => {}
+                            SteadyPacket::KeepAlive => {}
+                            SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
+                                self.initialise_entity(message.clone().packet.unwrap()).await;
+                            }
+                            SteadyPacket::Message(str_message) => {
+                                info!("Received message from server: {}", str_message);
+                            }
+                            SteadyPacket::SelfTest => {
+                                self.counter += 1.0;
+                                info!("received {} self test messages", self.counter);
+                            }
+                            SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) => {
+                                self.initialise_player(message.clone().packet.unwrap()).await;
+                            }
+                            SteadyPacket::FinaliseMapLoad => {
+                                self.initialise_entities();
+                            }
+                        }
+                        drop(connection);
+                        self.consume_steady_message(message).await;
+                    }
+                }
             }
+        }
+    }
+
+    async fn handle_message_fast(&mut self, packet: FastPacket) {
+        match packet.clone() {
+            FastPacket::ChangePosition(entity_id, vec3) => {
+
+            }
+            FastPacket::ChangeRotation(entity_id, quat) => {
+                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", ParameterValue::Quaternion(quat));
+                    if transform.is_none() {
+                        warn!("process_fast_messages: failed to set transform rotation");
+                    }
+                }
+            }
+            FastPacket::ChangeScale(entity_id, vec3) => {
+                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "scale", ParameterValue::Vec3(vec3));
+                    if transform.is_none() {
+                        warn!("process_fast_messages: failed to set transform scale");
+                    }
+                }
+            }
+            FastPacket::PlayerFuckYouMoveHere(new_position) => {
+                if let Some(player) = self.player.as_mut() {
+                    warn!("we moved too fast, so the server is telling us to move to a new position");
+                    player.player.set_position(new_position);
+                }
+            }
+            FastPacket::PlayerFuckYouSetRotation(new_rotation) => {
+                if let Some(player) = self.player.as_mut() {
+                    warn!("we did something wrong, so the server is telling us to set our rotation");
+                    player.player.set_rotation(new_rotation);
+                    player.player.set_head_rotation(new_rotation);
+                }
+            }
+            FastPacket::PlayerCheckPosition(_, _) => {}
+            FastPacket::PlayerMove(_, _, _, _, _, _) => {}
+            FastPacket::PlayerJump(_) => {}
         }
     }
 
@@ -474,55 +604,19 @@ impl WorldMachine {
                     // check if we have any messages to process
                     let try_recv = connection.fast_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
-                        match message.clone().packet.unwrap().clone() {
-                            FastPacket::ChangePosition(entity_id, vec3) => {
-                                if let Some(entity_index) = self.get_entity_index(entity_id) {
-                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
-                                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(vec3));
-                                    if transform.is_none() {
-                                        warn!("process_fast_messages: failed to set transform position");
-                                    }
-                                }
-                            }
-                            FastPacket::ChangeRotation(entity_id, quat) => {
-                                if let Some(entity_index) = self.get_entity_index(entity_id) {
-                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
-                                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", ParameterValue::Quaternion(quat));
-                                    if transform.is_none() {
-                                        warn!("process_fast_messages: failed to set transform rotation");
-                                    }
-                                }
-                            }
-                            FastPacket::ChangeScale(entity_id, vec3) => {
-                                if let Some(entity_index) = self.get_entity_index(entity_id) {
-                                    let entity = self.world.entities.get_mut(entity_index).unwrap();
-                                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "scale", ParameterValue::Vec3(vec3));
-                                    if transform.is_none() {
-                                        warn!("process_fast_messages: failed to set transform scale");
-                                    }
-                                }
-                            }
-                            FastPacket::PlayerFuckYouMoveHere(new_position) => {
-                                if let Some(player) = self.player.as_mut() {
-                                    warn!("we moved too fast, so the server is telling us to move to a new position");
-                                    player.player.set_position(new_position);
-                                }
-                            }
-                            FastPacket::PlayerFuckYouSetRotation(new_rotation) => {
-                                if let Some(player) = self.player.as_mut() {
-                                    warn!("we did something wrong, so the server is telling us to set our rotation");
-                                    player.player.set_rotation(new_rotation);
-                                    player.player.set_head_rotation(new_rotation);
-                                }
-                            }
-                            FastPacket::PlayerCheckPosition(_, _) => {}
-                            FastPacket::PlayerMove(_, _, _, _, _, _) => {}
-                            FastPacket::PlayerJump(_) => {}
-                        }
+                        self.handle_message_fast(message.clone().packet.unwrap()).await;
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
                             warn!("process_steady_messages: error receiving message: {:?}", e);
                         }
+                    }
+                }
+                ConnectionClientside::Lan(connection) => {
+                    let connection = connection.lock().await;
+                    // check if we have any messages to process
+                    let try_recv = connection.attempt_receive_fast_and_deserialise().await;
+                    if let Some(message) = try_recv {
+                        self.handle_message_fast(message.clone().packet.unwrap()).await;
                     }
                 }
             }
@@ -581,6 +675,7 @@ impl WorldMachine {
                     let uuid = self.player.as_ref().unwrap().player.uuid.clone();
                     let displacement_vector = displacement_vector.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
                     let packet = FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped);
+                    debug!("sending packet: {:?}", packet);
                     self.send_fast_message(FastPacketData {
                         packet: Some(packet),
                     }).await;

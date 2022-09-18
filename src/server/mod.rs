@@ -8,8 +8,10 @@ use gfx_maths::*;
 use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use async_recursion::async_recursion;
 use libsex::bindings::XConnectionWatchProc;
+use serde::{Serialize, Deserialize};
 use crate::physics::PhysicsSystem;
 use crate::server::connections::SteadyMessageQueue;
+use crate::server::lan::{ClientLanConnection, LanConnection, LanListener};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::ecs::Entity;
@@ -17,6 +19,7 @@ use crate::worldmachine::player::PlayerContainer;
 
 pub mod connections;
 pub mod server_player;
+pub mod lan;
 
 pub type PacketUUID = String;
 pub type ConnectionUUID = String;
@@ -24,14 +27,16 @@ pub type ConnectionUUID = String;
 #[derive(Clone, Debug)]
 pub enum Connection {
     Local(Arc<Mutex<LocalConnection>>),
+    Lan(LanListener, Arc<Mutex<LanConnection>>),
 }
 
 #[derive(Clone)]
 pub enum ConnectionClientside {
     Local(Arc<Mutex<LocalConnectionClientSide>>),
+    Lan(Arc<Mutex<ClientLanConnection>>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FastPacket {
     ChangePosition(EntityId, Vec3),
     ChangeRotation(EntityId, Quaternion),
@@ -46,12 +51,15 @@ pub enum FastPacket {
     PlayerFuckYouSetRotation(Quaternion), // connection uuid, rotation
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FastPacketData {
     pub packet: Option<FastPacket>,
 }
 
-#[derive(Clone, Debug)]
+unsafe impl Send for FastPacketData {}
+unsafe impl Sync for FastPacketData {}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SteadyPacket {
     Consume(PacketUUID),
     SelfTest,
@@ -63,7 +71,7 @@ pub enum SteadyPacket {
     Message(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SteadyPacketData {
     pub packet: Option<SteadyPacket>,
     pub uuid: Option<PacketUUID>,
@@ -90,6 +98,7 @@ pub struct LocalConnectionClientSide {
 #[derive(Clone, Debug)]
 pub enum Connections {
     Local(Arc<Mutex<Vec<Arc<Mutex<LocalConnection>>>>>),
+    Lan(LanListener, Arc<Mutex<Vec<Arc<Mutex<LanConnection>>>>>),
 }
 
 #[derive(Clone)]
@@ -120,9 +129,45 @@ impl Server {
         }
     }
 
+    pub async fn new_host_lan_server(map_name: &str, physics: PhysicsSystem, tcp_port: u16, udp_port: u16, hostname: &str) -> Self {
+        let mut worldmachine = WorldMachine::default();
+        worldmachine.initialise(physics, true);
+        worldmachine.load_map(map_name).expect("failed to load map");
+
+        worldmachine.players = Some(Arc::new(Mutex::new(HashMap::new())));
+
+        let mut listener = LanListener::new(hostname, tcp_port, udp_port).await;
+
+        info!("server started");
+
+        Self {
+            connections: Connections::Lan(listener.clone(), Arc::new(Mutex::new(Vec::new()))),
+            connections_to_initialise: Arc::new(Mutex::new(Vec::new())),
+            worldmachine: Arc::new(Mutex::new(worldmachine)),
+        }
+    }
+
+    pub async fn listen_for_lan_connections(&mut self) {
+        if let Connections::Lan(listener_raw, connections_raw) = self.connections.clone() {
+            let listener = listener_raw.clone();
+            let new_connection = listener.check_for_new_connections().await;
+            if let Some(connection) = new_connection {
+                let connection = Arc::new(Mutex::new(connection));
+                let listener = listener_raw.clone();
+                let connection_clone = connection.clone();
+                tokio::spawn(async move {
+                    let connection = connection_clone.lock().await.clone();
+                    connection.udp_listener_thread(listener.clone()).await;
+                });
+                self.new_connection(Connection::Lan(listener_raw, connection)).await;
+            }
+        }
+    }
+
     async fn get_connection_uuid(&mut self, connection: &Connection) -> ConnectionUUID {
         match connection {
             Connection::Local(local_connection) => local_connection.lock().await.uuid.clone(),
+            Connection::Lan(_, lan_connection) => lan_connection.lock().await.uuid.clone(),
         }
     }
 
@@ -156,6 +201,33 @@ impl Server {
                     }
                 }
             }
+            Connection::Lan(_, connection) => {
+                let mut connection_lock = connection.lock().await;
+                loop {
+                    let res = connection_lock.serialise_and_send_steady(packet.clone()).await;
+                    if res.is_ok() {
+                        break;
+                    } else {
+                        warn!("failed to send packet to lan connection, retrying");
+                    }
+                }
+                debug!("sent packet to lan connection");
+                debug!("uuid: {:?}", packet.clone().uuid);
+                // wait for the packet to be consumed
+                drop(connection_lock);
+                loop {
+                    let mut connection_lock = connection.lock().await;
+                    let received_packet = connection_lock.block_receive_steady_and_deserialise().await;
+                    if let Some(received_packet) = received_packet {
+                        if let SteadyPacket::Consume(uuid) = received_packet.packet.clone().unwrap() {
+                            if uuid == packet.clone().uuid.unwrap() {
+                                debug!("packet consumed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -171,6 +243,16 @@ impl Server {
                     self.send_steady_packet_unsafe(&Connection::Local(connection), packet_data).await;
                 }
             }
+            Connection::Lan(listener, connection) => {
+                let uuid = generate_uuid();
+                let packet_data = SteadyPacketData {
+                    packet: Some(packet),
+                    uuid: Some(uuid.clone()),
+                };
+                unsafe {
+                    self.send_steady_packet_unsafe(&Connection::Lan(listener, connection), packet_data).await;
+                }
+            }
         }
     }
 
@@ -184,6 +266,15 @@ impl Server {
                     uuid: Some(uuid.clone()),
                 };
                 let mut queue = connection.steady_receiver_queue.lock().await;
+                queue.push(packet_data);
+            }
+            Connection::Lan(_, connection) => {
+                let connection = connection.lock().await;
+                let packet_data = SteadyPacketData {
+                    packet: Some(packet),
+                    uuid: Some(uuid.clone()),
+                };
+                let mut queue = connection.steady_update_queue.lock().await;
                 queue.push(packet_data);
             }
         }
@@ -204,6 +295,16 @@ impl Server {
                     }
                 }
             }
+            Connection::Lan(listener, connection_raw) => {
+                let mut connection = connection_raw.lock().await;
+                let packet = connection.attempt_receive_steady_and_deserialise().await;
+                if let Some(packet) = packet {
+                    unsafe {
+                        drop(connection);
+                        self.queue_received_steady_packet(&Connection::Lan(listener, connection_raw.clone()), packet.packet.unwrap()).await;
+                    }
+                }
+            }
         }
     }
 
@@ -215,6 +316,13 @@ impl Server {
                     packet: Some(packet),
                 };
                 connection.fast_update_sender.send(packet_data).await.unwrap();
+            }
+            Connection::Lan(listener, connection) => {
+                let mut connection = connection.lock().await;
+                let packet_data = FastPacketData {
+                    packet: Some(packet),
+                };
+                connection.serialise_and_send_fast(connection.uuid.clone(), listener.clone(), packet_data).await.unwrap();
             }
         }
     }
@@ -229,6 +337,13 @@ impl Server {
                 let message = connection.fast_update_receiver.borrow_and_update().clone();
                 if let Some(packet) = message.packet {
                     return Some(packet);
+                }
+            }
+            Connection::Lan(listener, connection) => {
+                let connection = connection.lock().await;
+                let packet = connection.attempt_receive_fast_and_deserialise().await;
+                if let Some(packet) = packet {
+                    return Some(packet.packet.unwrap());
                 }
             }
         }
@@ -283,9 +398,61 @@ impl Server {
                     }
                 }
             }
+            Connection::Lan(_, connection) => {
+                let connection = connection.lock().await;
+                let packet = connection.attempt_receive_steady_and_deserialise().await;
+                if let Some(packet) = packet {
+                    match packet.packet.unwrap() {
+                        SteadyPacket::KeepAlive => {
+                            // do nothing
+                        }
+                        SteadyPacket::InitialiseEntity(uid, entity) => {
+                            // client shouldn't be sending this
+                            debug!("client sent initialise packet");
+                        }
+
+                        // client shouldn't be sending these
+                        SteadyPacket::Consume(_) => {}
+                        SteadyPacket::SelfTest => {}
+                        SteadyPacket::InitialisePlayer(_, _, _, _, _) => {}
+                        SteadyPacket::Message(_) => {}
+                        SteadyPacket::FinaliseMapLoad => {}
+                    }
+                }
+            }
         }
         // get steady packets
         self.get_received_steady_packets(&connection).await;
+    }
+
+    async fn player_move(&mut self, connection: Connection, packet: FastPacket) {
+        if let FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped) = packet {
+            let mut worldmachine = self.worldmachine.clone();
+            let mut worldmachine = worldmachine.lock().await;
+            let mut players = worldmachine.players.clone();
+            let mut players = players.as_mut().unwrap().lock().await;
+            let player = players.get_mut(&uuid).unwrap();
+            let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, jumped, &mut worldmachine).await;
+            if success {} else {
+                let connection = connection.clone();
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
+            }
+        }
+    }
+
+    async fn player_check_position(&mut self, connection: Connection, packet: FastPacket) {
+        if let FastPacket::PlayerCheckPosition(uuid, position) = packet {
+            let mut worldmachine = self.worldmachine.clone();
+            let mut worldmachine = worldmachine.lock().await;
+            let mut players = worldmachine.players.clone();
+            let mut players = players.as_mut().unwrap().lock().await;
+            let player = players.get_mut(&uuid).unwrap();
+            let server_position = player.player.get_position();
+            let success = server_position == position;
+            if success {} else {
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
+            }
+        }
     }
 
     async fn handle_fast_packets(&mut self, connection: Connection) {
@@ -294,39 +461,19 @@ impl Server {
                 let mut local_connection = local_connection.lock().await;
                 if local_connection.fast_update_receiver.has_changed().unwrap_or(false) {
                     let fast_packet_data = local_connection.fast_update_receiver.borrow_and_update().clone();
+                    drop(local_connection);
                     if let Some(fast_packet) = fast_packet_data.packet {
-                        match fast_packet {
+                        match fast_packet.clone() {
                             /// sent when the player wants to move
-                            FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped) => {
-                                let mut worldmachine = self.worldmachine.clone();
-                                let mut worldmachine = worldmachine.lock().await;
-                                let mut players = worldmachine.players.clone();
-                                let mut players = players.as_mut().unwrap().lock().await;
-                                let player = players.get_mut(&uuid).unwrap();
-                                let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, jumped, &mut worldmachine).await;
-                                if success {} else {
-                                    drop(local_connection);
-                                    let mut connection = connection.clone();
-                                    self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
-                                }
+                            FastPacket::PlayerMove(_, _, _, _, _, _) => {
+                                self.player_move(connection.clone(), fast_packet).await;
                             }
                             /// sent when player is attempting to check if their position is correct against the server's stored position
-                            FastPacket::PlayerCheckPosition(uuid, position) => {
-                                let mut worldmachine = self.worldmachine.clone();
-                                let mut worldmachine = worldmachine.lock().await;
-                                let mut players = worldmachine.players.clone();
-                                let mut players = players.as_mut().unwrap().lock().await;
-                                let player = players.get_mut(&uuid).unwrap();
-                                let server_position = player.player.get_position();
-                                let success = server_position == position;
-                                if success {} else {
-                                    drop(local_connection);
-                                    let mut connection = connection.clone();
-                                    self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
-                                }
+                            FastPacket::PlayerCheckPosition(_, _) => {
+                                self.player_check_position(connection.clone(), fast_packet).await;
                             }
 
-                            /// sent when the player jumps
+                            /// sent when the player jumps (deprecated)
                             FastPacket::PlayerJump(uuid) => {
                                 //let mut worldmachine = self.worldmachine.clone();
                                 //let mut worldmachine = worldmachine.lock().await;
@@ -350,6 +497,35 @@ impl Server {
                     }
                 }
             }
+            Connection::Lan(listener, lan_connection) => {
+                let mut lan_connection = lan_connection.lock().await;
+                let listener = listener.clone();
+                let packet = lan_connection.attempt_receive_fast_and_deserialise().await;
+                drop(lan_connection);
+                if let Some(packet) = packet {
+                    match packet.clone().packet.unwrap() {
+                        /// sent when the player wants to move
+                        FastPacket::PlayerMove(_, _, _, _, _, _) => {
+                            self.player_move(connection.clone(), packet.clone().packet.unwrap()).await;
+                        }
+                        /// sent when player is attempting to check if their position is correct against the server's stored position
+                        FastPacket::PlayerCheckPosition(_, _) => {
+                            self.player_check_position(connection.clone(), packet.clone().packet.unwrap()).await;
+                        }
+
+                        /// deprecated
+                        FastPacket::PlayerJump(uuid) => {
+                        }
+
+                        // client shouldn't be sending these
+                        FastPacket::ChangePosition(_, _) => {}
+                        FastPacket::ChangeRotation(_, _) => {}
+                        FastPacket::ChangeScale(_, _) => {}
+                        FastPacket::PlayerFuckYouMoveHere(_) => {}
+                        FastPacket::PlayerFuckYouSetRotation(_) => {}
+                    }
+                }
+            }
         }
     }
 
@@ -360,6 +536,10 @@ impl Server {
                     self.handle_fast_packets(Connection::Local(local_connection.clone())).await;
                     self.handle_steady_packets(Connection::Local(local_connection.clone())).await;
                 }
+                Connection::Lan(listener, lan_connection) => {
+                    self.handle_fast_packets(Connection::Lan(listener.clone(), lan_connection.clone())).await;
+                    self.handle_steady_packets(Connection::Lan(listener.clone(), lan_connection.clone())).await;
+                }
             }
         }
     }
@@ -368,6 +548,9 @@ impl Server {
         match connection {
             Connection::Local(_) => {
                 matches!(self.connections.clone(), Connections::Local(_))
+            }
+            Connection::Lan(_, _) => {
+                matches!(self.connections.clone(), Connections::Lan(_, _))
             }
         }
     }
@@ -381,6 +564,23 @@ impl Server {
                             let mut connections = connections.lock().await;
                             connections.push(local_connection.clone());
                             connections.len() - 1
+                        }
+                        _ => {
+                            panic!("assert_connection_type_allowed failed");
+                        }
+                    };
+                    self.begin_connection(connection.clone()).await;
+                    self.handle_connection(connection).await;
+                }
+                Connection::Lan(_, lan_connection) => {
+                    let connection_index = match self.connections.clone() {
+                        Connections::Lan(_, connections) => {
+                            let mut connections = connections.lock().await;
+                            connections.push(lan_connection.clone());
+                            connections.len() - 1
+                        }
+                        _ => {
+                            panic!("assert_connection_type_allowed failed");
                         }
                     };
                     self.begin_connection(connection.clone()).await;
@@ -444,6 +644,13 @@ impl Server {
                     connections_affected.push(Connection::Local(connection.clone()));
                 }
             }
+            Connections::Lan(listener, connections) => {
+                let connections = connections.lock().await;
+                for connection in connections.iter() {
+                    // todo! check if connection is affected by position
+                    connections_affected.push(Connection::Lan(listener.clone(), connection.clone()));
+                }
+            }
         }
         connections_affected
     }
@@ -455,6 +662,12 @@ impl Server {
                 let connections = connections.lock().await;
                 for connection in connections.iter() {
                     connections_final.push(Connection::Local(connection.clone()));
+                }
+            }
+            Connections::Lan(listener, connections) => {
+                let connections = connections.lock().await;
+                for connection in connections.iter() {
+                    connections_final.push(Connection::Lan(listener.clone(), connection.clone()));
                 }
             }
         }
@@ -498,6 +711,9 @@ impl Server {
     // if not, run the worldmachine
     pub async fn run(&mut self) {
         loop {
+            // this won't do anything if it doesn't need to so we can just run it every tick
+            self.listen_for_lan_connections().await;
+
             // lock
             {
                 let mut connections_to_initialise = self.connections_to_initialise.lock().await;
@@ -520,6 +736,23 @@ impl Server {
                                 let mut thread_data = thread_data;
                                 thread_data.server.begin_connection(Connection::Local(thread_data.connection.clone())).await;
                                 thread_data.server.handle_connection(Connection::Local(thread_data.connection)).await;
+                            });
+                        }
+                        Connections::Lan(listener, connections) => {
+                            let connections = connections.lock().await;
+                            let connection = connections.get(connection_index).unwrap().clone();
+                            struct ThreadData {
+                                server: Server,
+                                connection: Arc<Mutex<LanConnection>>,
+                            }
+                            let thread_data = ThreadData {
+                                server: self.clone(),
+                                connection,
+                            };
+                            tokio::spawn(async move {
+                                let mut thread_data = thread_data;
+                                thread_data.server.begin_connection(Connection::Lan(listener.clone(), thread_data.connection.clone())).await;
+                                thread_data.server.handle_connection(Connection::Lan(listener.clone(), thread_data.connection)).await;
                             });
                         }
                     }

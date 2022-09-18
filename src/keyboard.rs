@@ -204,6 +204,8 @@ pub fn glfw_key_to_key(key: c_int) -> Key {
         GLFW_KEY_PAGE_UP => Key::PageUp,
         GLFW_KEY_PAGE_DOWN => Key::PageDown,
         GLFW_KEY_INSERT => Key::Insert,
+        GLFW_KEY_COMMA => Key::Comma,
+        GLFW_KEY_PERIOD => Key::Period,
         GLFW_KEY_F1 => Key::F1,
         GLFW_KEY_F2 => Key::F2,
         GLFW_KEY_F3 => Key::F3,
