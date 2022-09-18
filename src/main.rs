@@ -102,16 +102,17 @@ async fn main() {
 
     let mut last_frame_time = std::time::Instant::now();
     loop {
-        let delta = last_frame_time.elapsed().as_secs_f32();
+        let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
+        debug!("delta: {}", delta);
         let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
         worldmachine.tick_connection(&mut updates).await;
         worldmachine.render(&mut renderer);
         keyboard::tick_keyboard();
         mouse::tick_mouse();
+        last_frame_time = std::time::Instant::now();
         renderer.swap_buffers();
         if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
             process::exit(0);
         }
-        last_frame_time = std::time::Instant::now();
     }
 }

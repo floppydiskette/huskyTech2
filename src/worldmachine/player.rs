@@ -207,7 +207,7 @@ impl Player {
         movement = helpers::clamp_magnitude(movement, 1.0);
         movement *= speed;
         //movement.y = 10.0; // uncomment to cheat!
-        let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
+        //let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
         self.last_move_call = std::time::Instant::now();
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
@@ -220,23 +220,16 @@ impl Player {
 
     fn handle_jump(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> bool {
         if keyboard::check_key_down(Key::Space) {
-            self.jump = true;
-        } else {
-            self.jump = false;
-        }
-        if self.jump {
-            let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
-            self.physics_controller.as_mut().unwrap().jump();
-            self.last_move_call = std::time::Instant::now();
+            self.physics_controller.as_mut().unwrap().start_jump();
+            return true;
         }
         false
     }
 
     pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec<ClientUpdate>> {
+        let jump = self.handle_jump(renderer, delta_time);
         let look = self.handle_mouse_movement(renderer, delta_time);
         let movement = self.handle_keyboard_movement(renderer, delta_time);
-        let jump = self.handle_jump(renderer, delta_time);
-        self.physics_controller.as_mut().unwrap().tick_jump(delta_time);
 
         let mut updates = Vec::new();
         if jump {

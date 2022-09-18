@@ -80,7 +80,7 @@ impl ServerPlayer {
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(displacement_vector, delta);
         if jumped {
-            self.physics_controller.as_mut().unwrap().jump();
+            self.physics_controller.as_mut().unwrap().start_jump();
         }
         self.last_move_call = current_time;
         worldmachine.physics.as_mut().unwrap().tick(delta);
@@ -97,24 +97,19 @@ impl ServerPlayer {
             self.position = new_position_calculated;
             self.rotation = new_rotation;
             self.head_rotation = new_head_rotation;
-            false
+            //false
+            true
         }
     }
 
     pub fn attempt_jump(&mut self) -> bool {
-        self.physics_controller.as_mut().unwrap().jump();
+        //self.physics_controller.as_mut().unwrap().start_jump();
         true
     }
 
     pub fn gravity_tick(&mut self) {
         let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), delta);
-        self.last_move_call = std::time::Instant::now();
-    }
-
-    pub fn jump_tick(&mut self) {
-        let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().tick_jump(delta);
         self.last_move_call = std::time::Instant::now();
     }
 

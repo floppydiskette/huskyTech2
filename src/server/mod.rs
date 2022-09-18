@@ -534,7 +534,6 @@ impl Server {
                 let mut players = players.lock().await;
                 for (_uuid, player) in players.iter_mut() {
                     player.player.gravity_tick();
-                    player.player.jump_tick();
                 }
             }
 

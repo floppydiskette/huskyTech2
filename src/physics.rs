@@ -2,14 +2,14 @@ use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use gfx_maths::{Quaternion, Vec3};
 use physx_sys::*;
 
 pub const GRAVITY: f32 = -9.81;
 pub const PLAYER_GRAVITY: f32 = -11.81;
-pub const PLAYER_JUMP_GRAVITY: f32 = -20.0;
-pub const PLAYER_JUMP_TIME: f32 = 0.01;
-pub const PLAYER_JUMP_VELOCITY: f32 = 15.0;
+pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
+pub const PLAYER_JUMP_VELOCITY: f32 = 1.0;
 
 #[derive(Clone)]
 pub struct PhysicsSystem {
@@ -113,7 +113,7 @@ impl PhysicsSystem {
                 Some(PhysicsCharacterController {
                     controller,
                     flags: Arc::new(Mutex::new(CollisionFlags::default())),
-                    jump_time: Arc::new(UnsafeCell::new(std::time::Instant::now())),
+                    y_velocity: Arc::new(UnsafeCell::new(0.0)),
                     jumping: Arc::new(UnsafeCell::new(false))
                 })
             } else {
@@ -196,7 +196,7 @@ impl CollisionFlags {
 pub struct PhysicsCharacterController {
     pub controller: *mut PxController,
     pub flags: Arc<Mutex<CollisionFlags>>,
-    jump_time: Arc<UnsafeCell<std::time::Instant>>,
+    y_velocity: Arc<UnsafeCell<f32>>,
     jumping: Arc<UnsafeCell<bool>>,
 }
 
@@ -210,9 +210,30 @@ impl PhysicsCharacterController {
     pub fn move_by(&mut self, displacement: Vec3, delta_time: f32) {
         let mut displacement = PxVec3 {
             x: displacement.x,
-            y: displacement.y + (PLAYER_GRAVITY * delta_time),
+            y: displacement.y,
             z: displacement.z,
         };
+
+        if self.is_jumping() {
+            unsafe {
+                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
+            }
+        } else {
+            let gravity = GRAVITY * delta_time;
+            let mut velocity = unsafe { *self.y_velocity.get() };
+            velocity += gravity;
+            velocity = velocity.max(PLAYER_TERMINAL_VELOCITY);
+            unsafe {
+                *self.y_velocity.get() = velocity;
+            }
+        }
+
+        if self.is_jumping() {
+            self.stop_jump();
+        }
+
+        displacement.y = unsafe { *self.y_velocity.get() };
+
         unsafe {
             let flags = PxController_move_mut(self.controller,
                                               &displacement,
@@ -223,46 +244,29 @@ impl PhysicsCharacterController {
         }
     }
 
-    fn start_jump(&mut self) {
-        self.jump_time = Arc::new(UnsafeCell::new(std::time::Instant::now()));
-        self.jumping = Arc::new(UnsafeCell::new(true));
-    }
-
-    fn get_jump_displacement(&mut self, delta_time: f32) -> Vec3 {
+    pub fn start_jump(&self) {
+        let mut jumping = self.jumping.get();
         unsafe {
-            let jump_time = self.jump_time.get();
-            let jump_time = std::time::Instant::now().duration_since(*jump_time).as_secs_f32();
-            let jumping = self.jumping.get();
-            if *jumping && jump_time > PLAYER_JUMP_TIME {
-                *jumping = false;
-            }
-            let mut displacement = Vec3::new(0.0, 0.0, 0.0);
-            if *jumping {
-                displacement.y = PLAYER_JUMP_VELOCITY * jump_time + 0.5 * PLAYER_JUMP_GRAVITY * jump_time * jump_time;
-            }
-            displacement
-        }
-    }
-
-    pub fn jump(&mut self) {
-        unsafe {
-            if self.flags.lock().unwrap().colliding_bottom && !*self.jumping.get() {
-                self.start_jump();
+            if !*jumping {
+                debug!("start jump");
+                *jumping = true;
+                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
             }
         }
     }
 
-    pub fn tick_jump(&mut self, delta_time: f32) {
+    pub fn is_jumping(&self) -> bool {
+        let jumping = self.jumping.get();
         unsafe {
-            if *self.jumping.get() {
-                let displacement = self.get_jump_displacement(delta_time);
-                let displacement = self.get_position() + displacement;
-                self.set_position(displacement);
-                debug!("jumping at height {}", displacement.y);
-            }
-            if self.flags.lock().unwrap().colliding_bottom {
-                *self.jumping.get() = false;
-            }
+            *jumping
+        }
+    }
+
+    pub fn stop_jump(&self) {
+        debug!("stop jump");
+        let mut jumping = self.jumping.get();
+        unsafe {
+            *jumping = false;
         }
     }
 
