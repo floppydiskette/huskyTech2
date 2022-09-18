@@ -68,6 +68,12 @@ pub struct LanListener {
 unsafe impl Send for LanListener {}
 unsafe impl Sync for LanListener {}
 
+#[derive(Clone, Copy, Debug)]
+pub enum ConnectionError {
+    ConnectionClosed,
+    ConnectionError,
+}
+
 impl LanListener {
     pub async fn new(hostname: &str, tcp_port: u16, udp_port: u16) -> Self {
         let tcp_listener = TcpListener::bind(format!("{}:{}", hostname, tcp_port)).await.unwrap();
@@ -234,6 +240,7 @@ impl LanConnection {
         let steady_update = self.steady_update.lock().await;
         let attempt = steady_update.try_read(data);
         return if attempt.is_err() {
+            warn!("failed to receive steady update: {:?}", attempt);
             None
         } else {
             Some(attempt)
@@ -274,36 +281,55 @@ impl LanConnection {
         None
     }
 
-    pub async fn attempt_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {
+    pub async fn attempt_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
         let mut buffer = [0; 2048];
         let attempt = self.attempt_receive_steady_update(&mut buffer).await;
         if attempt.is_none() {
-            return None;
+            return Ok(None);
         }
         let attempt = attempt.unwrap();
         if attempt.is_err() {
             warn!("failed to receive steady update: {:?}", attempt);
-            return None;
+            return Ok(None);
         }
         let attempt = attempt.unwrap();
+        if attempt == 0 {
+            // connection closed
+            return Err(ConnectionError::ConnectionClosed);
+        }
         let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-        let packet = SteadyPacketData::deserialize(&mut deserialiser).unwrap();
+        let packet = SteadyPacketData::deserialize(&mut deserialiser);
+        if let Err(e) = packet {
+            warn!("failed to deserialise packet: {:?}", e);
+            return Ok(None);
+        }
+        let packet = packet.unwrap();
         debug!("received steady packet: {:?}", packet);
-        Some(packet)
+
+        Ok(Some(packet))
     }
 
-    pub async fn block_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {
+    pub async fn block_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
         let mut buffer = [0; 2048];
         let attempt = self.block_receive_steady_update(&mut buffer).await;
         if attempt.is_err() {
             warn!("failed to receive steady update: {:?}", attempt);
-            return None;
+            return Ok(None);
         }
         let attempt = attempt.unwrap();
+        if attempt == 0 {
+            // connection closed
+            return Err(ConnectionError::ConnectionClosed);
+        }
         let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-        let packet = SteadyPacketData::deserialize(&mut deserialiser).unwrap();
+        let packet = SteadyPacketData::deserialize(&mut deserialiser);
+        if let Err(e) = packet {
+            warn!("failed to deserialise packet: {:?}", e);
+            return Ok(None);
+        }
+        let packet = packet.unwrap();
         debug!("received steady packet: {:?}", packet);
-        Some(packet)
+        Ok(Some(packet))
     }
 }
 

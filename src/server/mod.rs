@@ -194,7 +194,7 @@ impl Server {
         }
     }
 
-    async unsafe fn send_steady_packet_unsafe(&self, connection: &Connection, packet: SteadyPacketData) {
+    async unsafe fn send_steady_packet_unsafe(&self, connection: &Connection, packet: SteadyPacketData) -> bool {
         match connection.clone() {
             Connection::Local(connection) => {
                 let mut connection_lock = connection.lock().await;
@@ -241,6 +241,11 @@ impl Server {
                 loop {
                     let mut connection_lock = connection.lock().await;
                     let received_packet = connection_lock.block_receive_steady_and_deserialise().await;
+                    if let Err(e) = received_packet {
+                        warn!("failed to receive packet from lan connection: {:?}", e);
+                        return false;
+                    }
+                    let received_packet = received_packet.unwrap();
                     if let Some(received_packet) = received_packet {
                         if let SteadyPacket::Consume(uuid) = received_packet.packet.clone().unwrap() {
                             if uuid == packet.clone().uuid.unwrap() {
@@ -252,9 +257,10 @@ impl Server {
                 }
             }
         }
+        true
     }
 
-    async fn send_steady_packet(&self, connection: &Connection, packet: SteadyPacket) {
+    async fn send_steady_packet(&self, connection: &Connection, packet: SteadyPacket) -> bool {
         match connection.clone() {
             Connection::Local(connection) => {
                 let uuid = generate_uuid();
@@ -263,7 +269,7 @@ impl Server {
                     uuid: Some(uuid.clone()),
                 };
                 unsafe {
-                    self.send_steady_packet_unsafe(&Connection::Local(connection), packet_data).await;
+                    return self.send_steady_packet_unsafe(&Connection::Local(connection), packet_data).await;
                 }
             }
             Connection::Lan(listener, connection) => {
@@ -273,7 +279,7 @@ impl Server {
                     uuid: Some(uuid.clone()),
                 };
                 unsafe {
-                    self.send_steady_packet_unsafe(&Connection::Lan(listener, connection), packet_data).await;
+                    return self.send_steady_packet_unsafe(&Connection::Lan(listener, connection), packet_data).await;
                 }
             }
         }
@@ -303,12 +309,12 @@ impl Server {
         }
     }
 
-    pub async fn get_received_steady_packets(&self, connection: &Connection) {
+    pub async fn get_received_steady_packets(&self, connection: &Connection) -> bool {
         match connection.clone() {
             Connection::Local(connection_raw) => {
                 let mut connection = connection_raw.lock().await;
                 if !connection.steady_update_receiver.has_changed().ok().unwrap_or(false) {
-                    return;
+                    return true;
                 }
                 let message = connection.steady_update_receiver.borrow_and_update().clone();
                 if let Some(packet) = message.packet {
@@ -319,8 +325,13 @@ impl Server {
                 }
             }
             Connection::Lan(listener, connection_raw) => {
-                let mut connection = connection_raw.lock().await;
+                let connection = connection_raw.lock().await;
                 let packet = connection.attempt_receive_steady_and_deserialise().await;
+                if let Err(e) = packet {
+                    warn!("failed to receive packet from lan connection: {:?}", e);
+                    return false;
+                }
+                let packet = packet.unwrap();
                 if let Some(packet) = packet {
                     unsafe {
                         drop(connection);
@@ -329,6 +340,7 @@ impl Server {
                 }
             }
         }
+        true
     }
 
     pub async fn send_fast_packet(&self, connection: &Connection, packet: FastPacket) {
@@ -373,7 +385,7 @@ impl Server {
         None
     }
 
-    pub async fn begin_connection(&self, connection: Connection) {
+    pub async fn begin_connection(&self, connection: Connection) -> bool {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = self.worldmachine.lock().await.world.clone();
         let physics = self.worldmachine.lock().await.physics.clone().unwrap();
@@ -392,10 +404,10 @@ impl Server {
         });
 
         self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
-        self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(player.uuid.clone(), player.name.clone(), player.get_position(), player.get_rotation(), player.scale)).await;
+        return self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(player.uuid.clone(), player.name.clone(), player.get_position(), player.get_rotation(), player.scale)).await;
     }
 
-    async fn handle_steady_packets(&self, connection: Connection) {
+    async fn handle_steady_packets(&self, connection: Connection) -> bool {
         match connection.clone() {
             Connection::Local(local_connection) => {
                 let mut local_connection = local_connection.lock().await;
@@ -424,6 +436,11 @@ impl Server {
             Connection::Lan(_, connection) => {
                 let connection = connection.lock().await;
                 let packet = connection.attempt_receive_steady_and_deserialise().await;
+                if let Err(e) = packet {
+                    debug!("error receiving steady packet: {:?}", e);
+                    return false;
+                }
+                let packet = packet.unwrap();
                 if let Some(packet) = packet {
                     match packet.packet.unwrap() {
                         SteadyPacket::KeepAlive => {
@@ -446,6 +463,7 @@ impl Server {
         }
         // get steady packets
         self.get_received_steady_packets(&connection).await;
+        true
     }
 
     async fn player_move(&self, connection: Connection, packet: FastPacket) {
@@ -552,7 +570,7 @@ impl Server {
         }
     }
 
-    pub async fn handle_connection(&self, connection: Connection) {
+    pub async fn handle_connection(&self, connection: Connection) -> bool {
         loop {
             match connection.clone() {
                 Connection::Local(local_connection) => {
@@ -561,7 +579,10 @@ impl Server {
                 }
                 Connection::Lan(listener, lan_connection) => {
                     self.handle_fast_packets(Connection::Lan(listener.clone(), lan_connection.clone())).await;
-                    self.handle_steady_packets(Connection::Lan(listener.clone(), lan_connection.clone())).await;
+                    let connection = self.handle_steady_packets(Connection::Lan(listener.clone(), lan_connection.clone())).await;
+                    if !connection {
+                        return false;
+                    }
                 }
             }
         }
@@ -607,7 +628,20 @@ impl Server {
                         }
                     };
                     self.begin_connection(connection.clone()).await;
-                    self.handle_connection(connection).await;
+                    let connected = self.handle_connection(connection).await;
+                    if !connected {
+                        let connections = match self.connections.clone() {
+                            Connections::Lan(_, connections) => {
+                                connections.clone()
+                            }
+                            _ => {
+                                panic!("assert_connection_type_allowed failed");
+                            }
+                        };
+                        let mut connections = connections.lock().await;
+                        connections.retain(|x| !Arc::ptr_eq(x, &lan_connection));
+                        debug!("connections: {:?}", connections.len());
+                    }
                 }
             }
         }
