@@ -1,5 +1,5 @@
 use std::borrow::BorrowMut;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 use std::thread;
@@ -9,6 +9,7 @@ use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use async_recursion::async_recursion;
 use libsex::bindings::XConnectionWatchProc;
 use serde::{Serialize, Deserialize};
+use tokio::net::TcpStream;
 use crate::physics::PhysicsSystem;
 use crate::server::connections::SteadyMessageQueue;
 use crate::server::lan::{ClientLanConnection, LanConnection, LanListener};
@@ -105,6 +106,7 @@ pub enum Connections {
 pub struct Server {
     pub connections: Connections,
     pub connections_to_initialise: Arc<Mutex<Vec<usize>>>,
+    pub connections_incoming: Arc<Mutex<VecDeque<TcpStream>>>,
     pub worldmachine: Arc<Mutex<WorldMachine>>,
 }
 
@@ -125,6 +127,7 @@ impl Server {
         Self {
             connections: Connections::Local(Arc::new(Mutex::new(Vec::new()))),
             connections_to_initialise: Arc::new(Mutex::new(Vec::new())),
+            connections_incoming: Arc::new(Mutex::new(VecDeque::new())),
             worldmachine: Arc::new(Mutex::new(worldmachine)),
         }
     }
@@ -138,40 +141,60 @@ impl Server {
 
         let mut listener = LanListener::new(hostname, tcp_port, udp_port).await;
 
-        info!("server started");
+        let mut the_self = Self {
+                connections: Connections::Lan(listener.clone(), Arc::new(Mutex::new(Vec::new()))),
+                connections_to_initialise: Arc::new(Mutex::new(Vec::new())),
+                connections_incoming: Arc::new(Mutex::new(VecDeque::new())),
+                worldmachine: Arc::new(Mutex::new(worldmachine)),
+            };
+        let the_clone = the_self.clone();
+        let listener_clone = listener.clone();
+        tokio::spawn(async move {
+            loop {
+                the_clone.connection_listening_thread(listener_clone.clone()).await;
+            }
+        });
 
-        Self {
-            connections: Connections::Lan(listener.clone(), Arc::new(Mutex::new(Vec::new()))),
-            connections_to_initialise: Arc::new(Mutex::new(Vec::new())),
-            worldmachine: Arc::new(Mutex::new(worldmachine)),
+        info!("server started");
+        the_self
+    }
+
+    async fn connection_listening_thread(&self, listener: LanListener) {
+        loop {
+            let new_connection = listener.poll_new_connection().await;
+            if let Some(new_connection) = new_connection {
+                self.connections_incoming.lock().await.push_back(new_connection);
+            }
         }
     }
 
     pub async fn listen_for_lan_connections(&mut self) {
         if let Connections::Lan(listener_raw, connections_raw) = self.connections.clone() {
             let listener = listener_raw.clone();
-            let new_connection = listener.check_for_new_connections().await;
-            if let Some(connection) = new_connection {
+            let mut connections_incoming = self.connections_incoming.clone();
+            let mut connections_incoming = connections_incoming.lock().await;
+            while let Some(connection) = connections_incoming.pop_front() {
+                let connection = listener.clone().init_new_connection(connection).await.unwrap();
                 let connection = Arc::new(Mutex::new(connection));
                 let listener = listener_raw.clone();
                 let connection_clone = connection.clone();
+                let the_clone = self.clone();
+                let the_listener_clone = listener_raw.clone();
                 tokio::spawn(async move {
-                    let connection = connection_clone.lock().await.clone();
-                    connection.udp_listener_thread(listener.clone()).await;
+                    the_clone.new_connection(Connection::Lan(the_listener_clone.clone(), connection.clone())).await;
                 });
-                self.new_connection(Connection::Lan(listener_raw, connection)).await;
             }
         }
     }
 
-    async fn get_connection_uuid(&mut self, connection: &Connection) -> ConnectionUUID {
+    async fn get_connection_uuid(&self, connection: &Connection) -> ConnectionUUID {
         match connection {
             Connection::Local(local_connection) => local_connection.lock().await.uuid.clone(),
             Connection::Lan(_, lan_connection) => lan_connection.lock().await.uuid.clone(),
         }
     }
 
-    async unsafe fn send_steady_packet_unsafe(&mut self, connection: &Connection, packet: SteadyPacketData) {
+    async unsafe fn send_steady_packet_unsafe(&self, connection: &Connection, packet: SteadyPacketData) {
         match connection.clone() {
             Connection::Local(connection) => {
                 let mut connection_lock = connection.lock().await;
@@ -231,7 +254,7 @@ impl Server {
         }
     }
 
-    async fn send_steady_packet(&mut self, connection: &Connection, packet: SteadyPacket) {
+    async fn send_steady_packet(&self, connection: &Connection, packet: SteadyPacket) {
         match connection.clone() {
             Connection::Local(connection) => {
                 let uuid = generate_uuid();
@@ -256,7 +279,7 @@ impl Server {
         }
     }
 
-    async unsafe fn queue_received_steady_packet(&mut self, connection: &Connection, packet: SteadyPacket) {
+    async unsafe fn queue_received_steady_packet(&self, connection: &Connection, packet: SteadyPacket) {
         let uuid = generate_uuid();
         match connection.clone() {
             Connection::Local(connection) => {
@@ -280,7 +303,7 @@ impl Server {
         }
     }
 
-    pub async fn get_received_steady_packets(&mut self, connection: &Connection) {
+    pub async fn get_received_steady_packets(&self, connection: &Connection) {
         match connection.clone() {
             Connection::Local(connection_raw) => {
                 let mut connection = connection_raw.lock().await;
@@ -308,7 +331,7 @@ impl Server {
         }
     }
 
-    pub async fn send_fast_packet(&mut self, connection: &Connection, packet: FastPacket) {
+    pub async fn send_fast_packet(&self, connection: &Connection, packet: FastPacket) {
         match connection.clone() {
             Connection::Local(connection) => {
                 let mut connection = connection.lock().await;
@@ -341,7 +364,7 @@ impl Server {
             }
             Connection::Lan(listener, connection) => {
                 let connection = connection.lock().await;
-                let packet = connection.attempt_receive_fast_and_deserialise().await;
+                let packet = connection.attempt_receive_fast_and_deserialise(listener).await;
                 if let Some(packet) = packet {
                     return Some(packet.packet.unwrap());
                 }
@@ -350,7 +373,7 @@ impl Server {
         None
     }
 
-    pub async fn begin_connection(&mut self, connection: Connection) {
+    pub async fn begin_connection(&self, connection: Connection) {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = self.worldmachine.lock().await.world.clone();
         let physics = self.worldmachine.lock().await.physics.clone().unwrap();
@@ -372,7 +395,7 @@ impl Server {
         self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(player.uuid.clone(), player.name.clone(), player.get_position(), player.get_rotation(), player.scale)).await;
     }
 
-    async fn handle_steady_packets(&mut self, connection: Connection) {
+    async fn handle_steady_packets(&self, connection: Connection) {
         match connection.clone() {
             Connection::Local(local_connection) => {
                 let mut local_connection = local_connection.lock().await;
@@ -425,7 +448,7 @@ impl Server {
         self.get_received_steady_packets(&connection).await;
     }
 
-    async fn player_move(&mut self, connection: Connection, packet: FastPacket) {
+    async fn player_move(&self, connection: Connection, packet: FastPacket) {
         if let FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped) = packet {
             let mut worldmachine = self.worldmachine.clone();
             let mut worldmachine = worldmachine.lock().await;
@@ -440,7 +463,7 @@ impl Server {
         }
     }
 
-    async fn player_check_position(&mut self, connection: Connection, packet: FastPacket) {
+    async fn player_check_position(&self, connection: Connection, packet: FastPacket) {
         if let FastPacket::PlayerCheckPosition(uuid, position) = packet {
             let mut worldmachine = self.worldmachine.clone();
             let mut worldmachine = worldmachine.lock().await;
@@ -455,7 +478,7 @@ impl Server {
         }
     }
 
-    async fn handle_fast_packets(&mut self, connection: Connection) {
+    async fn handle_fast_packets(&self, connection: Connection) {
         match connection.clone() {
             Connection::Local(local_connection) => {
                 let mut local_connection = local_connection.lock().await;
@@ -500,7 +523,7 @@ impl Server {
             Connection::Lan(listener, lan_connection) => {
                 let mut lan_connection = lan_connection.lock().await;
                 let listener = listener.clone();
-                let packet = lan_connection.attempt_receive_fast_and_deserialise().await;
+                let packet = lan_connection.attempt_receive_fast_and_deserialise(listener).await;
                 drop(lan_connection);
                 if let Some(packet) = packet {
                     match packet.clone().packet.unwrap() {
@@ -529,7 +552,7 @@ impl Server {
         }
     }
 
-    pub async fn handle_connection(&mut self, connection: Connection) {
+    pub async fn handle_connection(&self, connection: Connection) {
         loop {
             match connection.clone() {
                 Connection::Local(local_connection) => {
@@ -555,7 +578,7 @@ impl Server {
         }
     }
 
-    async fn new_connection(&mut self, connection: Connection) {
+    async fn new_connection(&self, connection: Connection) {
         if self.assert_connection_type_allowed(connection.clone()).await {
             match connection.clone() {
                 Connection::Local(local_connection) => {
@@ -711,7 +734,7 @@ impl Server {
     // if not, run the worldmachine
     pub async fn run(&mut self) {
         loop {
-            // this won't do anything if it doesn't need to so we can just run it every tick
+
             self.listen_for_lan_connections().await;
 
             // lock

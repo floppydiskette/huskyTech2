@@ -14,7 +14,6 @@ use crate::server::connections::SteadyMessageQueue;
 pub struct LanConnection {
     pub steady_update: Arc<Mutex<TcpStream>>,
     pub steady_update_queue: Arc<Mutex<SteadyMessageQueue>>,
-    last_fast_update_received: Arc<UnsafeCell<Option<FastPacketData>>>,
     pub remote_addr: SocketAddr,
     pub uuid: ConnectionUUID,
 }
@@ -62,15 +61,18 @@ pub enum ConnectionHandshakePacket {
 #[derive(Clone, Debug)]
 pub struct LanListener {
     pub fast_update: Arc<UdpSocket>,
-    pub steady_update: Arc<Mutex<TcpListener>>,
-    fast_update_map: Arc<Mutex<HashMap<ConnectionUUID, FastPacketLan>>>,
+    steady_update: Arc<Mutex<TcpListener>>,
+    fast_update_map: Arc<UnsafeCell<HashMap<ConnectionUUID, FastPacketLan>>>,
 }
+
+unsafe impl Send for LanListener {}
+unsafe impl Sync for LanListener {}
 
 impl LanListener {
     pub async fn new(hostname: &str, tcp_port: u16, udp_port: u16) -> Self {
         let tcp_listener = TcpListener::bind(format!("{}:{}", hostname, tcp_port)).await.unwrap();
         let udp_socket = UdpSocket::bind(format!("{}:{}", hostname, udp_port)).await.unwrap();
-        let fast_update_map = Arc::new(Mutex::new(HashMap::new()));
+        let fast_update_map = Arc::new(UnsafeCell::new(HashMap::new()));
 
         let the_self = Self {
                 fast_update: Arc::new(udp_socket),
@@ -86,16 +88,22 @@ impl LanListener {
         the_self
     }
 
-    pub async fn check_for_new_connections(&self) -> Option<LanConnection> {
-        let steady_update = self.steady_update.lock().await;
+    pub async fn poll_new_connection(&self) -> Option<TcpStream> {
+        let mut steady_update = self.steady_update.lock().await;
 
         let new_connection = steady_update.accept().await;
+
         if new_connection.is_err() {
             return None;
+        } else {
+            return Some(new_connection.unwrap().0);
         }
+    }
+
+    pub async fn init_new_connection(&self, steady_update: TcpStream) -> Option<LanConnection> {
 
         debug!("new connection");
-        let (mut steady_update, _) = new_connection.unwrap();
+        let mut steady_update = steady_update;
 
         // check for first handshake packet
         let mut buf = [0; 1024];
@@ -123,8 +131,8 @@ impl LanListener {
             // wait for udp connection
             loop {
                 let packet = self.check_for_fast_update(&uuid_real).await;
+                debug!("got a packet, checking if it's the right one");
                 if let Some(packet) = packet {
-                    debug!("got a packet, checking if it's the right one");
                     if let FastPacketPotentials::ConnectionHandshake(handshake_packet) = packet.data {
                         if let ConnectionHandshakePacket::IconnectedUDP(uuid) = handshake_packet {
                             if uuid == uuid_real {
@@ -160,7 +168,6 @@ impl LanListener {
             return Some(LanConnection {
                 steady_update: Arc::new(Mutex::new(steady_update)),
                 steady_update_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
-                last_fast_update_received: Arc::new(UnsafeCell::new(None)),
                 remote_addr: peer_addr,
                 uuid: uuid_real,
             });
@@ -184,30 +191,27 @@ impl LanListener {
         }
     }
 
-    pub async fn block_receive_fast_update(&self, data: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
-        let fast_update = &self.fast_update;
-        fast_update.recv_from(data).await
-    }
-
     pub async fn udp_thread(&self) {
-        let mut buf = [0; 1024];
         loop {
-            let (len, addr) = self.block_receive_fast_update(&mut buf).await.unwrap();
+            let mut buf = [0; 1024];
+            let fast_update = &self.fast_update;
+            let (len, addr) =  fast_update.recv_from(&mut buf).await.expect("failed to receive from udp socket");
             let mut deserialiser = rmp_serde::Deserializer::new(&buf[..len]);
             let mut packet: FastPacketLan = Deserialize::deserialize(&mut deserialiser).unwrap();
-            let mut fast_update_map = self.fast_update_map.lock().await;
+            let fast_update_map = self.fast_update_map.get();
             packet.socket_addr = Some(addr);
-            fast_update_map.insert(packet.uuid.clone(), packet);
+            unsafe { (*fast_update_map).insert(packet.uuid.clone(), packet) };
         }
     }
 
     pub async fn check_for_fast_update(&self, uuid: &ConnectionUUID) -> Option<FastPacketLan> {
-        let fast_update_map = self.fast_update_map.lock().await;
-        if let Some(packet) = fast_update_map.get(uuid) {
-            Some(packet.clone())
-        } else {
-            None
+        let mut fast_update_map = self.fast_update_map.get();
+        let update = unsafe { fast_update_map.as_ref().unwrap().get(uuid).cloned() };
+        if update.is_some() {
+            debug!("got a fast update");
         }
+        unsafe { (*fast_update_map).remove(uuid) };
+        update
     }
 }
 
@@ -217,7 +221,6 @@ impl LanConnection {
         Self {
             steady_update: Arc::new(Mutex::new(steady_update)),
             steady_update_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
-            last_fast_update_received: Arc::new(UnsafeCell::new(None)),
             remote_addr: peer_addr,
             uuid
         }
@@ -261,37 +264,14 @@ impl LanConnection {
         self.send_steady_update(&buffer).await
     }
 
-    pub async fn udp_listener_thread(&self, listener: LanListener) {
-        loop {
-            let mut buffer = [0; 2048];
-            let attempt = listener.block_receive_fast_update(&mut buffer).await;
-            if attempt.is_err() {
-                warn!("failed to receive fast update: {:?}", attempt);
-                continue;
-            }
-            let (attempt, addr) = attempt.unwrap();
-            let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-            let packet = FastPacketLan::deserialize(&mut deserialiser).unwrap();
-            if packet.uuid == self.uuid {
-                debug!("got a packet for the right uuid");
-                debug!("packet: {:?}", packet);
-                if let FastPacketPotentials::FastPacket(packet) = packet.data {
-                    let last_fast_update_received = unsafe { &mut *self.last_fast_update_received.get() };
-                    *last_fast_update_received = Some(packet);
-                }
+    pub async fn attempt_receive_fast_and_deserialise(&self, listener: LanListener) -> Option<FastPacketData> {
+        let last_fast_update_received = listener.check_for_fast_update(&self.uuid).await;
+        if let Some(last_fast_update_received) = last_fast_update_received {
+            if let FastPacketPotentials::FastPacket(packet) = last_fast_update_received.data {
+                return Some(packet);
             }
         }
-    }
-
-    pub async fn attempt_receive_fast_and_deserialise(&self) -> Option<FastPacketData> {
-        let last_fast_update_received = unsafe { self.last_fast_update_received.get() };
-        let unwrapped = unsafe { last_fast_update_received.as_ref().unwrap() };
-        if let Some(packet) = unwrapped.clone() {
-            unsafe { *last_fast_update_received = None };
-            Some(packet)
-        } else {
-            None
-        }
+        None
     }
 
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {
