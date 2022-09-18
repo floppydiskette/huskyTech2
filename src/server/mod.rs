@@ -36,10 +36,13 @@ pub enum FastPacket {
     ChangePosition(EntityId, Vec3),
     ChangeRotation(EntityId, Quaternion),
     ChangeScale(EntityId, Vec3),
-    PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion, bool), // connection uuid, position, displacement_vector, rotation, head rotation, jumped
+    PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion, bool),
+    // connection uuid, position, displacement_vector, rotation, head rotation, jumped
     PlayerJump(ConnectionUUID),
-    PlayerFuckYouMoveHere(Vec3), // connection uuid, position,
-    PlayerCheckPosition(ConnectionUUID, Vec3), // connection uuid, position
+    PlayerFuckYouMoveHere(Vec3),
+    // connection uuid, position,
+    PlayerCheckPosition(ConnectionUUID, Vec3),
+    // connection uuid, position
     PlayerFuckYouSetRotation(Quaternion), // connection uuid, rotation
 }
 
@@ -55,7 +58,8 @@ pub enum SteadyPacket {
     KeepAlive,
     InitialiseEntity(EntityId, Entity),
     FinaliseMapLoad,
-    InitialisePlayer(ConnectionUUID, String, Vec3, Quaternion, Vec3), // uuid, name, position, rotation, scale
+    InitialisePlayer(ConnectionUUID, String, Vec3, Quaternion, Vec3),
+    // uuid, name, position, rotation, scale
     Message(String),
 }
 
@@ -246,7 +250,7 @@ impl Server {
 
         self.worldmachine.lock().await.players.as_mut().unwrap().lock().await.insert(uuid.clone(), ServerPlayerContainer {
             player: player.clone(),
-            entity_id: None
+            entity_id: None,
         });
 
         self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
@@ -300,8 +304,7 @@ impl Server {
                                 let mut players = players.as_mut().unwrap().lock().await;
                                 let player = players.get_mut(&uuid).unwrap();
                                 let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, jumped, &mut worldmachine).await;
-                                if success {
-                                } else {
+                                if success {} else {
                                     drop(local_connection);
                                     let mut connection = connection.clone();
                                     self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
@@ -316,8 +319,7 @@ impl Server {
                                 let player = players.get_mut(&uuid).unwrap();
                                 let server_position = player.player.get_position();
                                 let success = server_position == position;
-                                if success {
-                                } else {
+                                if success {} else {
                                     drop(local_connection);
                                     let mut connection = connection.clone();
                                     self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
@@ -326,16 +328,16 @@ impl Server {
 
                             /// sent when the player jumps
                             FastPacket::PlayerJump(uuid) => {
-                                let mut worldmachine = self.worldmachine.clone();
-                                let mut worldmachine = worldmachine.lock().await;
-                                let mut players = worldmachine.players.clone();
-                                let mut players = players.as_mut().unwrap().lock().await;
-                                let player = players.get_mut(&uuid).unwrap();
-                                 if player.player.attempt_jump() {
-                                    // do nothing
-                                 } else {
-                                    // do nothing
-                                 }
+                                //let mut worldmachine = self.worldmachine.clone();
+                                //let mut worldmachine = worldmachine.lock().await;
+                                //let mut players = worldmachine.players.clone();
+                                //let mut players = players.as_mut().unwrap().lock().await;
+                                //let player = players.get_mut(&uuid).unwrap();
+                                //if !player.player.attempt_jump() {
+                                //    drop(local_connection);
+                                //    let mut connection = connection.clone();
+                                //    self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position())).await
+                                //}
                             }
 
                             // client shouldn't be sending these
@@ -528,21 +530,23 @@ impl Server {
             if let Some(updates) = updates {
                 self.handle_world_updates(updates).await;
             }
-            // do a player physics tick for each player
-            {
-                let players = self.worldmachine.lock().await.players.clone().unwrap();
-                let mut players = players.lock().await;
-                for (_uuid, player) in players.iter_mut() {
-                    player.player.gravity_tick();
-                }
-            }
 
             // do physics tick
             let mut worldmachine = self.worldmachine.lock().await;
             let last_physics_tick = worldmachine.last_physics_update;
-            let delta = Instant::now().duration_since(last_physics_tick).as_secs_f32();
-            worldmachine.physics.as_mut().unwrap().tick(delta);
-            worldmachine.last_physics_update = Instant::now();
+            let delta = last_physics_tick.elapsed().as_secs_f32();
+            if delta > 0.1 {
+                // do a player physics tick for each player
+                {
+                    let players = worldmachine.players.clone().unwrap();
+                    let mut players = players.lock().await;
+                    for (_uuid, player) in players.iter_mut() {
+                        player.player.gravity_tick();
+                    }
+                }
+                worldmachine.physics.as_mut().unwrap().tick(delta);
+                worldmachine.last_physics_update = Instant::now();
+            }
         }
     }
 }

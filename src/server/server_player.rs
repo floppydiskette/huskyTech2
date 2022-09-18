@@ -9,7 +9,7 @@ pub const DEFAULT_RADIUS: f32 = 0.5;
 pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
 
-pub const ERROR_MARGIN: f32 = 0.2;
+pub const ERROR_MARGIN: f32 = 1.0;
 
 #[derive(Clone)]
 pub struct ServerPlayerContainer {
@@ -77,12 +77,11 @@ impl ServerPlayer {
         displacement_vector = helpers::clamp_magnitude(displacement_vector, 1.0 * self.movement_speed);
 
         let current_time = std::time::Instant::now();
-        let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, delta);
-        if jumped {
-            self.physics_controller.as_mut().unwrap().start_jump();
-        }
+        let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
+        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, jumped, false, delta);
         self.last_move_call = current_time;
+        let current_time = std::time::Instant::now();
+        let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
         worldmachine.physics.as_mut().unwrap().tick(delta);
         worldmachine.last_physics_update = current_time;
         let new_position_calculated = self.physics_controller.as_mut().unwrap().get_position();
@@ -97,19 +96,13 @@ impl ServerPlayer {
             self.position = new_position_calculated;
             self.rotation = new_rotation;
             self.head_rotation = new_head_rotation;
-            //false
-            true
+            false
         }
-    }
-
-    pub fn attempt_jump(&mut self) -> bool {
-        //self.physics_controller.as_mut().unwrap().start_jump();
-        true
     }
 
     pub fn gravity_tick(&mut self) {
         let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), delta);
+        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), false, false, delta);
         self.last_move_call = std::time::Instant::now();
     }
 

@@ -7,9 +7,9 @@ use gfx_maths::{Quaternion, Vec3};
 use physx_sys::*;
 
 pub const GRAVITY: f32 = -9.81;
-pub const PLAYER_GRAVITY: f32 = -11.81;
+pub const PLAYER_GRAVITY: f32 = -1.51;
 pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
-pub const PLAYER_JUMP_VELOCITY: f32 = 1.0;
+pub const PLAYER_JUMP_VELOCITY: f32 = 0.3;
 
 #[derive(Clone)]
 pub struct PhysicsSystem {
@@ -114,7 +114,6 @@ impl PhysicsSystem {
                     controller,
                     flags: Arc::new(Mutex::new(CollisionFlags::default())),
                     y_velocity: Arc::new(UnsafeCell::new(0.0)),
-                    jumping: Arc::new(UnsafeCell::new(false))
                 })
             } else {
                 None
@@ -197,7 +196,6 @@ pub struct PhysicsCharacterController {
     pub controller: *mut PxController,
     pub flags: Arc<Mutex<CollisionFlags>>,
     y_velocity: Arc<UnsafeCell<f32>>,
-    jumping: Arc<UnsafeCell<bool>>,
 }
 
 unsafe impl Send for PhysicsCharacterController {
@@ -207,29 +205,29 @@ unsafe impl Sync for PhysicsCharacterController {
 }
 
 impl PhysicsCharacterController {
-    pub fn move_by(&mut self, displacement: Vec3, delta_time: f32) {
+    pub fn move_by(&mut self, displacement: Vec3, jump: bool, cheat: bool, delta_time: f32) {
         let mut displacement = PxVec3 {
             x: displacement.x,
             y: displacement.y,
             z: displacement.z,
         };
 
-        if self.is_jumping() {
+        if jump && self.is_on_ground() {
             unsafe {
                 *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
             }
-        } else {
-            let gravity = GRAVITY * delta_time;
+        } else if !self.is_on_ground() {
+            let gravity = PLAYER_GRAVITY * delta_time;
             let mut velocity = unsafe { *self.y_velocity.get() };
             velocity += gravity;
             velocity = velocity.max(PLAYER_TERMINAL_VELOCITY);
             unsafe {
                 *self.y_velocity.get() = velocity;
             }
-        }
-
-        if self.is_jumping() {
-            self.stop_jump();
+        } else if cheat {
+            unsafe {
+                *self.y_velocity.get() = 100.0;
+            }
         }
 
         displacement.y = unsafe { *self.y_velocity.get() };
@@ -244,30 +242,9 @@ impl PhysicsCharacterController {
         }
     }
 
-    pub fn start_jump(&self) {
-        let mut jumping = self.jumping.get();
-        unsafe {
-            if !*jumping {
-                debug!("start jump");
-                *jumping = true;
-                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
-            }
-        }
-    }
-
-    pub fn is_jumping(&self) -> bool {
-        let jumping = self.jumping.get();
-        unsafe {
-            *jumping
-        }
-    }
-
-    pub fn stop_jump(&self) {
-        debug!("stop jump");
-        let mut jumping = self.jumping.get();
-        unsafe {
-            *jumping = false;
-        }
+    pub fn is_on_ground(&self) -> bool {
+        let flags = self.flags.lock().unwrap();
+        flags.colliding_bottom
     }
 
     pub fn get_position(&self) -> Vec3 {

@@ -532,6 +532,7 @@ impl WorldMachine {
     async fn process_client_updates(&mut self, client_updates: &mut Vec<ClientUpdate>) {
         let mut updates = Vec::new();
         let mut movement_updates = Vec::new();
+        let mut jumped_real = false;
         for client_update in client_updates {
             match client_update {
                 ClientUpdate::IDisplaced(displacement_vector) => {
@@ -544,8 +545,10 @@ impl WorldMachine {
                     let position = self.player.as_mut().unwrap().player.get_position();
                     let rotation = self.player.as_mut().unwrap().player.get_rotation();
                     let head_rotation = self.player.as_mut().unwrap().player.get_head_rotation();
-                    movement_updates.push(ClientUpdate::IMoved(position, None, rotation, head_rotation, true));}
-                ClientUpdate::IJumped => {}
+                    movement_updates.push(ClientUpdate::IMoved(position, None, rotation, head_rotation, false));}
+                ClientUpdate::IJumped => {
+                    jumped_real = true;
+                }
                 _ => {
                     updates.push(client_update.clone());
                 }
@@ -562,12 +565,9 @@ impl WorldMachine {
             let mut latest_movement_update = movement_updates.last().unwrap().clone();
             // if we have a displacement vector, we need to add it to the last movement update
             if let Some(displacement_vector) = last_displacement_vector {
-                match latest_movement_update {
-                    ClientUpdate::IMoved(position, _, rotation, head_rotation, jumped) => {
-                        let new = ClientUpdate::IMoved(position, Some(displacement_vector), rotation, head_rotation, jumped);
-                        latest_movement_update = new;
-                    }
-                    _ => {}
+                if let ClientUpdate::IMoved(position, _, rotation, head_rotation, jumped) = latest_movement_update {
+                    let new = ClientUpdate::IMoved(position, Some(displacement_vector), rotation, head_rotation, jumped_real);
+                    latest_movement_update = new;
                 }
             }
             updates.push(latest_movement_update.clone());

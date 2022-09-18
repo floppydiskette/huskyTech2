@@ -103,7 +103,6 @@ async fn main() {
     let mut last_frame_time = std::time::Instant::now();
     loop {
         let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
-        debug!("delta: {}", delta);
         let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
         worldmachine.tick_connection(&mut updates).await;
         worldmachine.render(&mut renderer);

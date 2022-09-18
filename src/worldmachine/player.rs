@@ -159,7 +159,7 @@ impl Player {
         }
     }
 
-    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec3> {
+    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool, delta_time: f32) -> Option<Vec3> {
         let mut movement = Vec3::new(0.0, 0.0, 0.0);
         let camera = &mut renderer.camera;
         let camera_rotation = camera.get_rotation();
@@ -206,9 +206,8 @@ impl Player {
         movement.y = 0.0;
         movement = helpers::clamp_magnitude(movement, 1.0);
         movement *= speed;
-        //movement.y = 10.0; // uncomment to cheat!
         //let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(movement, delta_time);
+        self.physics_controller.as_mut().unwrap().move_by(movement, jump, false, delta_time);
         self.last_move_call = std::time::Instant::now();
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
@@ -220,7 +219,6 @@ impl Player {
 
     fn handle_jump(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> bool {
         if keyboard::check_key_down(Key::Space) {
-            self.physics_controller.as_mut().unwrap().start_jump();
             return true;
         }
         false
@@ -229,11 +227,16 @@ impl Player {
     pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec<ClientUpdate>> {
         let jump = self.handle_jump(renderer, delta_time);
         let look = self.handle_mouse_movement(renderer, delta_time);
-        let movement = self.handle_keyboard_movement(renderer, delta_time);
+        let movement = self.handle_keyboard_movement(renderer, jump, delta_time);
 
         let mut updates = Vec::new();
         if jump {
             updates.push(ClientUpdate::IJumped);
+            if let Some(movement) = movement {
+                updates.push(ClientUpdate::IDisplaced(movement)); // using displaced as the returned value is a displacement vector for the physics engine
+            } else {
+                updates.push(ClientUpdate::IDisplaced(Vec3::zero()));
+            }
         }
         if let Some(look) = look {
             updates.push(ClientUpdate::ILooked(look));
