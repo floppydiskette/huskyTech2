@@ -3,6 +3,7 @@ use std::mem;
 use std::ptr::null;
 use gfx_maths::*;
 use libsex::bindings::*;
+use libsex::gl::*;
 use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
 use crate::renderer::MAX_LIGHTS;
@@ -90,32 +91,32 @@ impl Mesh {
             // set the shader program
             set_shader_if_not_already(renderer, shader_index);
 
-            glGenVertexArrays(1, &mut vao);
-            glBindVertexArray(vao);
-            glGenBuffers(1, &mut vbo);
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(GL_ARRAY_BUFFER, (vertices_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, vertices_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            GenVertexArrays(1, &mut vao);
+            BindVertexArray(vao);
+            GenBuffers(1, &mut vbo);
+            BindBuffer(GL_ARRAY_BUFFER, vbo);
+            BufferData(GL_ARRAY_BUFFER, (vertices_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, vertices_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             // vertex positions for vertex shader
             let in_pos_c = CString::new("in_pos").unwrap();
-            let pos = glGetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_pos_c.as_ptr());
-            glVertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
-            glEnableVertexAttribArray(0);
+            let pos = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_pos_c.as_ptr());
+            VertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(0);
 
             // uvs
-            glGenBuffers(1, &mut uvbo);
-            glBindBuffer(GL_ARRAY_BUFFER, uvbo);
-            glBufferData(GL_ARRAY_BUFFER, (uvs_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, uvs_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            GenBuffers(1, &mut uvbo);
+            BindBuffer(GL_ARRAY_BUFFER, uvbo);
+            BufferData(GL_ARRAY_BUFFER, (uvs_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, uvs_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
             // vertex uvs for fragment shader
             let in_uv_c = CString::new("in_uv").unwrap();
-            let uv = glGetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_uv_c.as_ptr());
-            glVertexAttribPointer(uv as GLuint, 2, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
-            glEnableVertexAttribArray(1);
+            let uv = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_uv_c.as_ptr());
+            VertexAttribPointer(uv as GLuint, 2, GL_FLOAT, GL_FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(1);
 
 
             // now the indices
-            glGenBuffers(1, &mut ebo);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices_array.len() * mem::size_of::<GLuint>()) as GLsizeiptr, indices_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            GenBuffers(1, &mut ebo);
+            BindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            BufferData(GL_ELEMENT_ARRAY_BUFFER, (indices_array.len() * mem::size_of::<GLuint>()) as GLsizeiptr, indices_array.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
         }
 
         Ok(Mesh {
@@ -138,28 +139,28 @@ impl Mesh {
         let shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
 
-            glEnableVertexAttribArray(0);
-            glBindVertexArray(self.vao);
+            EnableVertexAttribArray(0);
+            BindVertexArray(self.vao);
             if let Some(texture) = texture {
                 // send the material struct to the shader
                 let material = texture.material;
                 let diffuse_c = CString::new("diffuse").unwrap();
-                let material_diffuse = glGetUniformLocation(shader.program, diffuse_c.as_ptr());
+                let material_diffuse = GetUniformLocation(shader.program, diffuse_c.as_ptr());
                 let roughness_c = CString::new("specular").unwrap();
-                let material_roughness = glGetUniformLocation(shader.program, roughness_c.as_ptr());
+                let material_roughness = GetUniformLocation(shader.program, roughness_c.as_ptr());
                 let normal_c = CString::new("normalmap").unwrap();
-                let material_normal = glGetUniformLocation(shader.program, normal_c.as_ptr());
+                let material_normal = GetUniformLocation(shader.program, normal_c.as_ptr());
 
                 // load textures
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, material.diffuse_texture);
-                glUniform1i(material_diffuse, 0);
-                glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, material.roughness_texture);
-                glUniform1i(material_roughness, 1);
-                glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, material.normal_texture);
-                glUniform1i(material_normal, 2);
+                ActiveTexture(GL_TEXTURE0);
+                BindTexture(GL_TEXTURE_2D, material.diffuse_texture);
+                Uniform1i(material_diffuse, 0);
+                ActiveTexture(GL_TEXTURE1);
+                BindTexture(GL_TEXTURE_2D, material.roughness_texture);
+                Uniform1i(material_roughness, 1);
+                ActiveTexture(GL_TEXTURE2);
+                BindTexture(GL_TEXTURE_2D, material.normal_texture);
+                Uniform1i(material_normal, 2);
 
             }
 
@@ -175,29 +176,29 @@ impl Mesh {
 
             // send the mvp matrix to the shader
             let mvp_c = CString::new("u_mvp").unwrap();
-            let mvp_loc = glGetUniformLocation(shader.program, mvp_c.as_ptr());
-            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
+            let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
+            UniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
 
             // send the model matrix to the shader
             let model_c = CString::new("u_model").unwrap();
-            let model_loc = glGetUniformLocation(shader.program, model_c.as_ptr());
-            glUniformMatrix4fv(model_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
+            let model_loc = GetUniformLocation(shader.program, model_c.as_ptr());
+            UniformMatrix4fv(model_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
 
             // send the camera position to the shader
             let camera_pos_c = CString::new("u_camera_pos").unwrap();
-            let camera_pos_loc = glGetUniformLocation(shader.program, camera_pos_c.as_ptr());
-            glUniform3f(camera_pos_loc,
+            let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr());
+            Uniform3f(camera_pos_loc,
                         renderer.camera.get_position().x*-1.0,
                         renderer.camera.get_position().y*-1.0,
                         renderer.camera.get_position().z*-1.0);
 
-            glDrawElements(GL_TRIANGLES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            DrawElements(GL_TRIANGLES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
 
             // print opengl errors
-            let mut error = glGetError();
+            let mut error = GetError();
             while error != GL_NO_ERROR {
                 error!("OpenGL error while rendering: {}", error);
-                error = glGetError();
+                error = GetError();
             }
         }
     }
@@ -208,8 +209,8 @@ impl Mesh {
         let shader = renderer.backend.shaders.as_mut().unwrap()[shader_index].clone();
         unsafe {
 
-            glEnableVertexAttribArray(0);
-            glBindVertexArray(self.vao);
+            EnableVertexAttribArray(0);
+            BindVertexArray(self.vao);
 
             // transformation time!
             let camera_projection = renderer.camera.get_projection();
@@ -223,8 +224,8 @@ impl Mesh {
 
             // send the mvp matrix to the shader
             let mvp_c = CString::new("u_mvp").unwrap();
-            let mvp_loc = glGetUniformLocation(shader.program, mvp_c.as_ptr());
-            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
+            let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
+            UniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, mvp.as_ptr());
 
             // send the model matrix to the shader
             /*let model_c = CString::new("u_model").unwrap();
@@ -241,13 +242,13 @@ impl Mesh {
 
              */
 
-            glDrawElements(GL_LINES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
+            DrawElements(GL_LINES, self.num_indices as GLsizei, GL_UNSIGNED_INT, null());
 
             // print opengl errors
-            let mut error = glGetError();
+            let mut error = GetError();
             while error != GL_NO_ERROR {
                 error!("OpenGL error while rendering: {}", error);
-                error = glGetError();
+                error = GetError();
             }
         }
     }
