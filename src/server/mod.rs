@@ -175,7 +175,11 @@ impl Server {
             let mut connections_incoming = self.connections_incoming.clone();
             let mut connections_incoming = connections_incoming.lock().await;
             while let Some(connection) = connections_incoming.pop_front() {
-                let connection = listener.clone().init_new_connection(connection).await.unwrap();
+                let connection = listener.clone().init_new_connection(connection).await;
+                if connection.is_none() {
+                    continue;
+                }
+                let connection = connection.unwrap();
                 let listener = listener_raw.clone();
                 let connection_clone = connection.clone();
                 let the_clone = self.clone();
@@ -195,6 +199,9 @@ impl Server {
     }
 
     async unsafe fn send_steady_packet_unsafe(&self, connection: &Connection, packet: SteadyPacketData) -> bool {
+        let mut tries = 0;
+        const MAX_TRIES: i32 = 10;
+
         match connection.clone() {
             Connection::Local(connection) => {
                 let connection_lock = connection.lock().await;
@@ -227,8 +234,12 @@ impl Server {
                     let res = connection.serialise_and_send_steady(packet.clone()).await;
                     if res.is_ok() {
                         break;
-                    } else {
+                    } else if tries < MAX_TRIES {
+                        tries += 1;
                         warn!("failed to send packet to lan connection, retrying");
+                        continue;
+                    } else {
+                        return false;
                     }
                 }
                 debug!("sent packet to lan connection");
@@ -381,7 +392,10 @@ impl Server {
         let world_clone = worldmachine.world.clone();
         let physics = worldmachine.physics.clone().unwrap();
         for entity in world_clone.entities.iter() {
-            self.send_steady_packet(&connection, SteadyPacket::InitialiseEntity(entity.uid, entity.clone())).await;
+            let res = self.send_steady_packet(&connection, SteadyPacket::InitialiseEntity(entity.uid, entity.clone())).await;
+            if !res {
+                return None;
+            }
         }
         let uuid = self.get_connection_uuid(&connection).await;
 
@@ -410,6 +424,10 @@ impl Server {
             scale)).await;
         worldmachine.queue_update(WorldUpdate::InitEntity(entity_uuid, player_entity.clone())).await;
 
+        if !res {
+            return None;
+        }
+
         worldmachine.players.as_mut().unwrap().lock().await.insert(uuid.clone(), ServerPlayerContainer {
             player: player.clone(),
             entity_id: Some(entity_uuid),
@@ -417,7 +435,7 @@ impl Server {
 
         drop(worldmachine);
 
-        self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
+        let res = self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
 
         if res {
             Some(entity_uuid)
@@ -651,6 +669,20 @@ impl Server {
                         }
                     };
                     let player_entity_id = self.begin_connection(connection.clone()).await;
+                    if player_entity_id.is_none() {
+                        let connections = match self.connections.clone() {
+                            Connections::Lan(_, connections) => {
+                                connections.clone()
+                            }
+                            _ => {
+                                panic!("assert_connection_type_allowed failed");
+                            }
+                        };
+                        let mut connections = connections.lock().await;
+                        connections.retain(|x| x.uuid != lan_connection.uuid);
+                        debug!("connections: {:?}", connections.len());
+                        return;
+                    }
                     let player_entity_id = player_entity_id.expect("player_entity_id is None");
                     let connected = self.handle_connection(connection).await;
                     if !connected {

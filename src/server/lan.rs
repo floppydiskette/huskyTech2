@@ -10,6 +10,55 @@ use std::net::SocketAddr;
 use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, SteadyPacket, SteadyPacketData};
 use crate::server::connections::SteadyMessageQueue;
 
+pub const FAST_QUEUE_LIMIT: usize = 4;
+
+#[derive(Default, Debug)]
+pub struct FastUpdateQueue<T> {
+    pub queue: VecDeque<T>,
+}
+
+impl FastUpdateQueue<FastPacketData> {
+    pub fn new(packet: Option<FastPacketData>) -> Self {
+        let mut queue = VecDeque::new();
+        if let Some(packet) = packet {
+            queue.push_back(packet);
+        }
+        Self { queue }
+    }
+
+    pub fn push(&mut self, packet: FastPacketData) {
+        if self.queue.len() >= FAST_QUEUE_LIMIT {
+            self.queue.pop_front();
+        }
+        self.queue.push_back(packet);
+    }
+
+    pub fn pop(&mut self) -> Option<FastPacketData> {
+        self.queue.pop_front()
+    }
+}
+
+impl FastUpdateQueue<FastPacketLan> {
+    pub fn new(packet: Option<FastPacketLan>) -> Self {
+        let mut queue = VecDeque::new();
+        if let Some(packet) = packet {
+            queue.push_back(packet);
+        }
+        Self { queue }
+    }
+
+    pub fn push(&mut self, packet: FastPacketLan) {
+        if self.queue.len() >= FAST_QUEUE_LIMIT {
+            self.queue.pop_front();
+        }
+        self.queue.push_back(packet);
+    }
+
+    pub fn pop(&mut self) -> Option<FastPacketLan> {
+        self.queue.pop_front()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LanConnection {
     pub steady_update: Arc<Mutex<TcpStream>>,
@@ -25,7 +74,7 @@ unsafe impl Sync for LanConnection {}
 pub struct ClientLanConnection {
     pub steady_update: Arc<Mutex<TcpStream>>,
     fast_update: Arc<UdpSocket>,
-    pub fast_update_queue: Arc<Mutex<VecDeque<FastPacketData>>>,
+    pub fast_update_queue: Arc<Mutex<FastUpdateQueue<FastPacketData>>>,
     pub steady_sender_queue: Arc<Mutex<SteadyMessageQueue>>,
     pub uuid: ConnectionUUID,
 }
@@ -61,7 +110,7 @@ pub enum ConnectionHandshakePacket {
 pub struct LanListener {
     pub fast_update: Arc<UdpSocket>,
     steady_update: Arc<Mutex<TcpListener>>,
-    fast_update_map: Arc<Mutex<HashMap<ConnectionUUID, VecDeque<FastPacketLan>>>>,
+    fast_update_map: Arc<Mutex<HashMap<ConnectionUUID, FastUpdateQueue<FastPacketLan>>>>,
 }
 
 unsafe impl Send for LanListener {}
@@ -114,20 +163,27 @@ impl LanListener {
         let mut buf = [0; 1024];
         let len = steady_update.read(&mut buf).await.unwrap();
         let mut deserialiser = rmp_serde::Deserializer::new(&buf[..len]);
-        let handshake_packet: ConnectionHandshakePacket = Deserialize::deserialize(&mut deserialiser).unwrap();
-        if {
-            match handshake_packet {
-                ConnectionHandshakePacket::JoinRequest => true,
-                _ => false,
-            }
-        } {
+        let handshake_packet = ConnectionHandshakePacket::deserialize(&mut deserialiser);
+        if let Err(_) = handshake_packet {
+            warn!("handshake packet error");
+            return None;
+        }
+        let handshake_packet = handshake_packet.unwrap();
+        if matches!(handshake_packet, ConnectionHandshakePacket::JoinRequest) {
             debug!("got first handshake packet");
             let uuid_real = generate_uuid();
             let mut serialiser = rmp_serde::Serializer::new(Vec::new());
             let packet = ConnectionHandshakePacket::PleaseConnectUDPNow(uuid_real.clone());
             packet.serialize(&mut serialiser).unwrap();
             let data = serialiser.into_inner();
-            let _ = steady_update.write(&data).await.unwrap();
+            let n = steady_update.write(&data).await;
+            if let Err(_) = n {
+                warn!("handshake packet error");
+                return None;
+            } else if n.unwrap() != data.len() {
+                warn!("handshake packet error");
+                return None;
+            }
             steady_update.flush().await.unwrap();
             debug!("sent second handshake packet");
 
@@ -151,21 +207,24 @@ impl LanListener {
 
             debug!("got third handshake packet");
 
+            let peer_addr = peer_addr;
+            if peer_addr.is_none() {
+                warn!("handshake packet error");
+                return None;
+            }
             let peer_addr = peer_addr.unwrap();
 
             // send the ready packet
             let mut serialiser = rmp_serde::Serializer::new(Vec::new());
-            let packet = FastPacketLan {
-                uuid: uuid_real.clone(),
-                socket_addr: None,
-                data: FastPacketPotentials::ConnectionHandshake(ConnectionHandshakePacket::YoureReady(uuid_real.clone())),
-            };
+            let packet = ConnectionHandshakePacket::YoureReady(uuid_real.clone());
             packet.serialize(&mut serialiser).unwrap();
             let data = serialiser.into_inner();
 
-            let fast_update = &self.fast_update;
-
-            fast_update.send_to(&data, peer_addr).await.unwrap();
+            let successful_write = steady_update.write_all(&data).await;
+            if successful_write.is_err() {
+                warn!("handshake packet error");
+                return None;
+            }
 
             debug!("sent fourth handshake packet");
 
@@ -210,9 +269,10 @@ impl LanListener {
             let mut fast_update_map = self.fast_update_map.lock().await;
             packet.socket_addr = Some(addr);
             if let Some(updates) = fast_update_map.get_mut(&packet.uuid) {
-                updates.push_back(packet);
+                updates.push(packet);
             } else {
-                fast_update_map.insert(packet.clone().uuid, VecDeque::from(vec![packet]));
+                let new_queue = FastUpdateQueue::<FastPacketLan>::new(Some(packet.clone()));
+                fast_update_map.insert(packet.clone().uuid, new_queue);
             }
             drop(fast_update_map);
         }
@@ -222,7 +282,7 @@ impl LanListener {
         let mut fast_update_map = self.fast_update_map.lock().await;
         let update = fast_update_map.get_mut(uuid);
         if let Some(updates) = update {
-            let update = updates.pop_front();
+            let update = updates.pop();
             if let Some(update) = update {
                 drop(fast_update_map);
                 return Some(update);
@@ -314,7 +374,6 @@ impl LanConnection {
             return Ok(None);
         }
         let packet = packet.unwrap();
-        debug!("received steady packet: {:?}", packet);
 
         Ok(Some(packet))
     }
@@ -338,7 +397,6 @@ impl LanConnection {
             return Ok(None);
         }
         let packet = packet.unwrap();
-        debug!("received steady packet: {:?}", packet);
         Ok(Some(packet))
     }
 }
@@ -381,10 +439,22 @@ impl ClientLanConnection {
             debug!("told the server we're ready to receive udp");
             socket.send(&data.clone()).await.ok()?;
 
+            // loop until we receive the YoureReady packet
+            loop {
+                let mut buffer = [0; 2048];
+                let n = stream.read(&mut buffer).await.ok()?;
+                let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
+                let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
+                if let ConnectionHandshakePacket::YoureReady(_) = packet {
+                    debug!("received YoureReady packet");
+                    break;
+                }
+            }
+
             return Some(ClientLanConnection {
                 steady_update: Arc::new(Mutex::new(stream)),
                 fast_update: Arc::new(socket),
-                fast_update_queue: Arc::new(Mutex::new(VecDeque::new())),
+                fast_update_queue: Arc::new(Mutex::new(FastUpdateQueue::<FastPacketData>::new(None))),
                 steady_sender_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
                 uuid,
             });
@@ -416,7 +486,6 @@ impl ClientLanConnection {
 
     async fn attempt_receive_fast_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
         let attempt = self.fast_update.try_recv(data);
-        debug!("failed to receive fast update: {:?}", attempt);
         if attempt.is_err() {
             None
         } else {
@@ -452,8 +521,7 @@ impl ClientLanConnection {
             let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
             let packet = FastPacketLan::deserialize(&mut deserialiser).unwrap();
             if let FastPacketPotentials::FastPacket(packet) = packet.data {
-                debug!("received fast packet: {:?}", packet);
-                self.fast_update_queue.lock().await.push_back(packet);
+                self.fast_update_queue.lock().await.push(packet);
             }
         }
     }
@@ -461,7 +529,7 @@ impl ClientLanConnection {
 
     pub async fn attempt_receive_fast_and_deserialise(&self) -> Option<FastPacketData> {
         let mut fast_update_queue = self.fast_update_queue.lock().await;
-        let attempt = fast_update_queue.pop_front();
+        let attempt = fast_update_queue.pop();
         drop(fast_update_queue);
         if attempt.is_none() {
             None
@@ -481,9 +549,7 @@ impl ClientLanConnection {
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {
         let mut buffer = [0; 2048];
         let attempt = self.attempt_receive_steady_update(&mut buffer).await;
-        if attempt.is_none() {
-            return None;
-        }
+        attempt.as_ref()?;
         let attempt = attempt.unwrap();
         if attempt.is_err() {
             warn!("failed to receive steady update: {:?}", attempt);
@@ -491,8 +557,12 @@ impl ClientLanConnection {
         }
         let attempt = attempt.unwrap();
         let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-        let packet = SteadyPacketData::deserialize(&mut deserialiser).unwrap();
-
+        let packet = SteadyPacketData::deserialize(&mut deserialiser);
+        if packet.is_err() {
+            warn!("failed to deserialise steady update: {:?}", packet);
+            return None;
+        }
+        let packet = packet.unwrap();
         Some(packet)
     }
 

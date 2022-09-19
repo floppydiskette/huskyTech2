@@ -172,7 +172,7 @@ impl Player {
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
         let speed = self.movement_speed;
-        //let speed = 10.0; // uncomment to cheat!
+        let speed = 10.0; // uncomment to cheat!
         if keyboard::check_key_pressed(Key::W) {
             self.wasd[0] = true;
         }
