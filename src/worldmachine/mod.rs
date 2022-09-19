@@ -360,7 +360,6 @@ impl WorldMachine {
                     }
                 }
                 ConnectionClientside::Lan(connection) => {
-                    let mut connection = connection.lock().await;
                     let attempt = connection.send_steady_and_serialise(message).await;
                     if attempt.is_err() {
                         error!("send_queued_steady_message: failed to send message");
@@ -390,7 +389,6 @@ impl WorldMachine {
                     while let Some(message) = queue.pop() {}
                 }
                 ConnectionClientside::Lan(connection) => {
-                    let mut connection = connection.lock().await;
                     let mut queue = connection.steady_sender_queue.lock().await;
                     while let Some(message) = queue.pop() {
                         debug!("sending queued steady message");
@@ -416,7 +414,6 @@ impl WorldMachine {
                     }
                 }
                 ConnectionClientside::Lan(connection) => {
-                    let mut connection = connection.lock().await;
                     let attempt = connection.send_fast_and_serialise(message).await;
                 }
             }
@@ -438,7 +435,6 @@ impl WorldMachine {
                     debug!("consume message sent");
                 }
                 ConnectionClientside::Lan(connection) => {
-                    let mut connection = connection.lock().await;
                     let attempt = connection
                         .send_steady_and_serialise(SteadyPacketData {
                             packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
@@ -458,48 +454,76 @@ impl WorldMachine {
 
     async fn initialise_entity(&mut self, packet: SteadyPacket) {
         if let SteadyPacket::InitialiseEntity(entity_id, entity_data) = packet {
-            if let Some(ignore) = self.ignore_this_entity {
-                if entity_id == ignore {
-                    return;
-                }
-            }
-            // check if we already have this entity
-            if self.get_entity(entity_id).is_none() {
-                let mut entity = unsafe {
-                    Entity::new_with_id(entity_data.name.as_str(), entity_id)
-                };
-                entity.copy_data_from_other_entity(&entity_data);
-                self.world.entities.push(entity);
-                self.entities_wanting_to_load_things.push(self.world.entities.len() - 1);
-            } else {
-                // we already have this entity, so we need to update it
-                let entity_index = self.get_entity_index(entity_id).unwrap();
-                let entity = self.world.entities.get_mut(entity_index).unwrap();
-                entity.copy_data_from_other_entity(&entity_data);
-                self.entities_wanting_to_load_things.push(entity_index);
-            }
-            debug!("initialise entity message received");
         }
     }
 
     async fn initialise_player(&mut self, packet: SteadyPacket) {
         if let SteadyPacket::InitialisePlayer(uuid, id,  name, position, rotation, scale) = packet {
-            let mut player = Player::default();
-            player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
-            self.ignore_this_entity = Some(id);
-            self.player = Some(PlayerContainer {
-                player,
-                entity_id: None
-            });
         }
     }
 
     async fn remove_entity(&mut self, packet: SteadyPacket) {
         if let SteadyPacket::RemoveEntity(entity_id) = packet {
-            let entity_index = self.get_entity_index(entity_id).unwrap();
-            self.world.entities.remove(entity_index);
-            debug!("remove entity message received");
-            debug!("world entities: {:?}", self.world.entities);
+        }
+    }
+
+    async fn handle_steady_message(&mut self, packet: SteadyPacket) {
+        match packet {
+            SteadyPacket::Consume(_) => {}
+            SteadyPacket::KeepAlive => {}
+            SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
+                // check if we already have this entity
+                if self.get_entity(entity_id).is_none() {
+                    let mut entity = unsafe {
+                        Entity::new_with_id(entity_data.name.as_str(), entity_id)
+                    };
+                    entity.copy_data_from_other_entity(&entity_data);
+                    self.world.entities.push(entity);
+                    self.entities_wanting_to_load_things.push(self.world.entities.len() - 1);
+                } else {
+                    // we already have this entity, so we need to update it
+                    let entity_index = self.get_entity_index(entity_id).unwrap();
+                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    entity.copy_data_from_other_entity(&entity_data);
+                    self.entities_wanting_to_load_things.push(entity_index);
+                }
+                debug!("initialise entity message received");
+            }
+            SteadyPacket::Message(str_message) => {
+                info!("Received message from server: {}", str_message);
+            }
+            SteadyPacket::SelfTest => {
+                self.counter += 1.0;
+                info!("received {} self test messages", self.counter);
+            }
+            SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
+                let mut player = Player::default();
+                player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
+                self.ignore_this_entity = Some(id);
+                self.player = Some(PlayerContainer {
+                    player,
+                    entity_id: None
+                });
+            }
+            SteadyPacket::FinaliseMapLoad => {
+                self.initialise_entities();
+            }
+            SteadyPacket::RemoveEntity(entity_id) => {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
+                let entity_index = self.get_entity_index(entity_id).unwrap();
+                self.world.entities.remove(entity_index);
+                debug!("remove entity message received");
+                debug!("world entities: {:?}", self.world.entities);
+            }
         }
     }
 
@@ -511,30 +535,7 @@ impl WorldMachine {
                     // check if we have any messages to process
                     let try_recv = connection.steady_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
-                        match message.clone().packet.unwrap().clone() {
-                            SteadyPacket::Consume(_) => {}
-                            SteadyPacket::KeepAlive => {}
-                            SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
-                                self.initialise_entity(message.clone().packet.unwrap()).await;
-                            }
-                            SteadyPacket::Message(str_message) => {
-                                info!("Received message from server: {}", str_message);
-                            }
-                            SteadyPacket::SelfTest => {
-                                self.counter += 1.0;
-                                info!("received {} self test messages", self.counter);
-                            }
-                            SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
-                                self.initialise_player(message.clone().packet.unwrap()).await;
-                            }
-                            SteadyPacket::FinaliseMapLoad => {
-                                self.initialise_entities();
-                            }
-                            SteadyPacket::RemoveEntity(entity_id) => {
-                                self.remove_entity(message.clone().packet.unwrap()).await;
-                            }
-                        }
-                        drop(connection);
+                        self.handle_steady_message(message.clone().packet.unwrap()).await;
                         self.consume_steady_message(message).await;
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
@@ -543,34 +544,10 @@ impl WorldMachine {
                     }
                 }
                 ConnectionClientside::Lan(connection) => {
-                    let mut connection = connection.lock().await;
                     // check if we have any messages to process
                     let try_recv = connection.attempt_receive_steady_and_deserialise().await;
                     if let Some(message) = try_recv {
-                        match message.clone().packet.unwrap().clone() {
-                            SteadyPacket::Consume(_) => {}
-                            SteadyPacket::KeepAlive => {}
-                            SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
-                                self.initialise_entity(message.clone().packet.unwrap()).await;
-                            }
-                            SteadyPacket::Message(str_message) => {
-                                info!("Received message from server: {}", str_message);
-                            }
-                            SteadyPacket::SelfTest => {
-                                self.counter += 1.0;
-                                info!("received {} self test messages", self.counter);
-                            }
-                            SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
-                                self.initialise_player(message.clone().packet.unwrap()).await;
-                            }
-                            SteadyPacket::FinaliseMapLoad => {
-                                self.initialise_entities();
-                            }
-                            SteadyPacket::RemoveEntity(entity_id) => {
-                                self.remove_entity(message.clone().packet.unwrap()).await;
-                            }
-                        }
-                        drop(connection);
+                        self.handle_steady_message(message.clone().packet.unwrap()).await;
                         self.consume_steady_message(message).await;
                     }
                 }
@@ -693,7 +670,6 @@ impl WorldMachine {
                     }
                 }
                 ConnectionClientside::Lan(connection) => {
-                    let connection = connection.lock().await;
                     // check if we have any messages to process
                     let try_recv = connection.attempt_receive_fast_and_deserialise().await;
                     if let Some(message) = try_recv {

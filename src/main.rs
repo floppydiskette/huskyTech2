@@ -103,29 +103,34 @@ async fn main() {
 
         info!("initialised worldmachine");
 
-        let mut server = server::Server::new("test", physics.clone());
-        let mut server_clone = server.clone();
-        tokio::spawn(async move {
-            server_clone.run().await;
-        });
-
         if let Some(ip) = connect_to_lan_server {
             let server_connection = ClientLanConnection::connect(ip.as_str(), 25565, 25566).await.expect("failed to connect to server");
-            worldmachine.connect_to_server(ConnectionClientside::Lan(Arc::new(Mutex::new(server_connection.clone()))));
+            worldmachine.connect_to_server(ConnectionClientside::Lan(server_connection.clone()));
+            let the_clone = server_connection.clone();
             tokio::spawn(async move {
-                server_connection.udp_listener_thread().await;
+                the_clone.udp_listener_thread().await;
+            });
+            let the_clone = server_connection.clone();
+            tokio::spawn(async move {
+                the_clone.tcp_listener_thread().await;
             });
         } else {
+            let mut server = server::Server::new("test", physics.clone());
+            let mut server_clone = server.clone();
+            tokio::spawn(async move {
+                server_clone.run().await;
+            });
+
             let server_connection = server.join_local_server().await;
             worldmachine.connect_to_server(ConnectionClientside::Local(server_connection.clone()));
         }
 
-        debug!("connected to internal server");
+        debug!("connected to server");
 
         keyboard::init(&mut renderer);
         mouse::init(&mut renderer);
 
-        debug!("initialised keyboard");
+        debug!("initialised input");
 
         if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 

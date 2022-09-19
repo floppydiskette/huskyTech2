@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use gfx_maths::*;
 use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use async_recursion::async_recursion;
@@ -35,7 +35,7 @@ pub enum Connection {
 #[derive(Clone)]
 pub enum ConnectionClientside {
     Local(Arc<Mutex<LocalConnectionClientSide>>),
-    Lan(Arc<Mutex<ClientLanConnection>>),
+    Lan(ClientLanConnection),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -230,32 +230,47 @@ impl Server {
                 }
             }
             Connection::Lan(_, connection) => {
+                let mut start_time = Instant::now();
+                let retry_time = Duration::from_millis(5000);
+                let timeout_time = Duration::from_millis(50000);
                 loop {
-                    let res = connection.serialise_and_send_steady(packet.clone()).await;
-                    if res.is_ok() {
-                        break;
-                    } else if tries < MAX_TRIES {
-                        tries += 1;
-                        warn!("failed to send packet to lan connection, retrying");
-                        continue;
-                    } else {
-                        return false;
+                    loop {
+                        let res = connection.serialise_and_send_steady(packet.clone()).await;
+                        if res.is_ok() {
+                            break;
+                        } else if tries < MAX_TRIES {
+                            tries += 1;
+                            warn!("failed to send packet to lan connection, retrying");
+                            continue;
+                        } else {
+                            return false;
+                        }
                     }
-                }
-                debug!("sent packet to lan connection");
-                debug!("uuid: {:?}", packet.clone().uuid);
-                // wait for the packet to be consumed
-                loop {
-                    let received_packet = connection.block_receive_steady_and_deserialise().await;
-                    if let Err(e) = received_packet {
-                        warn!("failed to receive packet from lan connection: {:?}", e);
-                        return false;
-                    }
-                    let received_packet = received_packet.unwrap();
-                    if let Some(received_packet) = received_packet {
-                        if let SteadyPacket::Consume(uuid) = received_packet.packet.clone().unwrap() {
-                            if uuid == packet.clone().uuid.unwrap() {
-                                debug!("packet consumed");
+                    debug!("sent packet to lan connection");
+                    debug!("uuid: {:?}", packet.clone().uuid);
+                    // wait for the packet to be consumed
+                    loop {
+                        let received_packet = connection.attempt_receive_steady_and_deserialise().await;
+                        if let Err(e) = received_packet {
+                            warn!("failed to receive packet from lan connection: {:?}", e);
+                            return false;
+                        }
+                        let received_packet = received_packet.unwrap();
+                        if let Some(received_packet) = received_packet {
+                            if let SteadyPacket::Consume(uuid) = received_packet.packet.clone().unwrap() {
+                                if uuid == packet.clone().uuid.unwrap() {
+                                    debug!("packet consumed");
+                                    return true;
+                                }
+                            }
+                        } else {
+                            if start_time.elapsed() > timeout_time {
+                                warn!("timed out waiting for packet to be consumed");
+                                return false;
+                            }
+                            if start_time.elapsed() > retry_time {
+                                warn!("retrying packet");
+                                start_time = Instant::now();
                                 break;
                             }
                         }

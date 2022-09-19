@@ -7,10 +7,13 @@ use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use serde::{Serialize, Deserialize};
 use std::net::SocketAddr;
+use std::time::Duration;
 use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, SteadyPacket, SteadyPacketData};
 use crate::server::connections::SteadyMessageQueue;
 
 pub const FAST_QUEUE_LIMIT: usize = 4;
+pub const FAKE_LAG: bool = true;
+pub const FAKE_LAG_TIME: u64 = 600;
 
 #[derive(Default, Debug)]
 pub struct FastUpdateQueue<T> {
@@ -63,6 +66,7 @@ impl FastUpdateQueue<FastPacketLan> {
 pub struct LanConnection {
     pub steady_update: Arc<Mutex<TcpStream>>,
     pub steady_update_queue: Arc<Mutex<SteadyMessageQueue>>,
+    pub steady_receive_queue: Arc<Mutex<(SteadyMessageQueue, bool)>>,
     pub remote_addr: SocketAddr,
     pub uuid: ConnectionUUID,
 }
@@ -76,6 +80,7 @@ pub struct ClientLanConnection {
     fast_update: Arc<UdpSocket>,
     pub fast_update_queue: Arc<Mutex<FastUpdateQueue<FastPacketData>>>,
     pub steady_sender_queue: Arc<Mutex<SteadyMessageQueue>>,
+    pub steady_receiver_queue: Arc<Mutex<SteadyMessageQueue>>,
     pub uuid: ConnectionUUID,
 }
 
@@ -232,6 +237,7 @@ impl LanListener {
             return Some(LanConnection {
                 steady_update: Arc::new(Mutex::new(steady_update)),
                 steady_update_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
+                steady_receive_queue: Arc::new(Mutex::new((SteadyMessageQueue::new(), true))),
                 remote_addr: peer_addr,
                 uuid: uuid_real,
             });
@@ -241,23 +247,19 @@ impl LanListener {
     }
 
     async fn send_fast_update(&self, connection: LanConnection, data: &[u8]) -> std::io::Result<usize> {
-        self.fast_update.send_to(data, connection.remote_addr).await
-    }
-
-    async fn attempt_receive_fast_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
-        let fast_update = &self.fast_update;
-        let attempt = fast_update.try_recv(data);
-        if attempt.is_err() {
-            None
-        } else {
-            Some(attempt)
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
         }
+        self.fast_update.send_to(data, connection.remote_addr).await
     }
 
     pub async fn udp_thread(&self) {
         loop {
             let mut buf = [0; 4096];
             let fast_update = &self.fast_update;
+            if FAKE_LAG {
+                tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+            }
             let (len, addr) =  fast_update.recv_from(&mut buf).await.expect("failed to receive from udp socket");
             let mut deserialiser = rmp_serde::Deserializer::new(&buf[..len]);
             let packet = FastPacketLan::deserialize(&mut deserialiser);
@@ -296,29 +298,31 @@ impl LanListener {
 impl LanConnection {
     pub fn new(uuid: ConnectionUUID, fast_update: UdpSocket, steady_update: TcpStream) -> Self {
         let peer_addr = steady_update.peer_addr().unwrap();
-        Self {
+        let the_self = Self {
             steady_update: Arc::new(Mutex::new(steady_update)),
             steady_update_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
+            steady_receive_queue: Arc::new(Mutex::new((SteadyMessageQueue::new(), true))),
             remote_addr: peer_addr,
             uuid
-        }
+        };
+        let the_clone = the_self.clone();
+        tokio::spawn(async move {
+            the_clone.tcp_thread().await;
+        });
+        the_self
     }
 
     async fn send_steady_update(&self, data: &[u8]) -> std::io::Result<()> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         self.steady_update.lock().await.write_all(data).await
     }
 
-    async fn attempt_receive_steady_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
-        let steady_update = self.steady_update.lock().await;
-        let attempt = steady_update.try_read(data);
-        if attempt.is_err() {
-            None
-        } else {
-            Some(attempt)
-        }
-    }
-
     async fn block_receive_steady_update(&self, data: &mut [u8]) -> std::io::Result<usize> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         self.steady_update.lock().await.read(data).await
     }
 
@@ -352,37 +356,20 @@ impl LanConnection {
     }
 
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
-        let mut buffer = [0; 2048];
-        let attempt = self.attempt_receive_steady_update(&mut buffer).await;
-        if attempt.is_none() {
-            return Ok(None);
+        let packet = self.steady_receive_queue.lock().await.0.pop();
+        if let Some(packet) = packet {
+            Ok(Some(packet))
+        } else if !self.steady_receive_queue.lock().await.1 {
+            Err(ConnectionError::ConnectionClosed)
+        } else {
+            Ok(None)
         }
-        let attempt = attempt.unwrap();
-        if attempt.is_err() {
-            warn!("failed to receive steady update: {:?}", attempt);
-            return Ok(None);
-        }
-        let attempt = attempt.unwrap();
-        if attempt == 0 {
-            // connection closed
-            return Err(ConnectionError::ConnectionClosed);
-        }
-        let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-        let packet = SteadyPacketData::deserialize(&mut deserialiser);
-        if let Err(e) = packet {
-            warn!("failed to deserialise packet: {:?}", e);
-            return Ok(None);
-        }
-        let packet = packet.unwrap();
-
-        Ok(Some(packet))
     }
 
-    pub async fn block_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
+    async fn block_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
         let mut buffer = [0; 2048];
         let attempt = self.block_receive_steady_update(&mut buffer).await;
         if attempt.is_err() {
-            warn!("failed to receive steady update: {:?}", attempt);
             return Ok(None);
         }
         let attempt = attempt.unwrap();
@@ -398,6 +385,22 @@ impl LanConnection {
         }
         let packet = packet.unwrap();
         Ok(Some(packet))
+    }
+
+    pub async fn tcp_thread(&self) {
+        loop {
+            let packet = self.attempt_receive_steady_and_deserialise().await;
+            if let Err(e) = packet {
+                warn!("tcp thread failed: {:?}", e);
+                self.steady_receive_queue.lock().await.1 = false;
+                break;
+            }
+            let packet = packet.unwrap();
+            if let Some(packet) = packet {
+                let queue = &mut self.steady_receive_queue.lock().await.0;
+                queue.push(packet);
+            }
+        }
     }
 }
 
@@ -409,9 +412,15 @@ impl ClientLanConnection {
         let packet = ConnectionHandshakePacket::JoinRequest;
         packet.serialize(&mut serialiser).unwrap();
         let data = serialiser.into_inner();
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         stream.write_all(&data).await.ok()?;
         debug!("sent join request");
         let mut buffer = [0; 2048];
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         let n = stream.read(&mut buffer).await.ok()?;
         let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
         let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
@@ -437,11 +446,17 @@ impl ClientLanConnection {
             packet.serialize(&mut serialiser).unwrap();
             let data = serialiser.into_inner();
             debug!("told the server we're ready to receive udp");
+            if FAKE_LAG {
+                tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+            }
             socket.send(&data.clone()).await.ok()?;
 
             // loop until we receive the YoureReady packet
             loop {
                 let mut buffer = [0; 2048];
+                if FAKE_LAG {
+                    tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+                }
                 let n = stream.read(&mut buffer).await.ok()?;
                 let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
                 let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
@@ -456,6 +471,7 @@ impl ClientLanConnection {
                 fast_update: Arc::new(socket),
                 fast_update_queue: Arc::new(Mutex::new(FastUpdateQueue::<FastPacketData>::new(None))),
                 steady_sender_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
+                steady_receiver_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
                 uuid,
             });
         }
@@ -464,10 +480,16 @@ impl ClientLanConnection {
     }
 
     async fn send_steady_update(&self, data: &[u8]) -> std::io::Result<()> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         self.steady_update.lock().await.write_all(data).await
     }
 
     async fn attempt_receive_steady_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         let attempt = self.steady_update.lock().await.try_read(data);
         if attempt.is_err() {
             None
@@ -477,14 +499,23 @@ impl ClientLanConnection {
     }
 
     async fn block_receive_steady_update(&self, data: &mut [u8]) -> std::io::Result<usize> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         self.steady_update.lock().await.read(data).await
     }
 
     async fn send_fast_update(&self, data: &[u8]) -> std::io::Result<usize> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         self.fast_update.send(data).await
     }
 
     async fn attempt_receive_fast_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         let attempt = self.fast_update.try_recv(data);
         if attempt.is_err() {
             None
@@ -494,6 +525,9 @@ impl ClientLanConnection {
     }
 
     async fn block_receive_fast_update(&self, data: &mut [u8]) -> std::io::Result<usize> {
+        if FAKE_LAG {
+            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
+        }
         self.fast_update.recv(data).await
     }
 
@@ -526,6 +560,28 @@ impl ClientLanConnection {
         }
     }
 
+    pub async fn tcp_listener_thread(&self) {
+        let mut buffer = [0; 2048];
+        loop {
+            let attempt = self.attempt_receive_steady_update(&mut buffer).await;
+            if attempt.is_none() {
+                continue;
+            }
+            let attempt = attempt.unwrap();
+            if attempt.is_err() {
+                warn!("failed to receive steady update: {:?}", attempt);
+                continue;
+            }
+            let attempt = attempt.unwrap();
+            if attempt == 0 {
+                warn!("received 0 bytes from steady update");
+                break;
+            }
+            let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
+            let packet = SteadyPacketData::deserialize(&mut deserialiser).unwrap();
+            self.steady_receiver_queue.lock().await.push(packet);
+        }
+    }
 
     pub async fn attempt_receive_fast_and_deserialise(&self) -> Option<FastPacketData> {
         let mut fast_update_queue = self.fast_update_queue.lock().await;
@@ -547,34 +603,14 @@ impl ClientLanConnection {
     }
 
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {
-        let mut buffer = [0; 2048];
-        let attempt = self.attempt_receive_steady_update(&mut buffer).await;
-        attempt.as_ref()?;
-        let attempt = attempt.unwrap();
-        if attempt.is_err() {
-            warn!("failed to receive steady update: {:?}", attempt);
-            return None;
+        let mut steady_receiver_queue = self.steady_receiver_queue.lock().await;
+        let attempt = steady_receiver_queue.pop();
+        drop(steady_receiver_queue);
+        if attempt.is_none() {
+            None
+        } else {
+            debug!("received steady update");
+            Some(attempt.unwrap())
         }
-        let attempt = attempt.unwrap();
-        let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-        let packet = SteadyPacketData::deserialize(&mut deserialiser);
-        if packet.is_err() {
-            warn!("failed to deserialise steady update: {:?}", packet);
-            return None;
-        }
-        let packet = packet.unwrap();
-        Some(packet)
-    }
-
-    pub async fn block_receive_steady_and_deserialise(&self) -> SteadyPacketData {
-        let mut buffer = [0; 2048];
-        let attempt = self.block_receive_steady_update(&mut buffer).await;
-        if attempt.is_err() {
-            panic!("failed to receive steady update: {:?}", attempt);
-        }
-        let attempt = attempt.unwrap();
-        let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-        let packet = SteadyPacketData::deserialize(&mut deserialiser).unwrap();
-        packet
     }
 }
