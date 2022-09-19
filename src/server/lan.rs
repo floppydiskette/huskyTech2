@@ -568,7 +568,6 @@ impl ClientLanConnection {
         if attempt.is_none() {
             None
         } else {
-            debug!("received fast update");
             Some(attempt.unwrap())
         }
     }
@@ -587,7 +586,6 @@ impl ClientLanConnection {
         if attempt.is_none() {
             None
         } else {
-            debug!("received steady update");
             Some(attempt.unwrap())
         }
     }
