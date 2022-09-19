@@ -375,7 +375,7 @@ impl Server {
         None
     }
 
-    pub async fn begin_connection(&self, connection: Connection) -> bool {
+    pub async fn begin_connection(&self, connection: Connection) -> Option<EntityId> {
         let mut worldmachine = self.worldmachine.lock().await;
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = worldmachine.world.clone();
@@ -419,7 +419,11 @@ impl Server {
 
         self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
 
-        res
+        if res {
+            Some(entity_uuid)
+        } else {
+            None
+        }
     }
 
     async fn handle_steady_packets(&self, connection: Connection) -> bool {
@@ -646,7 +650,8 @@ impl Server {
                             panic!("assert_connection_type_allowed failed");
                         }
                     };
-                    self.begin_connection(connection.clone()).await;
+                    let player_entity_id = self.begin_connection(connection.clone()).await;
+                    let player_entity_id = player_entity_id.expect("player_entity_id is None");
                     let connected = self.handle_connection(connection).await;
                     if !connected {
                         let connections = match self.connections.clone() {
@@ -660,6 +665,12 @@ impl Server {
                         let mut connections = connections.lock().await;
                         connections.retain(|x| x.uuid != lan_connection.uuid);
                         debug!("connections: {:?}", connections.len());
+                        // remove the player from the world
+                        let mut worldmachine = self.worldmachine.clone();
+                        let mut worldmachine = worldmachine.lock().await;
+                        let entity_index = worldmachine.get_entity_index(player_entity_id).unwrap();
+                        worldmachine.world.entities.remove(entity_index);
+                        worldmachine.queue_update(WorldUpdate::EntityNoLongerExists(player_entity_id)).await;
                     }
                 }
             }
