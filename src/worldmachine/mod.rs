@@ -14,7 +14,7 @@ use crate::{ht_renderer, renderer, server};
 use crate::physics::{Materials, PhysicsSystem};
 use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
-use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
+use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::entities::new_ht2_entity;
 use crate::worldmachine::MapLoadError::FolderNotFound;
@@ -47,6 +47,8 @@ pub enum WorldUpdate {
     SetPosition(EntityId, Vec3),
     SetRotation(EntityId, Quaternion),
     SetScale(EntityId, Vec3),
+    MovePlayerEntity(EntityId, Vec3, Quaternion, Quaternion),
+    EntityNoLongerExists(EntityId),
 }
 
 #[derive(Clone, Debug)]
@@ -96,7 +98,8 @@ pub struct WorldMachine {
     world_update_queue: Arc<Mutex<VecDeque<WorldUpdate>>>,
     client_update_queue: Arc<Mutex<VecDeque<ClientUpdate>>>,
     player: Option<PlayerContainer>,
-    pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>
+    ignore_this_entity: Option<EntityId>, // should be the player entity that other players will see, we don't want it's updates to be received because we already know them
+    pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>,
 }
 
 impl Default for WorldMachine {
@@ -119,6 +122,7 @@ impl Default for WorldMachine {
             world_update_queue: Arc::new(Mutex::new(VecDeque::new())),
             client_update_queue: Arc::new(Mutex::new(VecDeque::new())),
             player: None,
+            ignore_this_entity: None,
             players: None,
         }
     }
@@ -163,7 +167,7 @@ impl WorldMachine {
         // load entities
         for entity in world_def.world.entities {
             let mut entity_new = unsafe {
-                Entity::new_with_id(&*entity.name, entity.uid)
+                Entity::new(entity.name.as_str())
             };
             for component in entity.components {
                 let component_type = ComponentType::get(component.get_type().name).expect("component type not found");
@@ -454,6 +458,11 @@ impl WorldMachine {
 
     async fn initialise_entity(&mut self, packet: SteadyPacket) {
         if let SteadyPacket::InitialiseEntity(entity_id, entity_data) = packet {
+            if let Some(ignore) = self.ignore_this_entity {
+                if entity_id == ignore {
+                    return;
+                }
+            }
             // check if we already have this entity
             if self.get_entity(entity_id).is_none() {
                 let mut entity = unsafe {
@@ -470,18 +479,27 @@ impl WorldMachine {
                 self.entities_wanting_to_load_things.push(entity_index);
             }
             debug!("initialise entity message received");
-            debug!("world entities: {:?}", self.world.entities);
         }
     }
 
     async fn initialise_player(&mut self, packet: SteadyPacket) {
-        if let SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) = packet {
+        if let SteadyPacket::InitialisePlayer(uuid, id,  name, position, rotation, scale) = packet {
             let mut player = Player::default();
             player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
+            self.ignore_this_entity = Some(id);
             self.player = Some(PlayerContainer {
                 player,
                 entity_id: None
             });
+        }
+    }
+
+    async fn remove_entity(&mut self, packet: SteadyPacket) {
+        if let SteadyPacket::RemoveEntity(entity_id) = packet {
+            let entity_index = self.get_entity_index(entity_id).unwrap();
+            self.world.entities.remove(entity_index);
+            debug!("remove entity message received");
+            debug!("world entities: {:?}", self.world.entities);
         }
     }
 
@@ -506,11 +524,14 @@ impl WorldMachine {
                                 self.counter += 1.0;
                                 info!("received {} self test messages", self.counter);
                             }
-                            SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) => {
+                            SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
                                 self.initialise_player(message.clone().packet.unwrap()).await;
                             }
                             SteadyPacket::FinaliseMapLoad => {
                                 self.initialise_entities();
+                            }
+                            SteadyPacket::RemoveEntity(entity_id) => {
+                                self.remove_entity(message.clone().packet.unwrap()).await;
                             }
                         }
                         drop(connection);
@@ -539,11 +560,14 @@ impl WorldMachine {
                                 self.counter += 1.0;
                                 info!("received {} self test messages", self.counter);
                             }
-                            SteadyPacket::InitialisePlayer(uuid, name, position, rotation, scale) => {
+                            SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
                                 self.initialise_player(message.clone().packet.unwrap()).await;
                             }
                             SteadyPacket::FinaliseMapLoad => {
                                 self.initialise_entities();
+                            }
+                            SteadyPacket::RemoveEntity(entity_id) => {
+                                self.remove_entity(message.clone().packet.unwrap()).await;
                             }
                         }
                         drop(connection);
@@ -557,9 +581,25 @@ impl WorldMachine {
     async fn handle_message_fast(&mut self, packet: FastPacket) {
         match packet.clone() {
             FastPacket::ChangePosition(entity_id, vec3) => {
-
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
+                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "position", ParameterValue::Vec3(vec3));
+                    if transform.is_none() {
+                        warn!("process_fast_messages: failed to set transform rotation");
+                    }
+                }
             }
             FastPacket::ChangeRotation(entity_id, quat) => {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
                 if let Some(entity_index) = self.get_entity_index(entity_id) {
                     let entity = self.world.entities.get_mut(entity_index).unwrap();
                     let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", ParameterValue::Quaternion(quat));
@@ -569,11 +609,52 @@ impl WorldMachine {
                 }
             }
             FastPacket::ChangeScale(entity_id, vec3) => {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
                 if let Some(entity_index) = self.get_entity_index(entity_id) {
                     let entity = self.world.entities.get_mut(entity_index).unwrap();
                     let transform = entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "scale", ParameterValue::Vec3(vec3));
                     if transform.is_none() {
                         warn!("process_fast_messages: failed to set transform scale");
+                    }
+                }
+            }
+            FastPacket::PlayerMoved(entity_id, new_position, new_rotation, new_head_rotation) => {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
+                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "position", ParameterValue::Vec3(new_position));
+                    if player_component.is_none() {
+                        warn!("process_fast_messages: failed to set transform position");
+                    }
+                    let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "rotation", ParameterValue::Quaternion(new_rotation));
+                    if player_component.is_none() {
+                        warn!("process_fast_messages: failed to set transform rotation");
+                    }
+                    let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "head_rotation", ParameterValue::Quaternion(new_head_rotation));
+                    if player_component.is_none() {
+                        warn!("process_fast_messages: failed to set transform rotation");
+                    }
+                }
+            }
+            FastPacket::EntitySetParameter(entity_id, component_type, parameter_name, parameter_value) => {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if entity_id == ignore {
+                        return;
+                    }
+                }
+                if let Some(entity_index) = self.get_entity_index(entity_id) {
+                    let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    let component = entity.set_component_parameter(component_type, parameter_name.as_str(), parameter_value);
+                    if component.is_none() {
+                        warn!("process_fast_messages: failed to set component parameter");
                     }
                 }
             }
@@ -675,7 +756,6 @@ impl WorldMachine {
                     let uuid = self.player.as_ref().unwrap().player.uuid.clone();
                     let displacement_vector = displacement_vector.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
                     let packet = FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped);
-                    debug!("sending packet: {:?}", packet);
                     self.send_fast_message(FastPacketData {
                         packet: Some(packet),
                     }).await;
@@ -975,6 +1055,34 @@ impl WorldMachine {
                 }
             }
              */
+            if let Some(player_component) = entity.get_component(COMPONENT_TYPE_PLAYER.clone()) {
+                let position = player_component.get_parameter("position").unwrap();
+                let position = match position.value {
+                    ParameterValue::Vec3(v) => v,
+                    _ => {
+                        error!("render: player position is not a vec3");
+                        continue;
+                    }
+                };
+                let rotation = player_component.get_parameter("rotation").unwrap();
+                let rotation = match rotation.value {
+                    ParameterValue::Quaternion(v) => v,
+                    _ => {
+                        error!("render: player rotation is not a quaternion");
+                        continue;
+                    }
+                };
+                let meshes = renderer.meshes.clone();
+                let textures = renderer.textures.clone();
+                if let Some(mesh) = meshes.get("ht2") {
+                    let texture = textures.get("default").unwrap();
+                    let mut mesh = *mesh;
+                    mesh.position = position;
+                    mesh.rotation = rotation;
+
+                    mesh.render(renderer, Some(texture));
+                }
+            }
         }
     }
 }

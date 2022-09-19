@@ -17,6 +17,7 @@ impl Entity {
 
     // SHOULD ONLY BE USED IF YOU ARE __SURE__ THAT THIS ENTITY DOESN'T ALREADY EXIST
     pub unsafe fn new_with_id(name: &str, uid: EntityId) -> Entity {
+        warn!("Creating entity with id: {}", uid);
         Self {
             name: name.to_string(),
             uid,
