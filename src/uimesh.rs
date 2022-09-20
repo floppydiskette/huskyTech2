@@ -1,6 +1,6 @@
 use std::ffi::CString;
 use gfx_maths::*;
-use libsex::bindings::*;
+use glad_gl::gl::*;
 use crate::camera::Camera;
 use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
@@ -53,31 +53,31 @@ impl UiMesh {
             set_shader_if_not_already(renderer, shader_index);
 
             // positions, indices, and uvs
-            glGenVertexArrays(1, &mut vao);
-            glBindVertexArray(vao);
-            glGenBuffers(1, &mut vbo);
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(GL_ARRAY_BUFFER, (vertices.len() * std::mem::size_of::<f32>()) as GLsizeiptr, vertices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            GenVertexArrays(1, &mut vao);
+            BindVertexArray(vao);
+            GenBuffers(1, &mut vbo);
+            BindBuffer(ARRAY_BUFFER, vbo);
+            BufferData(ARRAY_BUFFER, (vertices.len() * std::mem::size_of::<f32>()) as GLsizeiptr, vertices.as_ptr() as *const GLvoid, STATIC_DRAW);
 
             // position attribute
-            let pos = glGetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_pos").unwrap().as_ptr());
-            glVertexAttribPointer(pos as GLuint, 3, GL_FLOAT, GL_FALSE as GLboolean, 0, std::ptr::null());
-            glEnableVertexAttribArray(0);
+            let pos = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_pos").unwrap().as_ptr());
+            VertexAttribPointer(pos as GLuint, 3, FLOAT, FALSE as GLboolean, 0, std::ptr::null());
+            EnableVertexAttribArray(0);
 
             // uvs
-            glGenBuffers(1, &mut uvbo);
-            glBindBuffer(GL_ARRAY_BUFFER, uvbo);
-            glBufferData(GL_ARRAY_BUFFER, (uvs.len() * std::mem::size_of::<f32>()) as GLsizeiptr, uvs.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            GenBuffers(1, &mut uvbo);
+            BindBuffer(ARRAY_BUFFER, uvbo);
+            BufferData(ARRAY_BUFFER, (uvs.len() * std::mem::size_of::<f32>()) as GLsizeiptr, uvs.as_ptr() as *const GLvoid, STATIC_DRAW);
 
             // uv attribute
-            let uv = glGetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_uv").unwrap().as_ptr());
-            glVertexAttribPointer(uv as GLuint, 2, GL_FLOAT, GL_FALSE as GLboolean, 0, std::ptr::null());
-            glEnableVertexAttribArray(1);
+            let uv = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, CString::new("in_uv").unwrap().as_ptr());
+            VertexAttribPointer(uv as GLuint, 2, FLOAT, FALSE as GLboolean, 0, std::ptr::null());
+            EnableVertexAttribArray(1);
 
             // indices
-            glGenBuffers(1, &mut ebo);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, (indices.len() * std::mem::size_of::<u32>()) as GLsizeiptr, indices.as_ptr() as *const GLvoid, GL_STATIC_DRAW);
+            GenBuffers(1, &mut ebo);
+            BindBuffer(ELEMENT_ARRAY_BUFFER, ebo);
+            BufferData(ELEMENT_ARRAY_BUFFER, (indices.len() * std::mem::size_of::<u32>()) as GLsizeiptr, indices.as_ptr() as *const GLvoid, STATIC_DRAW);
 
         }
 
@@ -125,21 +125,21 @@ impl UiMesh {
 
         unsafe {
             // disable culling and depth testing
-            glDisable(GL_CULL_FACE);
-            glDisable(GL_DEPTH_TEST);
+            Disable(CULL_FACE);
+            Disable(DEPTH_TEST);
 
-            glEnableVertexAttribArray(0);
-            glBindVertexArray(master.vao);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, self.texture.unwrap().diffuse_texture);
+            EnableVertexAttribArray(0);
+            BindVertexArray(master.vao);
+            ActiveTexture(TEXTURE0);
+            BindTexture(TEXTURE_2D, self.texture.unwrap().diffuse_texture);
             let texture_c = CString::new("diffuse").unwrap();
-            glUniform1i(glGetUniformLocation(shader.program, texture_c.as_ptr() as *const GLchar), 0);
+            Uniform1i(GetUniformLocation(shader.program, texture_c.as_ptr() as *const GLchar), 0);
             if self.opacity != 1.0 {
                 let opacity_c = CString::new("opacity").unwrap();
-                glUniform1f(glGetUniformLocation(shader.program, opacity_c.as_ptr()), self.opacity);
+                Uniform1f(GetUniformLocation(shader.program, opacity_c.as_ptr()), self.opacity);
             }
             let unlit_c = CString::new("unlit").unwrap();
-            glUniform1i(glGetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 1);
+            Uniform1i(GetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 1);
 
             // transformation time!
             // calculate the model matrix
@@ -148,27 +148,27 @@ impl UiMesh {
 
             // send the mvp matrix to the shader
             let mvp_c = CString::new("u_mvp").unwrap();
-            let mvp_loc = glGetUniformLocation(shader.program, mvp_c.as_ptr());
-            glUniformMatrix4fv(mvp_loc, 1, GL_FALSE as GLboolean, model_matrix.as_ptr());
+            let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
+            UniformMatrix4fv(mvp_loc, 1, FALSE as GLboolean, model_matrix.as_ptr());
 
-            glDrawElements(GL_TRIANGLES, master.num_indices as GLsizei, GL_UNSIGNED_INT, std::ptr::null());
+            DrawElements(TRIANGLES, master.num_indices as GLsizei, UNSIGNED_INT, std::ptr::null());
 
             if self.opacity != 1.0 {
                 let opacity_c = CString::new("opacity").unwrap();
-                glUniform1f(glGetUniformLocation(shader.program, opacity_c.as_ptr()), 1.0);
+                Uniform1f(GetUniformLocation(shader.program, opacity_c.as_ptr()), 1.0);
             }
             let unlit_c = CString::new("unlit").unwrap();
-            glUniform1i(glGetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 0);
+            Uniform1i(GetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 0);
 
             // re-enable culling and depth testing
-            glEnable(GL_CULL_FACE);
-            glEnable(GL_DEPTH_TEST);
+            Enable(CULL_FACE);
+            Enable(DEPTH_TEST);
 
             // print opengl errors
-            let mut error = glGetError();
-            while error != GL_NO_ERROR {
+            let mut error = GetError();
+            while error != NO_ERROR {
                 error!("OpenGL error while rendering uimesh: {}", error);
-                error = glGetError();
+                error = GetError();
             }
         }
     }

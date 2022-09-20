@@ -10,7 +10,7 @@ use gfx_maths::{Quaternion, Vec2, Vec3};
 use kira::manager::AudioManager;
 use kira::manager::backend::cpal::CpalBackend;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
-use libsex::bindings::*;
+use glad_gl::gl::*;
 use crate::animation::Animation;
 use crate::helpers::{gen_rainbow, set_shader_if_not_already};
 use crate::light::Light;
@@ -84,9 +84,10 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
             set_shader_if_not_already(renderer, rainbow_shader);
             let colour = gen_rainbow(time_since_start as f64);
             // get uniform location
+
             let colour_c = CString::new("i_colour").unwrap();
-            let colour_loc = glGetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader].program, colour_c.as_ptr());
-            glUniform4f(colour_loc, colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
+            let colour_loc = GetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader].program, colour_c.as_ptr());
+            Uniform4f(colour_loc, colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
         }
 
 

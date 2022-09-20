@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use gfx_maths::*;
-use crate::{helpers, ht_renderer, Key, keyboard, mouse};
+use crate::{helpers, ht_renderer, keyboard, mouse};
+use crate::keyboard::HTKey;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
 use crate::server::server_player::{DEFAULT_HEIGHT, DEFAULT_MOVESPEED, DEFAULT_RADIUS, DEFAULT_STEPHEIGHT};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
@@ -172,29 +173,29 @@ impl Player {
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
         let speed = self.movement_speed;
-        let speed = 10.0; // uncomment to cheat!
-        if keyboard::check_key_pressed(Key::W) {
+        //let speed = 10.0; // uncomment to cheat!
+        if keyboard::check_key_pressed(HTKey::W) {
             self.wasd[0] = true;
         }
-        if keyboard::check_key_released(Key::W) {
+        if keyboard::check_key_released(HTKey::W) {
             self.wasd[0] = false;
         }
-        if keyboard::check_key_pressed(Key::A) {
+        if keyboard::check_key_pressed(HTKey::A) {
             self.wasd[1] = true;
         }
-        if keyboard::check_key_released(Key::A) {
+        if keyboard::check_key_released(HTKey::A) {
             self.wasd[1] = false;
         }
-        if keyboard::check_key_pressed(Key::S) {
+        if keyboard::check_key_pressed(HTKey::S) {
             self.wasd[2] = true;
         }
-        if keyboard::check_key_released(Key::S) {
+        if keyboard::check_key_released(HTKey::S) {
             self.wasd[2] = false;
         }
-        if keyboard::check_key_pressed(Key::D) {
+        if keyboard::check_key_pressed(HTKey::D) {
             self.wasd[3] = true;
         }
-        if keyboard::check_key_released(Key::D) {
+        if keyboard::check_key_released(HTKey::D) {
             self.wasd[3] = false;
         }
         if self.wasd[0] {
@@ -224,7 +225,7 @@ impl Player {
     }
 
     fn handle_jump(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> bool {
-        if keyboard::check_key_down(Key::Space) {
+        if keyboard::check_key_down(HTKey::Space) {
             return true;
         }
         false
@@ -236,11 +237,11 @@ impl Player {
         let movement = self.handle_keyboard_movement(renderer, jump, delta_time);
 
         // FOR DEBUGGING, REMOVE LATER
-        if keyboard::check_key_released(Key::Comma) {
+        if keyboard::check_key_released(HTKey::Comma) {
             debug!("unlocking mouse");
             renderer.lock_mouse(false);
             self.locked_mouse = false;
-        } else if keyboard::check_key_released(Key::Period) {
+        } else if keyboard::check_key_released(HTKey::Period) {
             debug!("locking mouse");
             renderer.lock_mouse(true);
             self.locked_mouse = true;

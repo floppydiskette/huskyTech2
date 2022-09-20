@@ -6,13 +6,14 @@ extern crate core;
 
 use std::borrow::BorrowMut;
 use std::{process, thread};
+use std::ops::Deref;
 use std::sync::Arc;
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
-use libsex::bindings::*;
+use glad_gl::gl::*;
 use tokio::sync::Mutex;
-use crate::keyboard::{Key, Keyboard};
+use crate::keyboard::{HTKey, Keyboard};
 use crate::renderer::ht_renderer;
 use crate::server::ConnectionClientside;
 use crate::server::lan::ClientLanConnection;
@@ -127,11 +128,6 @@ async fn main() {
 
         debug!("connected to server");
 
-        keyboard::init(&mut renderer);
-        mouse::init(&mut renderer);
-
-        debug!("initialised input");
-
         if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
         //renderer.lock_mouse(true);
@@ -143,11 +139,16 @@ async fn main() {
             let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
             worldmachine.render(&mut renderer);
-            keyboard::tick_keyboard();
-            mouse::tick_mouse();
             last_frame_time = std::time::Instant::now();
             renderer.swap_buffers();
-            if renderer.manage_window() || keyboard::check_key_released(Key::Escape) {
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            keyboard::reset_keyboard_state();
+            mouse::reset_mouse_state();
+            for (_, event) in glfw::flush_messages(renderer.backend.events.lock().unwrap().deref()) {
+                keyboard::tick_keyboard(event.clone());
+                mouse::tick_mouse(event);
+            }
+            if renderer.manage_window() || keyboard::check_key_released(HTKey::Escape) {
                 process::exit(0);
             }
         }

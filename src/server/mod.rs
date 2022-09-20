@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use gfx_maths::*;
 use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use async_recursion::async_recursion;
-use libsex::bindings::XConnectionWatchProc;
 use serde::{Serialize, Deserialize};
 use tokio::net::TcpStream;
 use crate::physics::PhysicsSystem;

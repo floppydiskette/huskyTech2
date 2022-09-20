@@ -535,6 +535,7 @@ impl WorldMachine {
                     // check if we have any messages to process
                     let try_recv = connection.steady_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
+                        drop(connection);
                         self.handle_steady_message(message.clone().packet.unwrap()).await;
                         self.consume_steady_message(message).await;
                     } else if let Err(e) = try_recv {

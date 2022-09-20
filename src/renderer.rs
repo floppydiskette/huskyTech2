@@ -9,16 +9,16 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr::{null, null_mut};
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Receiver;
 use gfx_maths::*;
-use crate::helpers;
+use glad_gl::gl;
+use glad_gl::gl::*;
+use glfw::{Context, Window, WindowEvent};
+use glfw::ffi::GLFWwindow;
 use crate::shaders::*;
 use crate::camera::*;
-#[cfg(feature = "glfw")]
-use libsex::bindings::*;
-#[cfg(feature = "glfw")]
-use libsex::gl::*;
-use crate::helpers::set_shader_if_not_already;
-use crate::keyboard::Key;
+use crate::helpers::{load_string_from_file, set_shader_if_not_already};
 use crate::light::Light;
 use crate::meshes::Mesh;
 use crate::textures::Texture;
@@ -43,7 +43,8 @@ pub enum RenderType {
 #[cfg(feature = "glfw")]
 #[derive(Clone)]
 pub struct GLFWBackend {
-    pub window: *mut GLFWwindow,
+    pub window: Arc<Mutex<Window>>,
+    pub events: Arc<Mutex<Receiver<(f64, WindowEvent)>>>,
     pub active_vbo: Option<GLuint>,
     pub current_shader: Option<usize>,
     pub shaders: Option<Vec<Shader>>,
@@ -99,25 +100,29 @@ impl ht_renderer {
             let backend = {
                 info!("running on linux, using glfw as backend");
                 unsafe {
-                    let result = glfwInit();
-                    if result == 0 {
+                    let result = glfw::init(glfw::FAIL_ON_ERRORS);
+                    if result.is_err() {
                         return Err("glfwInit failed".to_string());
                     }
-                    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR as c_int, 3);
-                    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR as c_int, 3);
-                    glfwWindowHint(GLFW_OPENGL_PROFILE as c_int, GLFW_OPENGL_CORE_PROFILE as c_int);
-                    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT as c_int, TRUE as c_int);
+                    let mut glfw = result.unwrap();
+                    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
+                    glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
+                    glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
 
-                    let window = glfwCreateWindow(window_width as c_int,
-                                                  window_height as c_int,
-                                                  CString::new("huskyTech2").unwrap().as_ptr(),
-                                                  null_mut(), null_mut());
-                    if window.is_null() {
-                        glfwTerminate();
-                        return Err("glfwCreateWindow failed".to_string());
-                    }
-                    glfwMakeContextCurrent(window);
-                    glfwSetInputMode(window, GLFW_STICKY_KEYS as c_int, TRUE as c_int);
+                    let (mut window, events) = glfw.create_window(
+                        window_width,
+                        window_height,
+                        "huskyTech2",
+                        glfw::WindowMode::Windowed)
+                        .expect("Failed to create GLFW window.");
+
+                    window.make_current();
+                    window.set_key_polling(true);
+                    window.set_sticky_keys(true);
+                    window.set_cursor_pos_polling(true);
+                    window.set_mouse_button_polling(true);
+
+                    load(|s| window.get_proc_address(s) as *const _);
 
                     let mut framebuffers = Framebuffers {
                         original: 0,
@@ -293,12 +298,13 @@ impl ht_renderer {
                     }
 
                     GLFWBackend {
-                        window,
+                        window: Arc::new(Mutex::new(window)),
+                        events: Arc::new(Mutex::new(events)),
                         current_shader: Option::None,
                         active_vbo: Option::None,
                         shaders: Option::None,
                         ui_master: Option::None,
-                        framebuffers
+                        framebuffers,
                     }
                 }
             };
@@ -321,9 +327,9 @@ impl ht_renderer {
             #[cfg(feature = "glfw")]
             {
                 if lock {
-                    glfwSetInputMode(self.backend.window, GLFW_CURSOR as c_int, GLFW_CURSOR_DISABLED as c_int);
+                    self.backend.window.lock().unwrap().set_cursor_mode(glfw::CursorMode::Disabled);
                 } else {
-                    glfwSetInputMode(self.backend.window, GLFW_CURSOR as c_int, GLFW_CURSOR_NORMAL as c_int);
+                    self.backend.window.lock().unwrap().set_cursor_mode(glfw::CursorMode::Normal);
                 }
             }
         }
@@ -379,9 +385,8 @@ impl ht_renderer {
     pub fn manage_window(&mut self) -> bool {
         #[cfg(feature = "glfw")]{
             unsafe {
-                glfwPollEvents();
-                if glfwWindowShouldClose(self.backend.window) == 1 {
-                    glfwTerminate();
+                self.backend.window.lock().unwrap().glfw.poll_events();
+                if self.backend.window.lock().unwrap().should_close() {
                     return true;
                 }
             }
@@ -391,8 +396,8 @@ impl ht_renderer {
 
     pub fn load_shader(&mut self, shader_name: &str) -> Result<usize, String> {
         // read the files
-        let vert_source = helpers::load_string_from_file(format!("base/shaders/{}.vert", shader_name)).expect("failed to load vertex shader");
-        let frag_source = helpers::load_string_from_file(format!("base/shaders/{}.frag", shader_name)).expect("failed to load fragment shader");
+        let vert_source = load_string_from_file(format!("base/shaders/{}.vert", shader_name)).expect("failed to load vertex shader");
+        let frag_source = load_string_from_file(format!("base/shaders/{}.frag", shader_name)).expect("failed to load fragment shader");
 
         // convert strings to c strings
         let vert_source_c = CString::new(vert_source).unwrap();
@@ -489,10 +494,10 @@ impl ht_renderer {
         self.setup_pass_two();
         self.setup_pass_three();
         unsafe {
-            glfwSwapBuffers(self.backend.window);
+            self.backend.window.lock().unwrap().swap_buffers();
             let mut width = 0;
             let mut height = 0;
-            glfwGetFramebufferSize(self.backend.window, &mut width, &mut height);
+            (width, height) = self.backend.window.lock().unwrap().get_framebuffer_size();
             self.window_size = Vec2::new(width as f32, height as f32);
         }
         self.setup_pass_one();

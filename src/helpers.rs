@@ -2,11 +2,8 @@ use std::io::Read;
 use std::os::raw::c_int;
 use std::ptr::null_mut;
 use gfx_maths::{Mat4, Quaternion, Vec3};
+use glad_gl::gl::*;
 use crate::renderer::Colour;
-
-#[cfg(target_os = "linux")]
-use libsex::bindings::*;
-use libsex::gl::*;
 use crate::ht_renderer;
 
 pub fn set_shader_if_not_already(renderer: &mut ht_renderer, shader_index: usize) {

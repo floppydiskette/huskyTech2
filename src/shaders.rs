@@ -1,4 +1,4 @@
-use libsex::bindings::*;
+use glad_gl::gl::*;
 
 #[derive(Clone)]
 pub struct Shader {

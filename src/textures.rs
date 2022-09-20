@@ -1,6 +1,5 @@
 use gfx_maths::Vec2;
-use libsex::bindings::*;
-use libsex::gl::*;
+use glad_gl::gl::*;
 use crate::ht_renderer;
 
 #[cfg(feature = "glfw")]
@@ -76,15 +75,15 @@ impl Texture {
 
             // diffuse texture
             unsafe {
-                BindTexture(GL_TEXTURE_2D, diffuse_texture);
+                BindTexture(TEXTURE_2D, diffuse_texture);
                 // IF YOU'RE GETTING A SEGFAULT HERE, MAKE SURE THE TEXTURE HAS AN ALPHA CHANNEL
-                TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
+                TexImage2D(TEXTURE_2D, 0, RGBA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
 
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
-                GenerateMipmap(GL_TEXTURE_2D);
+                TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                GenerateMipmap(TEXTURE_2D);
 
                 let normal_data = load_image(normal_file_name.as_str()).map_err(|e| TextureError::LoadingError(e.clone()))?;
                 let metallic_data = load_image(metallic_file_name.as_str()).map_err(|e| TextureError::LoadingError(e.clone()))?;
@@ -96,38 +95,38 @@ impl Texture {
 
                 // normal texture
                 unsafe {
-                    BindTexture(GL_TEXTURE_2D, normal_texture);
-                    TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, normal_data.dimensions.0 as i32, normal_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, normal_data.data.as_ptr() as *const GLvoid);
+                    BindTexture(TEXTURE_2D, normal_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, normal_data.dimensions.0 as i32, normal_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, normal_data.data.as_ptr() as *const GLvoid);
 
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
-                    GenerateMipmap(GL_TEXTURE_2D);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    GenerateMipmap(TEXTURE_2D);
                 }
 
                 // metallic texture
                 unsafe {
-                    BindTexture(GL_TEXTURE_2D, metallic_texture);
-                    TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, metallic_data.dimensions.0 as i32, metallic_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, metallic_data.data.as_ptr() as *const GLvoid);
+                    BindTexture(TEXTURE_2D, metallic_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, metallic_data.dimensions.0 as i32, metallic_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, metallic_data.data.as_ptr() as *const GLvoid);
 
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
-                    GenerateMipmap(GL_TEXTURE_2D);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    GenerateMipmap(TEXTURE_2D);
                 }
 
                 // roughness texture
                 unsafe {
-                    BindTexture(GL_TEXTURE_2D, roughness_texture);
-                    TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, roughness_data.dimensions.0 as i32, roughness_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, roughness_data.data.as_ptr() as *const GLvoid);
+                    BindTexture(TEXTURE_2D, roughness_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, roughness_data.dimensions.0 as i32, roughness_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, roughness_data.data.as_ptr() as *const GLvoid);
 
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
-                    TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
-                    GenerateMipmap(GL_TEXTURE_2D);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    GenerateMipmap(TEXTURE_2D);
                 }
             }
 
@@ -170,14 +169,14 @@ impl UiTexture {
 
             // diffuse texture
             unsafe {
-                BindTexture(GL_TEXTURE_2D, diffuse_texture);
-                TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, GL_RGBA, GL_UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
+                BindTexture(TEXTURE_2D, diffuse_texture);
+                TexImage2D(TEXTURE_2D, 0, RGBA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
 
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR as i32);
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR as i32);
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT as i32);
-                TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT as i32);
-                GenerateMipmap(GL_TEXTURE_2D);
+                TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                GenerateMipmap(TEXTURE_2D);
             }
 
             // todo: for now we're only using diffuse textures
