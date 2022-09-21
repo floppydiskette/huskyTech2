@@ -1,10 +1,5 @@
-use std::collections::HashMap;
-use std::os::raw::c_int;
 use std::sync::{Arc, Mutex};
-use glad_gl::gl::*;
-use glfw::{Action, Window, WindowEvent};
-use glfw::WindowEvent::Key;
-use crate::ht_renderer;
+use glfw::{Action, WindowEvent};
 use crate::optimisations::keyboardmap::KeyboardMap;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

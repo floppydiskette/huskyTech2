@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use gfx_maths::*;
 use crate::worldmachine::components::*;
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::EntityId;

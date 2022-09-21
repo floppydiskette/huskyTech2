@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
-use std::collections::{HashMap, VecDeque};
+use halfbrown::HashMap;
+use std::collections::{VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 use std::thread;

@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::borrow::{Borrow, BorrowMut};
-use std::collections::{HashMap, VecDeque};
+use halfbrown::HashMap;
+use std::collections::{VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Instant;
@@ -16,7 +17,6 @@ use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacket
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
-use crate::worldmachine::entities::new_ht2_entity;
 use crate::worldmachine::MapLoadError::FolderNotFound;
 use crate::worldmachine::player::{Player, PlayerContainer};
 

@@ -1,5 +1,6 @@
 use std::cell::UnsafeCell;
-use std::collections::{HashMap, VecDeque};
+use halfbrown::HashMap;
+use std::collections::{VecDeque};
 use std::fmt::format;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

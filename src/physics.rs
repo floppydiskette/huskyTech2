@@ -1,9 +1,9 @@
 use std::cell::UnsafeCell;
-use std::collections::HashMap;
+use halfbrown::HashMap;
 use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU64, Ordering};
-use gfx_maths::{Quaternion, Vec3};
+use std::sync::atomic::{Ordering};
+use gfx_maths::{Vec3};
 use physx_sys::*;
 
 pub const GRAVITY: f32 = -9.81;

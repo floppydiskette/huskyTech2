@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use halfbrown::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use gfx_maths::{Quaternion, Vec2, Vec3};
