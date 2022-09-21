@@ -269,7 +269,7 @@ impl WorldMachine {
         self.world.entities.remove(index);
     }
 
-    pub fn send_lights_to_renderer(&self) -> Option<Vec<crate::light::Light>> {
+    pub fn send_lights_to_renderer(&mut self) -> Option<Vec<crate::light::Light>> {
         if !self.lights_changed {
             return Option::None;
         }
@@ -331,6 +331,7 @@ impl WorldMachine {
                 });
             }
         }
+        self.lights_changed = false;
         Some(lights)
     }
 
@@ -888,6 +889,9 @@ impl WorldMachine {
                             warn!("render: failed to load terrain: {:?}", res);
                         }
                          */
+                    }
+                    x if x == COMPONENT_TYPE_LIGHT.clone() => {
+                        self.lights_changed = true;
                     }
                     _ => {}
                 }

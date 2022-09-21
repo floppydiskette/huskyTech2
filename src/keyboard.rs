@@ -5,6 +5,7 @@ use glad_gl::gl::*;
 use glfw::{Action, Window, WindowEvent};
 use glfw::WindowEvent::Key;
 use crate::ht_renderer;
+use crate::optimisations::keyboardmap::KeyboardMap;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum HTKey {
@@ -92,13 +93,13 @@ pub enum KeyState {
 }
 
 pub struct Keyboard {
-    pub key_state: HashMap<HTKey, KeyState>,
+    pub key_state: KeyboardMap,
 }
 
 // todo! maybe there's a better way to do this
 impl Default for Keyboard {
     fn default() -> Self {
-        let mut key_state = HashMap::new();
+        let mut key_state = KeyboardMap::default();
         key_state.insert(HTKey::W, KeyState::TakenCareOf);
         key_state.insert(HTKey::A, KeyState::TakenCareOf);
         key_state.insert(HTKey::S, KeyState::TakenCareOf);
@@ -263,9 +264,7 @@ pub fn glfw_key_action_to_keystate(action: Action) -> KeyState {
 
 pub fn reset_keyboard_state() {
     let mut keyboard = KEYBOARD.lock().unwrap();
-    for (_, state) in keyboard.key_state.iter_mut() {
-        *state = KeyState::TakenCareOf;
-    }
+    keyboard.key_state.set_all(KeyState::TakenCareOf);
 }
 
 pub fn tick_keyboard(event: WindowEvent) {
@@ -280,7 +279,7 @@ pub fn tick_keyboard(event: WindowEvent) {
 
 pub fn check_key_pressed(key: HTKey) -> bool {
     let keyboard = KEYBOARD.lock().unwrap();
-    if let Some(state) = keyboard.key_state.get(&key) {
+    if let Some(state) = keyboard.key_state.get(key) {
         if *state == KeyState::Pressed {
             return true;
         }
@@ -290,7 +289,7 @@ pub fn check_key_pressed(key: HTKey) -> bool {
 
 pub fn check_key_released(key: HTKey) -> bool {
     let keyboard = KEYBOARD.lock().unwrap();
-    if let Some(state) = keyboard.key_state.get(&key) {
+    if let Some(state) = keyboard.key_state.get(key) {
         if *state == KeyState::Released {
             return true;
         }
@@ -300,7 +299,7 @@ pub fn check_key_released(key: HTKey) -> bool {
 
 pub fn check_key_repeated(key: HTKey) -> bool {
     let keyboard = KEYBOARD.lock().unwrap();
-    if let Some(state) = keyboard.key_state.get(&key) {
+    if let Some(state) = keyboard.key_state.get(key) {
         if *state == KeyState::Repeated {
             return true;
         }
@@ -310,7 +309,7 @@ pub fn check_key_repeated(key: HTKey) -> bool {
 
 pub fn check_key_down(key: HTKey) -> bool {
     let keyboard = KEYBOARD.lock().unwrap();
-    if let Some(state) = keyboard.key_state.get(&key) {
+    if let Some(state) = keyboard.key_state.get(key) {
         if *state == KeyState::Pressed || *state == KeyState::Repeated {
             return true;
         }

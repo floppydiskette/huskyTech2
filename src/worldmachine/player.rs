@@ -57,6 +57,7 @@ pub struct Player {
     jump: bool,
     head_rotation_changed: bool,
     locked_mouse: bool,
+    first_run: bool,
 }
 
 impl Default for Player {
@@ -78,6 +79,7 @@ impl Default for Player {
             jump: false,
             head_rotation_changed: false,
             locked_mouse: true,
+            first_run: true,
         }
     }
 }
@@ -232,6 +234,12 @@ impl Player {
     }
 
     pub fn handle_input(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> Option<Vec<ClientUpdate>> {
+        if self.first_run {
+            self.first_run = false;
+            self.locked_mouse = true;
+            renderer.lock_mouse(true);
+        }
+
         let jump = self.handle_jump(renderer, delta_time);
         let look = self.handle_mouse_movement(renderer, delta_time);
         let movement = self.handle_keyboard_movement(renderer, jump, delta_time);

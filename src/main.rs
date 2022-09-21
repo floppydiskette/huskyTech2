@@ -43,6 +43,7 @@ pub mod physics;
 pub mod server;
 pub mod keyboard;
 pub mod mouse;
+pub mod optimisations;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -130,7 +131,6 @@ async fn main() {
 
         if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
-        //renderer.lock_mouse(true);
         renderer.camera.set_fov(120.0);
 
         let mut last_frame_time = std::time::Instant::now();
