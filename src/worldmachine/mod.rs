@@ -18,7 +18,7 @@ use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::MapLoadError::FolderNotFound;
-use crate::worldmachine::player::{Player, PlayerContainer};
+use crate::worldmachine::player::{MovementInfo, Player, PlayerContainer};
 
 pub mod ecs;
 pub mod components;
@@ -54,10 +54,10 @@ pub enum WorldUpdate {
 #[derive(Clone, Debug)]
 pub enum ClientUpdate {
     // internal
-    IDisplaced(Vec3),
+    IDisplaced((Vec3, Option<MovementInfo>)),
     ILooked(Quaternion),
     // external
-    IMoved(Vec3, Option<Vec3>, Quaternion, Quaternion, bool), // position, displacement vector, rotation, head rotation, jumped
+    IMoved(Vec3, Option<Vec3>, Quaternion, Quaternion, Option<MovementInfo>), // position, displacement vector, rotation, head rotation, extra movement info
     IJumped,
 }
 
@@ -686,19 +686,25 @@ impl WorldMachine {
         let mut updates = Vec::new();
         let mut movement_updates = Vec::new();
         let mut jumped_real = false;
+        let mut movement_info = None;
         for client_update in client_updates {
             match client_update {
                 ClientUpdate::IDisplaced(displacement_vector) => {
                     let position = self.player.as_mut().unwrap().player.get_position();
                     let rotation = self.player.as_mut().unwrap().player.get_rotation();
                     let head_rotation = self.player.as_mut().unwrap().player.get_head_rotation();
-                    movement_updates.push(ClientUpdate::IMoved(position, Some(*displacement_vector), rotation, head_rotation, false));
+                    if movement_info.is_none() {
+                        if let Some(movement_info_some) = displacement_vector.1 {
+                            movement_info = Some(movement_info_some);
+                        }
+                    }
+                    movement_updates.push(ClientUpdate::IMoved(position, Some(displacement_vector.0), rotation, head_rotation, movement_info));
                 }
                 ClientUpdate::ILooked(look_quat) => {
                     let position = self.player.as_mut().unwrap().player.get_position();
                     let rotation = self.player.as_mut().unwrap().player.get_rotation();
                     let head_rotation = self.player.as_mut().unwrap().player.get_head_rotation();
-                    movement_updates.push(ClientUpdate::IMoved(position, None, rotation, head_rotation, false));}
+                    movement_updates.push(ClientUpdate::IMoved(position, None, rotation, head_rotation, movement_info));}
                 ClientUpdate::IJumped => {
                     jumped_real = true;
                 }
@@ -719,7 +725,7 @@ impl WorldMachine {
             // if we have a displacement vector, we need to add it to the last movement update
             if let Some(displacement_vector) = last_displacement_vector {
                 if let ClientUpdate::IMoved(position, _, rotation, head_rotation, jumped) = latest_movement_update {
-                    let new = ClientUpdate::IMoved(position, Some(displacement_vector), rotation, head_rotation, jumped_real);
+                    let new = ClientUpdate::IMoved(position, Some(displacement_vector), rotation, head_rotation, movement_info);
                     latest_movement_update = new;
                 }
             }
@@ -733,7 +739,7 @@ impl WorldMachine {
                 ClientUpdate::IMoved(position, displacement_vector, rotation, head_rotation, jumped) => {
                     let uuid = self.player.as_ref().unwrap().player.uuid.clone();
                     let displacement_vector = displacement_vector.unwrap_or(Vec3::new(0.0, 0.0, 0.0));
-                    let packet = FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped);
+                    let packet = FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, movement_info);
                     self.send_fast_message(FastPacketData {
                         packet: Some(packet),
                     }).await;

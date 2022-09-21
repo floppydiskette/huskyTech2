@@ -153,7 +153,7 @@ impl Texture {
 impl UiTexture {
     pub fn new_from_name(name: String) -> Result<UiTexture, String> {
         let base_file_name = format!("base/textures/ui/{}", name); // substance painter file names
-        let diffuse_file_name = base_file_name.clone() + ".png";
+        let diffuse_file_name = base_file_name + ".png";
 
         // load the files
         let diffuse_data = load_image(diffuse_file_name.as_str())?;
@@ -191,7 +191,8 @@ impl UiTexture {
 }
 
 fn load_image(file_name: &str) -> Result<Image, String> { // todo: use dds
-    let img = image::open(file_name).map_err(|e| format!("Failed to load image: {}", e))?;
+    let img_data = std::io::BufReader::new(std::fs::File::open(file_name).map_err(|e| format!("Failed to load image: {}", e))?);
+    let img = image::io::Reader::new(img_data).with_guessed_format().map_err(|e| format!("Failed to load image: {}", e))?.decode().map_err(|e| format!("Failed to load image: {}", e))?;
     let rgba = img.into_rgba8();
     let dimensions = rgba.dimensions();
     let data = rgba.to_vec();

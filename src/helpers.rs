@@ -71,3 +71,7 @@ pub fn clamp_magnitude(vector: Vec3, max_magnitude: f32) -> Vec3 {
         vector
     }
 }
+
+pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}

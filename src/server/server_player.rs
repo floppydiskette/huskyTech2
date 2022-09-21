@@ -5,8 +5,10 @@ use crate::server::Server;
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::ParameterValue;
+use crate::worldmachine::player::MovementInfo;
 
 pub const DEFAULT_MOVESPEED: f32 = 0.2;
+pub const DEFAULT_SPRINTSPEED: f32 = 0.6;
 pub const DEFAULT_RADIUS: f32 = 0.5;
 pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
@@ -71,8 +73,14 @@ impl ServerPlayer {
     }
 
     /// attempts to move the player to the given position, returning true if the move was successful, or false if the move was too fast.
-    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, jumped: bool, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) -> bool {
+    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, movement_info: MovementInfo, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) -> bool {
         // TODO!! IMPORTANT!! remember to check that the player is not trying to move vertically, or through a wall! displacement_vector should not contain a y value, and the new_position should be checked against the world to make sure it is not inside a wall.
+
+        if movement_info.sprinting {
+            self.movement_speed = DEFAULT_SPRINTSPEED;
+        } else {
+            self.movement_speed = DEFAULT_MOVESPEED;
+        }
 
         let mut displacement_vector = displacement_vector;
         displacement_vector.y = 0.0;
@@ -80,7 +88,7 @@ impl ServerPlayer {
 
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, jumped, false, delta);
+        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, false, delta);
         self.last_move_call = current_time;
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();

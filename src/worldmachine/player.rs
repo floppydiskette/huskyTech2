@@ -1,12 +1,17 @@
 use std::collections::{BTreeMap, VecDeque};
 use gfx_maths::*;
+use serde::{Deserialize, Serialize};
 use crate::{helpers, ht_renderer, keyboard, mouse};
+use crate::helpers::lerp;
 use crate::keyboard::HTKey;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
-use crate::server::server_player::{DEFAULT_HEIGHT, DEFAULT_MOVESPEED, DEFAULT_RADIUS, DEFAULT_STEPHEIGHT};
+use crate::server::server_player::{DEFAULT_HEIGHT, DEFAULT_MOVESPEED, DEFAULT_RADIUS, DEFAULT_SPRINTSPEED, DEFAULT_STEPHEIGHT};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::{ClientUpdate, EntityId, WorldMachine};
+
+pub const DEFAULT_FOV: f32 = 120.0;
+pub const SPRINT_FOV: f32 = 140.0;
 
 pub struct PlayerComponent {}
 
@@ -49,6 +54,7 @@ pub struct Player {
     pitch: f64,
     yaw: f64,
     pub scale: Vec3,
+    sprinting: bool,
     last_mouse_pos: Option<Vec2>,
     physics_controller: Option<PhysicsCharacterController>,
     movement_speed: f32,
@@ -71,6 +77,7 @@ impl Default for Player {
             pitch: 0.0,
             yaw: 0.0,
             scale: Vec3::new(1.0, 1.0, 1.0),
+            sprinting: false,
             last_mouse_pos: None,
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
@@ -82,6 +89,12 @@ impl Default for Player {
             first_run: true,
         }
     }
+}
+
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct MovementInfo {
+    pub jumped: bool,
+    pub sprinting: bool,
 }
 
 impl Player {
@@ -103,6 +116,7 @@ impl Player {
         if !self.locked_mouse {
             return None;
         }
+
         let mouse_pos = mouse::get_mouse_pos();
 
         if self.last_mouse_pos.is_none() {
@@ -167,15 +181,18 @@ impl Player {
         }
     }
 
-    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool, delta_time: f32) -> Option<Vec3> {
+    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool, delta_time: f32) -> Option<(Vec3, MovementInfo)> {
         let mut movement = Vec3::new(0.0, 0.0, 0.0);
         let camera = &mut renderer.camera;
         let camera_rotation = camera.get_rotation();
         let camera_forward = camera.get_forward_no_pitch();
         let camera_right = camera.get_right();
         let camera_up = camera.get_up();
-        let speed = self.movement_speed;
+        let mut speed = self.movement_speed;
         //let speed = 10.0; // uncomment to cheat!
+
+        let mut info = MovementInfo::default();
+
         if keyboard::check_key_pressed(HTKey::W) {
             self.wasd[0] = true;
         }
@@ -200,6 +217,12 @@ impl Player {
         if keyboard::check_key_released(HTKey::D) {
             self.wasd[3] = false;
         }
+        if keyboard::check_key_down(HTKey::LeftShift) {
+            self.sprinting = true;
+        }
+        if keyboard::check_key_released(HTKey::LeftShift) {
+            self.sprinting = false;
+        }
         if self.wasd[0] {
             movement += camera_forward;
         }
@@ -212,15 +235,29 @@ impl Player {
         if self.wasd[3] {
             movement -= camera_right;
         }
-        movement.y = 0.0;
+        if self.sprinting {
+            info.sprinting = false;
+            speed = DEFAULT_SPRINTSPEED;
+        } else {
+            info.sprinting = false;
+        }
         movement = helpers::clamp_magnitude(movement, 1.0);
+
+        if self.sprinting && movement.magnitude() > 0.0 {
+            camera.set_fov(lerp(camera.get_fov(), DEFAULT_FOV + 10.0, 0.1));
+        } else {
+            camera.set_fov(lerp(camera.get_fov(), DEFAULT_FOV, 0.1));
+        }
+
         movement *= speed;
+
+        movement.y = 0.0;
         //let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(movement, jump, false, delta_time);
         self.last_move_call = std::time::Instant::now();
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
-            Some(movement)
+            Some((movement, info))
         } else {
             None
         }
@@ -259,16 +296,20 @@ impl Player {
         if jump {
             updates.push(ClientUpdate::IJumped);
             if let Some(movement) = movement {
-                updates.push(ClientUpdate::IDisplaced(movement)); // using displaced as the returned value is a displacement vector for the physics engine
+                let mut new_movement = movement.1;
+                new_movement.jumped = true;
+                updates.push(ClientUpdate::IDisplaced((movement.0, Some(new_movement)))); // using displaced as the returned value is a displacement vector for the physics engine
             } else {
-                updates.push(ClientUpdate::IDisplaced(Vec3::zero()));
+                updates.push(ClientUpdate::IDisplaced((Vec3::zero(), None)));
             }
         }
         if let Some(look) = look {
             updates.push(ClientUpdate::ILooked(look));
         }
         if let Some(movement) = movement {
-            updates.push(ClientUpdate::IDisplaced(movement)); // using displaced as the returned value is a displacement vector for the physics engine
+            let mut new_movement = movement.1;
+            new_movement.jumped = jump;
+            updates.push(ClientUpdate::IDisplaced((movement.0, Some(movement.1)))); // using displaced as the returned value is a displacement vector for the physics engine
         }
 
         if updates.is_empty() {

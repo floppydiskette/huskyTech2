@@ -17,7 +17,7 @@ use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::{ComponentType, Entity, ParameterValue};
-use crate::worldmachine::player::{PlayerComponent, PlayerContainer};
+use crate::worldmachine::player::{MovementInfo, PlayerComponent, PlayerContainer};
 
 pub mod connections;
 pub mod server_player;
@@ -45,8 +45,8 @@ pub enum FastPacket {
     ChangeScale(EntityId, Vec3),
     PlayerMoved(EntityId, Vec3, Quaternion, Quaternion),
     EntitySetParameter(EntityId, ComponentType, String, ParameterValue),
-    PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion, bool),
-    // connection uuid, position, displacement_vector, rotation, head rotation, jumped
+    PlayerMove(ConnectionUUID, Vec3, Vec3, Quaternion, Quaternion, Option<MovementInfo>),
+    // connection uuid, position, displacement_vector, rotation, head rotation, movement info
     PlayerJump(ConnectionUUID),
     PlayerFuckYouMoveHere(Vec3),
     // connection uuid, position,
@@ -520,13 +520,13 @@ impl Server {
     }
 
     async fn player_move(&self, connection: Connection, packet: FastPacket) {
-        if let FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, jumped) = packet {
+        if let FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, movement_info) = packet {
             let mut worldmachine = self.worldmachine.clone();
             let mut worldmachine = worldmachine.lock().await;
             let mut players = worldmachine.players.clone();
             let mut players = players.as_mut().unwrap().lock().await;
             let player = players.get_mut(&uuid).unwrap();
-            let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, jumped, player.entity_id, &mut worldmachine).await;
+            let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, movement_info.unwrap_or_default(), player.entity_id, &mut worldmachine).await;
             if success {
             } else {
                 let connection = connection.clone();

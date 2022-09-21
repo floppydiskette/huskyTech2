@@ -13,8 +13,8 @@ use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, S
 use crate::server::connections::SteadyMessageQueue;
 
 pub const FAST_QUEUE_LIMIT: usize = 4;
-pub const FAKE_LAG: bool = false;
-pub const FAKE_LAG_TIME: u64 = 100;
+pub const FAKE_LAG: bool = true;
+pub const FAKE_LAG_TIME: u64 = 10;
 
 #[derive(Default, Debug)]
 pub struct FastUpdateQueue<T> {
@@ -410,15 +410,9 @@ impl ClientLanConnection {
         let packet = ConnectionHandshakePacket::JoinRequest;
         packet.serialize(&mut serialiser).unwrap();
         let data = serialiser.into_inner();
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
         stream.write_all(&data).await.ok()?;
         debug!("sent join request");
         let mut buffer = [0; 2048];
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
         let n = stream.read(&mut buffer).await.ok()?;
         let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
         let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
@@ -444,17 +438,11 @@ impl ClientLanConnection {
             packet.serialize(&mut serialiser).unwrap();
             let data = serialiser.into_inner();
             debug!("told the server we're ready to receive udp");
-            if FAKE_LAG {
-                tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-            }
             socket.send(&data.clone()).await.ok()?;
 
             // loop until we receive the YoureReady packet
             loop {
                 let mut buffer = [0; 2048];
-                if FAKE_LAG {
-                    tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-                }
                 let n = stream.read(&mut buffer).await.ok()?;
                 let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
                 let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
@@ -478,16 +466,10 @@ impl ClientLanConnection {
     }
 
     async fn send_steady_update(&self, data: &[u8]) -> std::io::Result<()> {
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
         self.steady_update.lock().await.write_all(data).await
     }
 
     async fn attempt_receive_steady_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
         let attempt = self.steady_update.lock().await.try_read(data);
         if attempt.is_err() {
             None
@@ -497,16 +479,10 @@ impl ClientLanConnection {
     }
 
     async fn send_fast_update(&self, data: &[u8]) -> std::io::Result<usize> {
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
         self.fast_update.send(data).await
     }
 
     async fn block_receive_fast_update(&self, data: &mut [u8]) -> std::io::Result<usize> {
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
         self.fast_update.recv(data).await
     }
 

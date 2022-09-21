@@ -17,6 +17,7 @@ use crate::keyboard::{HTKey, Keyboard};
 use crate::renderer::ht_renderer;
 use crate::server::ConnectionClientside;
 use crate::server::lan::ClientLanConnection;
+use crate::worldmachine::player::DEFAULT_FOV;
 
 pub trait Thingy {
     fn get_x(&self) -> i32;
@@ -44,6 +45,7 @@ pub mod server;
 pub mod keyboard;
 pub mod mouse;
 pub mod optimisations;
+pub mod skeletal_animation;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -131,7 +133,7 @@ async fn main() {
 
         if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
 
-        renderer.camera.set_fov(120.0);
+        renderer.camera.set_fov(DEFAULT_FOV);
 
         let mut last_frame_time = std::time::Instant::now();
         loop {
