@@ -23,13 +23,13 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     renderer.load_texture_if_not_already_loaded("ht2").expect("failed to load ht2-mesh texture");
     renderer.load_mesh_if_not_already_loaded("ht2").expect("failed to load ht2 mesh");
 
-    let mut mesh = *renderer.meshes.get("ht2").expect("failed to get ht2 mesh");
-    let mut texture = *renderer.textures.get("ht2").expect("failed to get ht2-mesh texture");
+    let mut mesh = renderer.meshes.get("ht2").expect("failed to get ht2 mesh").clone();
+    let mut texture = renderer.textures.get("ht2").expect("failed to get ht2-mesh texture").clone();
 
-    let ui_master = renderer.backend.ui_master.unwrap();
-    let basic_shader = *renderer.shaders.get("gbuffer").unwrap();
-    let rainbow_shader = *renderer.shaders.get("rainbow").unwrap();
-    let unlit_shader = *renderer.shaders.get("unlit").unwrap();
+    let ui_master = renderer.backend.ui_master.unwrap().clone();
+    let basic_shader = renderer.shaders.get("gbuffer").unwrap().clone();
+    let rainbow_shader = renderer.shaders.get("rainbow").unwrap().clone();
+    let unlit_shader = renderer.shaders.get("unlit").unwrap().clone();
     // load poweredby uimesh
     let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
     // load developedby uimesh
@@ -46,15 +46,17 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         intensity: 1000.0
     };
 
-    let poweredby_width = renderer.window_size.y / 2.0;
+    let window_size = renderer.window_size.clone();
+
+    let poweredby_width = window_size.y / 2.0;
     let poweredby_height = poweredby_width / 2.0;
     let poweredby_x = 15.0;
-    let poweredby_y = renderer.window_size.y - poweredby_height - 15.0;
+    let poweredby_y = window_size.y - poweredby_height - 15.0;
     ui_poweredby.position = Vec2::new(poweredby_x, poweredby_y);
     ui_poweredby.scale = Vec2::new(poweredby_width, poweredby_height);
     ui_poweredby.opacity = 0.0;
 
-    ui_developedby.scale = renderer.window_size;
+    ui_developedby.scale = window_size;
 
     let mut sunlust_sfx = StaticSoundData::from_file("base/snd/sunlust.wav", StaticSoundSettings::default()).expect("failed to load sunlust.wav");
 
@@ -81,12 +83,12 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set colour of mesh
         #[cfg(feature = "glfw")]
         unsafe {
-            set_shader_if_not_already(renderer, rainbow_shader);
+            set_shader_if_not_already(renderer, rainbow_shader.clone());
             let colour = gen_rainbow(time_since_start as f64);
             // get uniform location
 
             let colour_c = CString::new("i_colour").unwrap();
-            let colour_loc = GetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader].program, colour_c.as_ptr());
+            let colour_loc = GetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader.clone()].program, colour_c.as_ptr());
             Uniform4f(colour_loc, colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
         }
 
@@ -96,7 +98,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
         // set the position of the mesh
         mesh.position = point;
         // draw the mesh
-        mesh.render_basic_lines(renderer, rainbow_shader);
+        mesh.render_basic_lines(renderer, rainbow_shader.clone());
         // swap buffers
         renderer.swap_buffers();
 

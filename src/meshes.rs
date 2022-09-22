@@ -1,14 +1,17 @@
 use std::ffi::CString;
 use std::mem;
+use std::ops::Index;
 use std::ptr::null;
+use std::time::Instant;
 use gfx_maths::*;
 use glad_gl::gl::*;
 use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
 use crate::renderer::MAX_LIGHTS;
+use crate::skeletal_animation::SkeletalAnimations;
 use crate::textures::Texture;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Mesh {
     pub position: Vec3,
     pub rotation: Quaternion,
@@ -19,6 +22,8 @@ pub struct Mesh {
     pub num_vertices: usize,
     pub num_indices: usize,
     pub uvbo: GLuint,
+    pub animations: Option<SkeletalAnimations>,
+    pub animation_delta: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -52,10 +57,25 @@ impl Mesh {
         // get the mesh
         let mesh = document.meshes().find(|m| m.name() == Some(mesh_name)).ok_or(MeshError::MeshNameNotFound)?;
 
+        let skin = document.skins().next();
+
+        let mut animations = None;
+
+        let mut shader_index = shader_index;
+
+        if let Some(skin) = skin {
+            animations = Some(SkeletalAnimations::load_skeleton_stuff(&skin, &mesh, document.animations(), &buffers).expect("Failed to load skeleton stuff"));
+
+            let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
+            shader_index = gbuffer_shader;
+        }
+
         // for each primitive in the mesh
         let mut vertices_array = Vec::new();
         let mut indices_array = Vec::new();
         let mut uvs_array = Vec::new();
+        let mut joint_array = Vec::new();
+        let mut weight_array = Vec::new();
         for primitive in mesh.primitives() {
             // get the vertex positions
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -79,6 +99,21 @@ impl Mesh {
 
             // add the uvs (with each grouping of two f32s as two separate f32s)
             uvs_array.extend(tex_coords.iter().flat_map(|v| vec![v[0], v[1]]));
+
+            // get the bone ids
+
+            if let Some(animations) = animations.clone() {
+                let joints = reader.read_joints(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::Source))?;
+                let joints = joints.into_u16();
+                let joints = joints.collect::<Vec<_>>();
+
+                let weights = reader.read_weights(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::Source))?;
+                let weights = weights.into_f32();
+                let weights = weights.collect::<Vec<_>>();
+
+                joint_array.extend(joints.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
+                weight_array.extend(weights.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
+            }
         }
 
         // get the u32 data from the mesh
@@ -86,6 +121,8 @@ impl Mesh {
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
         let mut uvbo= 0 as GLuint;
+        let mut joint_bo = 0 as GLuint;
+        let mut weight_bo = 0 as GLuint;
         unsafe {
             // set the shader program
             set_shader_if_not_already(renderer, shader_index);
@@ -111,6 +148,26 @@ impl Mesh {
             VertexAttribPointer(uv as GLuint, 2, FLOAT, FALSE as GLboolean, 0, null());
             EnableVertexAttribArray(1);
 
+            if animations.is_some() {
+                // joint array
+                GenBuffers(1, &mut joint_bo);
+                BindBuffer(ARRAY_BUFFER, joint_bo);
+                BufferData(ARRAY_BUFFER, (joint_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, joint_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+                let in_joint_c = CString::new("a_joint").unwrap();
+                let joint = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_joint_c.as_ptr());
+                VertexAttribPointer(joint as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
+                EnableVertexAttribArray(5);
+
+                // weight array
+                GenBuffers(1, &mut weight_bo);
+                BindBuffer(ARRAY_BUFFER, weight_bo);
+                BufferData(ARRAY_BUFFER, (weight_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, weight_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+                let in_weight_c = CString::new("a_weight").unwrap();
+                let weight = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_weight_c.as_ptr());
+                VertexAttribPointer(weight as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
+                EnableVertexAttribArray(6);
+            }
+
 
             // now the indices
             GenBuffers(1, &mut ebo);
@@ -128,19 +185,24 @@ impl Mesh {
             uvbo,
             num_vertices: indices_array.len() as usize,
             num_indices: indices_array.len() as usize,
+            animations,
+            animation_delta: Some(Instant::now()),
         })
     }
 
-    pub fn render(&self, renderer: &mut ht_renderer, texture: Option<&Texture>) {
+    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>) {
         // load the shader
         let gbuffer_shader = *renderer.shaders.get("gbuffer").unwrap();
         set_shader_if_not_already(renderer, gbuffer_shader);
-        let shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
+        let mut shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
 
             EnableVertexAttribArray(0);
             BindVertexArray(self.vao);
             if let Some(texture) = texture {
+                let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
+                set_shader_if_not_already(renderer, gbuffer_shader);
+                shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
                 // send the material struct to the shader
                 let material = texture.material;
                 let diffuse_c = CString::new("diffuse").unwrap();
@@ -161,6 +223,28 @@ impl Mesh {
                 BindTexture(TEXTURE_2D, material.normal_texture);
                 Uniform1i(material_normal, 2);
 
+            }
+
+            if let Some(animations) = self.animations.as_mut() {
+                let animation = animations.animations.get("ArmatureAction");
+                let mut animation = animation.unwrap().clone();
+                let current_time = Instant::now();
+                let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
+
+                animation.current_frame = ((delta * 30.0) % animation.animation.len() as f32) as usize;
+
+                debug!("frame: {}", animation.current_frame);
+                debug!("delta: {}", delta);
+
+                // fill bone matrice uniform
+                for (i, transform) in animation.get_joint_matrices(animations).iter().enumerate() {
+                    let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
+                    let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
+                    UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
+                }
+                let care_about_animation_c = CString::new("care_about_animation").unwrap();
+                let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+                Uniform1i(care_about_animation_loc, 1);
             }
 
             // transformation time!
@@ -192,6 +276,10 @@ impl Mesh {
                         renderer.camera.get_position().z*-1.0);
 
             DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
+
+            let care_about_animation_c = CString::new("care_about_animation").unwrap();
+            let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+            Uniform1i(care_about_animation_loc, 0);
 
             // print opengl errors
             let mut error = GetError();

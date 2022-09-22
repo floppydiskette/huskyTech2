@@ -333,6 +333,8 @@ impl ht_renderer {
         self.load_shader("postbuffer").expect("failed to load postbuffer shader");
         // load gbuffer shader
         self.load_shader("gbuffer").expect("failed to load gbuffer shader");
+        // load gbuffer animation shader
+        self.load_shader("gbuffer_anim").expect("failed to load gbuffer animation shader");
         // load lighting shader
         self.load_shader("lighting").expect("failed to load lighting shader");
         // load rainbow shader
@@ -346,6 +348,9 @@ impl ht_renderer {
         self.backend.ui_master = Some(ui_master);
         // load default texture
         self.load_texture_if_not_already_loaded("default").expect("failed to load default texture");
+
+        // for debugging
+        self.load_mesh_if_not_already_loaded("skintest").expect("failed to load skintest mesh");
     }
 
     pub fn load_texture_if_not_already_loaded(&mut self, name: &str) -> Result<(), crate::textures::TextureError> {

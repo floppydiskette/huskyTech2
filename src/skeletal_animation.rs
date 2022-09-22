@@ -1,19 +1,25 @@
+use std::simd::Simd;
 use gfx_maths::*;
-use gltf::animation;
+use gl_matrix::common;
+use gl_matrix::mat4::{invert, mul};
+use gltf::{animation, Scene};
 use gltf::animation::util::ReadOutputs;
 use gltf::iter::Animations;
+use halfbrown::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct SkeletalAnimations {
     pub name: String,
-    pub bones: Vec<SkeletalBone>,
-    pub animations: Vec<SkeletalAnimation>,
+    pub bones: HashMap<usize, SkeletalBone>,
+    pub animations: HashMap<String, SkeletalAnimation>,
 }
 
 #[derive(Clone, Debug)]
 pub struct SkeletalAnimation {
     pub name: String,
     pub time: f32,
+    pub current_frame: usize,
+    pub last_update: Option<std::time::Instant>,
     pub duration: f32,
     pub animation: Vec<SkeletalKeyframe>,
 }
@@ -21,11 +27,12 @@ pub struct SkeletalAnimation {
 #[derive(Clone, Debug)]
 pub struct SkeletalBone {
     pub name: String,
+    pub index: usize,
+    pub parent: Option<usize>,
     pub children: Vec<usize>,
-    pub position: Vec3,
-    pub rotation: Quaternion,
-    pub scale: Vec3,
+    pub offset: Mat4,
     pub weights: Vec<SkeletalWeight>,
+    pub inverse_bind_matrix: Mat4,
 }
 
 #[derive(Clone, Debug)]
@@ -43,9 +50,9 @@ pub struct SkeletalKeyframe {
 #[derive(Clone, Debug)]
 pub struct SkeletalBoneTransform {
     pub bone_index: i32,
-    pub position: Vec3,
-    pub rotation: Quaternion,
-    pub scale: Vec3,
+    pub position: Option<Vec3>,
+    pub rotation: Option<Quaternion>,
+    pub scale: Option<Vec3>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,10 +60,19 @@ pub enum SkeletalAnimationError {
     WeightLoadingError,
 }
 
+fn gen_inverse_bind_pose(bone: &SkeletalBone, bones: &Vec<&SkeletalBone>) -> Mat4 {
+    let mut transform = Mat4::identity();
+    if let Some(parent_index) = bone.parent {
+        transform = transform * gen_inverse_bind_pose(&bones[parent_index as usize], bones);
+    }
+    transform = transform * bone.offset;
+    transform
+}
+
 impl SkeletalAnimations {
-    pub fn load_skeleton_stuff(skin: &gltf::skin::Skin, mesh: &gltf::Mesh, animations: Animations, buffers: &Vec<gltf::buffer::Data>) -> Result<Self, SkeletalAnimationError> {
-        let mut bones_final = Vec::new();
-        let mut animations_final = Vec::new();
+    pub fn load_skeleton_stuff(skin: &gltf::skin::Skin, mesh: &gltf::Mesh, animations: Animations, buffers: &[gltf::buffer::Data]) -> Result<Self, SkeletalAnimationError> {
+        let mut bones_final = HashMap::new();
+        let mut animations_final = HashMap::new();
 
         // first, get the weights from the mesh
         let mut weights_final = Vec::new();
@@ -83,19 +99,32 @@ impl SkeletalAnimations {
                     });
                 }
             }
-            bones_final.push(SkeletalBone {
+            let offset = joint.transform().matrix();
+            bones_final.insert(joint.index(), SkeletalBone {
                 name: joint.name().unwrap_or("").to_string(),
+                index: joint.index(),
+                parent: None,
                 children,
-                position: Vec3::new(0.0, 0.0, 0.0),
-                rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
-                scale: Vec3::new(1.0, 1.0, 1.0),
+                offset: Mat4::from(offset),
                 weights,
+                inverse_bind_matrix: Mat4::identity(),
             });
+        }
+
+        // iterate over each bone and set parents and inverse bind matrices
+        for bone in bones_final.values_mut() {
+            for (i, parent) in bones_final.values().enumerate() {
+                if parent.children.contains(&bone.index) {
+                    bone.parent = Some(i);
+                }
+                bone.inverse_bind_matrix = gen_inverse_bind_pose(bone, &bones_final.values().collect::<Vec<_>>());
+            }
         }
 
         // now, get the animations
         for animation in animations {
             let mut animation_final = Vec::new();
+            let mut total_time = 0.0;
             for channel in animation.channels() {
                 let sampler = channel.sampler();
                 let input = channel.reader(|buffer| Some(&buffers[buffer.index()])).read_inputs().unwrap();
@@ -108,9 +137,9 @@ impl SkeletalAnimations {
                             let bone_index = channel.target().node().index();
                             let bone_transform = SkeletalBoneTransform {
                                 bone_index: bone_index as i32,
-                                position: Vec3::new(translation[0], translation[1], translation[2]),
-                                rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
-                                scale: Vec3::new(1.0, 1.0, 1.0),
+                                position: Some(Vec3::new(translation[0], translation[1], translation[2])),
+                                rotation: None,
+                                scale: None,
                             };
                             if animation_final.len() <= i {
                                 animation_final.push(SkeletalKeyframe {
@@ -134,9 +163,9 @@ impl SkeletalAnimations {
                             let bone_index = channel.target().node().index();
                             let bone_transform = SkeletalBoneTransform {
                                 bone_index: bone_index as i32,
-                                position: Vec3::new(0.0, 0.0, 0.0),
-                                rotation: Quaternion::new(rotation[0], rotation[1], rotation[2], rotation[3]),
-                                scale: Vec3::new(1.0, 1.0, 1.0),
+                                position: None,
+                                rotation: Some(Quaternion::new(rotation[3], rotation[0], rotation[1], rotation[2])),
+                                scale: None,
                             };
                             if animation_final.len() <= i {
                                 animation_final.push(SkeletalKeyframe {
@@ -154,9 +183,9 @@ impl SkeletalAnimations {
                             let bone_index = channel.target().node().index();
                             let bone_transform = SkeletalBoneTransform {
                                 bone_index: bone_index as i32,
-                                position: Vec3::new(0.0, 0.0, 0.0),
-                                rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
-                                scale: Vec3::new(scale[0], scale[1], scale[2]),
+                                position: None,
+                                rotation: None,
+                                scale: Some(Vec3::new(scale[0], scale[1], scale[2])),
                             };
                             if animation_final.len() <= i {
                                 animation_final.push(SkeletalKeyframe {
@@ -170,19 +199,68 @@ impl SkeletalAnimations {
                     },
                     ReadOutputs::MorphTargetWeights(_) => {},
                 };
+
+                total_time = input[input.len() - 1] as f64;
             }
-            animations_final.push(SkeletalAnimation {
+            debug!("new animation: {}", animation.name().unwrap_or(""));
+            debug!("total time: {}", total_time);
+            debug!("total frames: {}", animation_final.len());
+            animations_final.insert(animation.name().unwrap_or("").to_string(), SkeletalAnimation {
                 name: animation.name().unwrap_or("").to_string(),
                 time: 0.0,
-                duration: animation.
+                current_frame: 0,
+                last_update: None,
+                duration: total_time as f32,
                 animation: animation_final,
             });
         }
+
+        debug!("total of {} bones", bones_final.len());
+        debug!("total of {} animations", animations_final.len());
 
         Ok(SkeletalAnimations {
             name: skin.name().unwrap_or("").to_string(),
             bones: bones_final,
             animations: animations_final,
         })
+    }
+}
+
+impl SkeletalAnimation {
+    pub fn advance_time(&mut self, delta_time: f32) {
+        self.time += delta_time;
+        self.current_frame = (self.time / self.duration * self.animation.len() as f32) as usize;
+        if self.current_frame >= self.animation.len() {
+            self.current_frame = 0;
+        }
+        if self.time >= self.duration {
+            self.time = 0.0;
+        }
+    }
+
+    // this is called per frame to get the joint matrices for the current frame
+    // should take into account each bone offset matrix
+    // joint_matrix[j] = inverse(global_transform) * global_transform[j] * bone_offset[j]
+    pub fn get_joint_matrices(&self, animations: &SkeletalAnimations) -> Vec<Mat4> {
+        let mut joint_matrices = Vec::new();
+        let keyframe = &self.animation[self.current_frame];
+        for transform in keyframe.bone_transforms {
+            let bone = &animations.bones.get(&(transform.bone_index as usize));
+            if let Some(bone) = bone {
+                let bone_offset = bone.offset;
+                let mut bone_transform = Mat4::identity();
+                if let Some(position) = transform.position {
+                    bone_transform = bone_transform * Mat4::translate(position);
+                }
+                if let Some(rotation) = transform.rotation {
+                    bone_transform = bone_transform * Mat4::rotate(rotation);
+                }
+                if let Some(scale) = transform.scale {
+                    bone_transform = bone_transform * Mat4::scale(scale);
+                }
+                joint_matrices.push(joint_matrix);
+            }
+        }
+        joint_matrices
     }
 }

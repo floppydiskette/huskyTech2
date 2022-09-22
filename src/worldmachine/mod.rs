@@ -835,7 +835,7 @@ impl WorldMachine {
             let textures = renderer.textures.clone();
             if let Some(mesh) = meshes.get("ht2") {
                 let texture = textures.get("default").unwrap();
-                let mut mesh = *mesh;
+                let mut mesh = mesh.clone();
                 mesh.position = position;
                 mesh.rotation = rotation;
 
@@ -920,7 +920,7 @@ impl WorldMachine {
                     let meshes = renderer.meshes.clone();
                     let mesh = meshes.get(&*mesh_name);
                     if let Some(mesh) = mesh {
-                        let mut mesh = *mesh;
+                        let mut mesh = mesh.clone();
                         let shader = mesh_renderer.get_parameter("shader").unwrap();
                         let texture = mesh_renderer.get_parameter("texture").unwrap();
                         let shader_name = match shader.value {
@@ -1063,7 +1063,7 @@ impl WorldMachine {
                 let textures = renderer.textures.clone();
                 if let Some(mesh) = meshes.get("ht2") {
                     let texture = textures.get("default").unwrap();
-                    let mut mesh = *mesh;
+                    let mut mesh = mesh.clone();
                     mesh.position = position;
                     mesh.rotation = rotation;
 
