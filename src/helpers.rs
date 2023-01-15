@@ -75,3 +75,85 @@ pub fn clamp_magnitude(vector: Vec3, max_magnitude: f32) -> Vec3 {
 pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
+
+pub fn glmatrix_mat4_to_gfx_maths_mat4(a: gl_matrix::common::Mat4) -> gfx_maths::Mat4 {
+    let mut b = gfx_maths::Mat4::identity();
+    b.values[0] = a[0];
+    b.values[1] = a[1];
+    b.values[2] = a[2];
+    b.values[3] = a[3];
+    b.values[4] = a[4];
+    b.values[5] = a[5];
+    b.values[6] = a[6];
+    b.values[7] = a[7];
+    b.values[8] = a[8];
+    b.values[9] = a[9];
+    b.values[10] = a[10];
+    b.values[11] = a[11];
+    b.values[12] = a[12];
+    b.values[13] = a[13];
+    b.values[14] = a[14];
+    b.values[15] = a[15];
+    b
+}
+
+pub fn gfx_maths_mat4_to_glmatrix_mat4(a: gfx_maths::Mat4) -> gl_matrix::common::Mat4 {
+    let mut b = gl_matrix::common::Mat4::default();
+    b[0] = a.values[0];
+    b[1] = a.values[1];
+    b[2] = a.values[2];
+    b[3] = a.values[3];
+    b[4] = a.values[4];
+    b[5] = a.values[5];
+    b[6] = a.values[6];
+    b[7] = a.values[7];
+    b[8] = a.values[8];
+    b[9] = a.values[9];
+    b[10] = a.values[10];
+    b[11] = a.values[11];
+    b[12] = a.values[12];
+    b[13] = a.values[13];
+    b[14] = a.values[14];
+    b[15] = a.values[15];
+    b
+}
+
+pub fn gltf_matrix_to_gfx_maths_mat4(a: [[f32; 4]; 4]) -> gfx_maths::Mat4 {
+    let mut b = gfx_maths::Mat4::identity();
+    b.values[0] = a[0][0];
+    b.values[1] = a[0][1];
+    b.values[2] = a[0][2];
+    b.values[3] = a[0][3];
+    b.values[4] = a[1][0];
+    b.values[5] = a[1][1];
+    b.values[6] = a[1][2];
+    b.values[7] = a[1][3];
+    b.values[8] = a[2][0];
+    b.values[9] = a[2][1];
+    b.values[10] = a[2][2];
+    b.values[11] = a[2][3];
+    b.values[12] = a[3][0];
+    b.values[13] = a[3][1];
+    b.values[14] = a[3][2];
+    b.values[15] = a[3][3];
+    b
+}
+
+pub fn interpolate_mats(a: Mat4, b: Mat4, t: f64) -> Mat4 {
+    let mut a = a;
+    let mut b = b;
+    let mut t = t;
+    if t < 0.0 {
+        t = 0.0;
+    }
+    if t > 1.0 {
+        t = 1.0;
+    }
+    let mut result = Mat4::identity();
+    for i in 0..4 {
+        for j in 0..4 {
+            result.values[i * 4 + j] = a.values[i * 4 + j] + (b.values[i * 4 + j] - a.values[i * 4 + j]) * t as f32;
+        }
+    }
+    result
+}

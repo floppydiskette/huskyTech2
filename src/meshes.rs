@@ -111,7 +111,7 @@ impl Mesh {
                 let weights = weights.into_f32();
                 let weights = weights.collect::<Vec<_>>();
 
-                joint_array.extend(joints.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
+                joint_array.extend(joints.iter().flat_map(|v| vec![v[0] as i32, v[1] as i32, v[2] as i32, v[3] as i32]));
                 weight_array.extend(weights.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
             }
         }
@@ -152,7 +152,7 @@ impl Mesh {
                 // joint array
                 GenBuffers(1, &mut joint_bo);
                 BindBuffer(ARRAY_BUFFER, joint_bo);
-                BufferData(ARRAY_BUFFER, (joint_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, joint_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+                BufferData(ARRAY_BUFFER, (joint_array.len() * mem::size_of::<GLint>()) as GLsizeiptr, joint_array.as_ptr() as *const GLvoid, STATIC_DRAW);
                 let in_joint_c = CString::new("a_joint").unwrap();
                 let joint = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_joint_c.as_ptr());
                 VertexAttribPointer(joint as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
@@ -231,13 +231,17 @@ impl Mesh {
                 let current_time = Instant::now();
                 let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
 
-                animation.current_frame = ((delta * 30.0) % animation.animation.len() as f32) as usize;
+                animation.advance_time(delta);
 
-                debug!("frame: {}", animation.current_frame);
+                debug!("time: {}", animation.time);
                 debug!("delta: {}", delta);
 
                 // fill bone matrice uniform
+                for bone in animations.root_bones.clone() {
+                    animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(bone, Mat4::identity(), &animation);
+                }
                 for (i, transform) in animation.get_joint_matrices(animations).iter().enumerate() {
+                    debug!("bone {} has transform {:?}", i, transform);
                     let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
                     let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
                     UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
@@ -245,6 +249,9 @@ impl Mesh {
                 let care_about_animation_c = CString::new("care_about_animation").unwrap();
                 let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
                 Uniform1i(care_about_animation_loc, 1);
+
+                *animations.animations.get_mut("ArmatureAction").unwrap() = animation;
+                self.animation_delta = Some(current_time);
             }
 
             // transformation time!
@@ -261,6 +268,15 @@ impl Mesh {
             let mvp_c = CString::new("u_mvp").unwrap();
             let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
             UniformMatrix4fv(mvp_loc, 1, FALSE as GLboolean, mvp.as_ptr());
+
+            // send the view and projection matrices to the shader
+            let view_c = CString::new("u_view").unwrap();
+            let view_loc = GetUniformLocation(shader.program, view_c.as_ptr());
+            UniformMatrix4fv(view_loc, 1, FALSE as GLboolean, camera_view.as_ptr());
+
+            let projection_c = CString::new("u_projection").unwrap();
+            let projection_loc = GetUniformLocation(shader.program, projection_c.as_ptr());
+            UniformMatrix4fv(projection_loc, 1, FALSE as GLboolean, camera_projection.as_ptr());
 
             // send the model matrix to the shader
             let model_c = CString::new("u_model").unwrap();

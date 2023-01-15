@@ -1,16 +1,20 @@
-use std::simd::Simd;
+use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::ptr::slice_from_raw_parts;
 use gfx_maths::*;
 use gl_matrix::common;
 use gl_matrix::mat4::{invert, mul};
-use gltf::{animation, Scene};
-use gltf::animation::util::ReadOutputs;
+use gltf::{Accessor, animation, Scene};
+use gltf::animation::util::{ReadOutputs, Rotations};
 use gltf::iter::Animations;
 use halfbrown::HashMap;
+use tokio::io::AsyncReadExt;
+use crate::helpers::{gfx_maths_mat4_to_glmatrix_mat4, glmatrix_mat4_to_gfx_maths_mat4, gltf_matrix_to_gfx_maths_mat4, interpolate_mats};
 
 #[derive(Clone, Debug)]
 pub struct SkeletalAnimations {
     pub name: String,
-    pub bones: HashMap<usize, SkeletalBone>,
+    pub root_bones: Vec<usize>,
+    pub bones: Vec<SkeletalBone>,
     pub animations: HashMap<String, SkeletalAnimation>,
 }
 
@@ -18,21 +22,28 @@ pub struct SkeletalAnimations {
 pub struct SkeletalAnimation {
     pub name: String,
     pub time: f32,
-    pub current_frame: usize,
+    pub max_time: f32,
     pub last_update: Option<std::time::Instant>,
-    pub duration: f32,
-    pub animation: Vec<SkeletalKeyframe>,
+    pub framecount: usize,
+    pub frames: Vec<HashMap<usize, SkeletalKeyframe>>, // Vec of HashMaps, each HashMap is a frame, each HashMap contains a bone index and a keyframe
+}
+
+#[derive(Clone, Debug)]
+pub struct SkeletalKeyframe {
+    pub time: f32,
+    pub bone: usize,
+    pub translate: Option<Mat4>,
+    pub rotate: Option<Mat4>,
+    pub scale: Option<Mat4>,
 }
 
 #[derive(Clone, Debug)]
 pub struct SkeletalBone {
     pub name: String,
     pub index: usize,
-    pub parent: Option<usize>,
     pub children: Vec<usize>,
-    pub offset: Mat4,
-    pub weights: Vec<SkeletalWeight>,
     pub inverse_bind_matrix: Mat4,
+    pub animated_transform: Mat4,
 }
 
 #[derive(Clone, Debug)]
@@ -42,36 +53,118 @@ pub struct SkeletalWeight {
 }
 
 #[derive(Clone, Debug)]
-pub struct SkeletalKeyframe {
-    pub time: f64,
-    pub bone_transforms: Vec<SkeletalBoneTransform>,
-}
-
-#[derive(Clone, Debug)]
-pub struct SkeletalBoneTransform {
-    pub bone_index: i32,
-    pub position: Option<Vec3>,
-    pub rotation: Option<Quaternion>,
-    pub scale: Option<Vec3>,
-}
-
-#[derive(Clone, Debug)]
 pub enum SkeletalAnimationError {
     WeightLoadingError,
 }
 
-fn gen_inverse_bind_pose(bone: &SkeletalBone, bones: &Vec<&SkeletalBone>) -> Mat4 {
-    let mut transform = Mat4::identity();
-    if let Some(parent_index) = bone.parent {
-        transform = transform * gen_inverse_bind_pose(&bones[parent_index as usize], bones);
+impl SkeletalBone {
+    fn get_two_closest_keyframes_and_interpolate(&self, animation: &SkeletalAnimation) -> Mat4 {
+        let mut min = (None, None, None); // (translate, rotate, scale)
+        let mut max = (None, None, None);
+        let mut stop_min_mode = false;
+        debug!("time: {}", animation.time);
+        for i in 0..animation.framecount {
+            if !animation.frames[i].contains_key(&self.index) {
+                continue;
+            }
+            let keyframe = &animation.frames[i][&self.index];
+            if keyframe.time > animation.time {
+                stop_min_mode = true;
+                if max.0.is_none() {
+                    max.0 = keyframe.translate;
+                   // debug!("found max translate at {}", keyframe.time);
+                }
+                if max.1.is_none() {
+                    max.1 = keyframe.rotate;
+                    //debug!("found max rotate at {}", keyframe.time);
+                }
+                if max.2.is_none() {
+                    max.2 = keyframe.scale;
+                    //debug!("found max scale at {}", keyframe.time);
+                }
+                // if all three are set, break
+                if max.0.is_some() && max.1.is_some() && max.2.is_some() {
+                    break;
+                }
+            }
+            if !stop_min_mode {
+                if let Some(translate) = keyframe.translate {
+                    min.0 = Some(translate);
+                   // debug!("found min translate at {}", keyframe.time);
+                }
+                if let Some(rotate) = keyframe.rotate {
+                    min.1 = Some(rotate);
+                    //debug!("found min rotate at {}", keyframe.time);
+                }
+                if let Some(scale) = keyframe.scale {
+                    min.2 = Some(scale);
+                    //debug!("found min scale at {}", keyframe.time);
+                }
+            }
+        }
+
+        if (min.0.is_none() && min.1.is_none() && min.2.is_none()) || (max.0.is_none() && max.1.is_none() && max.2.is_none()) {
+            // can we find at least one frame?
+            return if animation.frames.iter().any(|x| x.contains_key(&self.index)) {
+                // if so, return the first frame
+                let mut mat = Mat4::identity();
+                let working_mat = 0;
+                if let Some(translate) = animation.frames[working_mat][&self.index].translate {
+                    mat = mat * translate;
+                }
+                if let Some(rotate) = animation.frames[working_mat][&self.index].rotate {
+                    mat = mat * rotate;
+                }
+                if let Some(scale) = animation.frames[working_mat][&self.index].scale {
+                    mat = mat * scale;
+                }
+                mat
+            } else {
+                // if not, return the identity matrix
+                Mat4::identity()
+            }
+        }
+
+        let (min_translate, min_rotate, min_scale) = min;
+        let (max_translate, max_rotate, max_scale) = max;
+
+        let mat_a = {
+            let mut mat = Mat4::identity();
+            if let Some(translate) = &min_translate {
+                mat = mat * translate;
+            }
+            if let Some(rotate) = &min_rotate {
+                mat = mat * rotate;
+            }
+            if let Some(scale) = &min_scale {
+                mat = mat * scale;
+            }
+            mat
+        };
+        let mat_b = {
+            let mut mat = Mat4::identity();
+            if let Some(translate) = &max_translate {
+                mat = mat * translate;
+            }
+            if let Some(rotate) = &max_rotate {
+                mat = mat * rotate;
+            }
+            if let Some(scale) = &max_scale {
+                mat = mat * scale;
+            }
+            mat
+        };
+
+        //interpolate_mats(mat_a, mat_b, animation.time as f64)
+        mat_b
     }
-    transform = transform * bone.offset;
-    transform
 }
 
 impl SkeletalAnimations {
-    pub fn load_skeleton_stuff(skin: &gltf::skin::Skin, mesh: &gltf::Mesh, animations: Animations, buffers: &[gltf::buffer::Data]) -> Result<Self, SkeletalAnimationError> {
+    pub fn load_skeleton_stuff(skin: &gltf::Skin, mesh: &gltf::Mesh, animations: gltf::iter::Animations, buffers: &[gltf::buffer::Data]) -> Result<SkeletalAnimations, SkeletalAnimationError> {
         let mut bones_final = HashMap::new();
+        let mut bone_order = Vec::new();
+        let mut root_bones = Vec::new();
         let mut animations_final = HashMap::new();
 
         // first, get the weights from the mesh
@@ -99,141 +192,190 @@ impl SkeletalAnimations {
                     });
                 }
             }
-            let offset = joint.transform().matrix();
+            // we'll fill in the inverse_bind_matrix in a second, just insert the bones first
             bones_final.insert(joint.index(), SkeletalBone {
-                name: joint.name().unwrap_or("").to_string(),
+                name: joint.name().unwrap_or("unnamed").to_string(),
                 index: joint.index(),
-                parent: None,
                 children,
-                offset: Mat4::from(offset),
-                weights,
                 inverse_bind_matrix: Mat4::identity(),
+                animated_transform: Mat4::identity(),
             });
+            bone_order.push(joint.index());
         }
 
-        // iterate over each bone and set parents and inverse bind matrices
-        for bone in bones_final.values_mut() {
-            for (i, parent) in bones_final.values().enumerate() {
-                if parent.children.contains(&bone.index) {
-                    bone.parent = Some(i);
-                }
-                bone.inverse_bind_matrix = gen_inverse_bind_pose(bone, &bones_final.values().collect::<Vec<_>>());
+        let reader = skin.reader(|buffer| Some(&buffers[buffer.index()]));
+        let inverse_bind_matrices = reader.read_inverse_bind_matrices().unwrap();
+        for (i, inverse_bind_matrix) in inverse_bind_matrices.enumerate() {
+            // ahh lovely, we're given a [[f32; 4]; 4] matrix, but we need a [f32; 16] matrix
+            let mat = gltf_matrix_to_gfx_maths_mat4(inverse_bind_matrix);
+            // this should be good, so add it to the bone
+            bones_final.get_mut(&i).unwrap().inverse_bind_matrix = mat;
+        }
+
+        // iterate one more time to find the root bones (bones with no parents)
+        // todo: this is a really dumb way to do it, please find a better way
+        let mut no_parents = HashSet::new();
+        for bone in bones_final.values() {
+            no_parents.insert(bone.index);
+        }
+        for bone in bones_final.values() {
+            for child in bone.children.iter() {
+                no_parents.remove(child);
             }
+        }
+        for bone in no_parents {
+            root_bones.push(bone);
         }
 
         // now, get the animations
         for animation in animations {
-            let mut animation_final = Vec::new();
-            let mut total_time = 0.0;
+            let mut keyframes: HashMap<usize, HashMap<usize, SkeletalKeyframe>> = HashMap::new(); // outer hashmap is a frame, inner hashmap is a bone
+            let mut highest_time = 0.0;
             for channel in animation.channels() {
                 let sampler = channel.sampler();
-                let input = channel.reader(|buffer| Some(&buffers[buffer.index()])).read_inputs().unwrap();
-                let output = channel.reader(|buffer| Some(&buffers[buffer.index()])).read_outputs().unwrap();
-                let input = input.collect::<Vec<_>>();
-                match output {
-                    ReadOutputs::Translations(translations) => {
-                        let translations = translations.collect::<Vec<_>>();
-                        for (i, translation) in translations.iter().enumerate() {
-                            let bone_index = channel.target().node().index();
-                            let bone_transform = SkeletalBoneTransform {
-                                bone_index: bone_index as i32,
-                                position: Some(Vec3::new(translation[0], translation[1], translation[2])),
-                                rotation: None,
-                                scale: None,
-                            };
-                            if animation_final.len() <= i {
-                                animation_final.push(SkeletalKeyframe {
-                                    time: input[i] as f64,
-                                    bone_transforms: vec![bone_transform],
+                let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+                let times = reader.read_inputs().unwrap();
+                let mut matrices = reader.read_outputs().unwrap();
+                for (i, time) in times.enumerate() {
+                    if time > highest_time {
+                        highest_time = time;
+                    }
+                    match &matrices {
+                        ReadOutputs::Translations(translations) => {
+                            let translation = translations.clone().nth(i).unwrap();
+                            let matrix = Mat4::translate(Vec3::new(translation[0], translation[1], translation[2]));
+                            let bone = channel.target().node().index();
+                            if !keyframes.contains_key(&i) {
+                                keyframes.insert(i, HashMap::new());
+                            }
+                            if !keyframes[&i].contains_key(&bone) {
+                                keyframes.get_mut(&i).unwrap().insert(bone, SkeletalKeyframe {
+                                    time,
+                                    bone,
+                                    translate: Some(matrix),
+                                    rotate: None,
+                                    scale: None,
                                 });
                             } else {
-                                animation_final[i].bone_transforms.push(bone_transform);
+                                keyframes.get_mut(&i).unwrap().get_mut(&bone).unwrap().translate = Some(matrix);
                             }
-                        }
-                    },
-                    ReadOutputs::Rotations(rotations) => {
-                        let rotations = match rotations {
-                            animation::util::Rotations::U8(rotations) => rotations.map(|r| r.map(|r| r as f32 / 255.0)).collect::<Vec<_>>(),
-                            animation::util::Rotations::I8(rotations) => rotations.map(|r| r.map(|r| r as f32 / 127.0)).collect::<Vec<_>>(),
-                            animation::util::Rotations::U16(rotations) => rotations.map(|r| r.map(|r| r as f32 / 65535.0)).collect::<Vec<_>>(),
-                            animation::util::Rotations::I16(rotations) => rotations.map(|r| r.map(|r| r as f32 / 32767.0)).collect::<Vec<_>>(),
-                            animation::util::Rotations::F32(rotations) => rotations.collect::<Vec<_>>(),
-                        };
-                        for (i, rotation) in rotations.iter().enumerate() {
-                            let bone_index = channel.target().node().index();
-                            let bone_transform = SkeletalBoneTransform {
-                                bone_index: bone_index as i32,
-                                position: None,
-                                rotation: Some(Quaternion::new(rotation[3], rotation[0], rotation[1], rotation[2])),
-                                scale: None,
+                        },
+                        ReadOutputs::Rotations(rotations) => {
+                            let matrix = match &rotations {
+                                Rotations::I8(i8s) => {
+                                    let rotation = i8s.clone().nth(i).unwrap();
+                                    Mat4::rotate(Quaternion::new(rotation[0] as f32, rotation[1] as f32, rotation[2] as f32, rotation[3] as f32))
+                                },
+                                Rotations::U8(u8s) => {
+                                    let rotation = u8s.clone().nth(i).unwrap();
+                                    Mat4::rotate(Quaternion::new(rotation[0] as f32, rotation[1] as f32, rotation[2] as f32, rotation[3] as f32))
+                                },
+                                Rotations::I16(i16s) => {
+                                    let rotation = i16s.clone().nth(i).unwrap();
+                                    Mat4::rotate(Quaternion::new(rotation[0] as f32, rotation[1] as f32, rotation[2] as f32, rotation[3] as f32))
+                                },
+                                Rotations::U16(u16s) => {
+                                    let rotation = u16s.clone().nth(i).unwrap();
+                                    Mat4::rotate(Quaternion::new(rotation[0] as f32, rotation[1] as f32, rotation[2] as f32, rotation[3] as f32))
+                                },
+                                Rotations::F32(f32s) => {
+                                    let rotation = f32s.clone().nth(i).unwrap();
+                                    Mat4::rotate(Quaternion::new(rotation[0], rotation[1], rotation[2], rotation[3]))
+                                },
                             };
-                            if animation_final.len() <= i {
-                                animation_final.push(SkeletalKeyframe {
-                                    time: input[i] as f64,
-                                    bone_transforms: vec![bone_transform],
+                            let bone = channel.target().node().index();
+                            if !keyframes.contains_key(&i) {
+                                keyframes.insert(i, HashMap::new());
+                            }
+                            if !keyframes[&i].contains_key(&bone) {
+                                keyframes.get_mut(&i).unwrap().insert(bone, SkeletalKeyframe {
+                                    time,
+                                    bone,
+                                    translate: None,
+                                    rotate: Some(matrix),
+                                    scale: None,
                                 });
                             } else {
-                                animation_final[i].bone_transforms.push(bone_transform);
+                                keyframes.get_mut(&i).unwrap().get_mut(&bone).unwrap().rotate = Some(matrix);
                             }
-                        }
-                    },
-                    ReadOutputs::Scales(scales) => {
-                        let scales = scales.collect::<Vec<_>>();
-                        for (i, scale) in scales.iter().enumerate() {
-                            let bone_index = channel.target().node().index();
-                            let bone_transform = SkeletalBoneTransform {
-                                bone_index: bone_index as i32,
-                                position: None,
-                                rotation: None,
-                                scale: Some(Vec3::new(scale[0], scale[1], scale[2])),
-                            };
-                            if animation_final.len() <= i {
-                                animation_final.push(SkeletalKeyframe {
-                                    time: input[i] as f64,
-                                    bone_transforms: vec![bone_transform],
+                        },
+                        ReadOutputs::Scales(scales) => {
+                            let scale = scales.clone().nth(i).unwrap();
+                            let matrix = Mat4::scale(Vec3::new(scale[0], scale[1], scale[2]));
+                            let bone = channel.target().node().index();
+                            if !keyframes.contains_key(&i) {
+                                keyframes.insert(i, HashMap::new());
+                            }
+                            if !keyframes[&i].contains_key(&bone) {
+                                keyframes.get_mut(&i).unwrap().insert(bone, SkeletalKeyframe {
+                                    time,
+                                    bone,
+                                    translate: None,
+                                    rotate: None,
+                                    scale: Some(matrix),
                                 });
                             } else {
-                                animation_final[i].bone_transforms.push(bone_transform);
+                                keyframes.get_mut(&i).unwrap().get_mut(&bone).unwrap().scale = Some(matrix);
                             }
+                        },
+                        ReadOutputs::MorphTargetWeights(yeah) => {
+                            debug!("morph target weights");
                         }
-                    },
-                    ReadOutputs::MorphTargetWeights(_) => {},
-                };
-
-                total_time = input[input.len() - 1] as f64;
+                    }
+                }
             }
-            debug!("new animation: {}", animation.name().unwrap_or(""));
-            debug!("total time: {}", total_time);
-            debug!("total frames: {}", animation_final.len());
+
+            // order keyframes by time
+            let mut keyframes_ordered: Vec<HashMap<usize, SkeletalKeyframe>> = keyframes.values().cloned().collect();
+            keyframes_ordered.sort_by(|a, b| a[&0].time.partial_cmp(&b[&0].time).unwrap());
+
+            debug!("keyframes: {}", keyframes.len());
+
             animations_final.insert(animation.name().unwrap_or("").to_string(), SkeletalAnimation {
                 name: animation.name().unwrap_or("").to_string(),
                 time: 0.0,
-                current_frame: 0,
+                max_time: highest_time,
                 last_update: None,
-                duration: total_time as f32,
-                animation: animation_final,
+                framecount: keyframes.len(),
+                frames: keyframes_ordered,
             });
         }
 
         debug!("total of {} bones", bones_final.len());
         debug!("total of {} animations", animations_final.len());
 
+        // last step: order bones by index
+        let mut bones_ordered: Vec<SkeletalBone> = Vec::new();
+        for i in bone_order {
+            bones_ordered.push(bones_final[&i].clone());
+        }
+
         Ok(SkeletalAnimations {
             name: skin.name().unwrap_or("").to_string(),
-            bones: bones_final,
+            root_bones,
+            bones: bones_ordered,
             animations: animations_final,
         })
+    }
+
+    pub fn apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(&mut self, joint: usize, parent: Mat4, animation: &SkeletalAnimation) {
+        let bone = self.bones[joint].clone();
+        let pose = bone.get_two_closest_keyframes_and_interpolate(animation);
+        let mut pose = parent * pose;
+        for child in &bone.children {
+            self.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*child, pose, animation);
+        }
+        debug!("bone {} has transform {:?}", joint, pose);
+        pose = pose * bone.inverse_bind_matrix;
+        self.bones[joint].animated_transform = pose;
     }
 }
 
 impl SkeletalAnimation {
     pub fn advance_time(&mut self, delta_time: f32) {
+        const fps: f32 = 30.0;
         self.time += delta_time;
-        self.current_frame = (self.time / self.duration * self.animation.len() as f32) as usize;
-        if self.current_frame >= self.animation.len() {
-            self.current_frame = 0;
-        }
-        if self.time >= self.duration {
+        if self.time > self.max_time {
             self.time = 0.0;
         }
     }
@@ -242,24 +384,10 @@ impl SkeletalAnimation {
     // should take into account each bone offset matrix
     // joint_matrix[j] = inverse(global_transform) * global_transform[j] * bone_offset[j]
     pub fn get_joint_matrices(&self, animations: &SkeletalAnimations) -> Vec<Mat4> {
+        // assume that "apply_poses" has been called
         let mut joint_matrices = Vec::new();
-        let keyframe = &self.animation[self.current_frame];
-        for transform in keyframe.bone_transforms {
-            let bone = &animations.bones.get(&(transform.bone_index as usize));
-            if let Some(bone) = bone {
-                let bone_offset = bone.offset;
-                let mut bone_transform = Mat4::identity();
-                if let Some(position) = transform.position {
-                    bone_transform = bone_transform * Mat4::translate(position);
-                }
-                if let Some(rotation) = transform.rotation {
-                    bone_transform = bone_transform * Mat4::rotate(rotation);
-                }
-                if let Some(scale) = transform.scale {
-                    bone_transform = bone_transform * Mat4::scale(scale);
-                }
-                joint_matrices.push(joint_matrix);
-            }
+        for bone in &animations.bones {
+            joint_matrices.push(bone.animated_transform);
         }
         joint_matrices
     }

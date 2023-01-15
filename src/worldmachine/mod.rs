@@ -831,9 +831,9 @@ impl WorldMachine {
         if let Some(player) = &mut self.player {
             let position = player.player.get_position();
             let rotation = player.player.get_rotation();
-            let meshes = renderer.meshes.clone();
+            let meshes = &mut renderer.meshes;
             let textures = renderer.textures.clone();
-            if let Some(mesh) = meshes.get("ht2") {
+            if let Some(mesh) = meshes.get_mut("ht2") {
                 let texture = textures.get("default").unwrap();
                 let mut mesh = mesh.clone();
                 mesh.position = position;
@@ -918,9 +918,8 @@ impl WorldMachine {
                     // if so, render it
                     let shaders = renderer.shaders.clone();
                     let meshes = renderer.meshes.clone();
-                    let mesh = meshes.get(&*mesh_name);
-                    if let Some(mesh) = mesh {
-                        let mut mesh = mesh.clone();
+                    let mesh = meshes.get(&*mesh_name).cloned();
+                    if let Some(mut mesh) = mesh {
                         let shader = mesh_renderer.get_parameter("shader").unwrap();
                         let texture = mesh_renderer.get_parameter("texture").unwrap();
                         let shader_name = match shader.value {
@@ -958,7 +957,7 @@ impl WorldMachine {
                                         continue;
                                     }
                                 };
-                                mesh.position += position;
+                                mesh.position = position;
                             }
                             if let Some(rotation) = transform.get_parameter("rotation") {
                                 let rotation = match rotation.value {
@@ -979,7 +978,7 @@ impl WorldMachine {
                                         continue;
                                     }
                                 };
-                                mesh.scale += scale;
+                                mesh.scale = scale;
                             }
                         }
 
@@ -987,6 +986,7 @@ impl WorldMachine {
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
                         mesh.render(renderer, Some(texture));
+                        *renderer.meshes.get_mut(&*mesh_name).unwrap() = mesh;
                     } else {
                         // if not, add it to the list of things to load
                         self.entities_wanting_to_load_things.push(i);
@@ -1064,10 +1064,16 @@ impl WorldMachine {
                 if let Some(mesh) = meshes.get("ht2") {
                     let texture = textures.get("default").unwrap();
                     let mut mesh = mesh.clone();
+                    let old_position = mesh.position;
+                    let old_rotation = mesh.rotation;
                     mesh.position = position;
                     mesh.rotation = rotation;
 
                     mesh.render(renderer, Some(texture));
+
+                    mesh.position = old_position;
+                    mesh.rotation = old_rotation;
+                    *renderer.meshes.get_mut("ht2").unwrap() = mesh;
                 }
             }
         }
