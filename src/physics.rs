@@ -7,6 +7,8 @@ use std::sync::atomic::{Ordering};
 use gfx_maths::{Vec3};
 use physx_sys::*;
 
+
+
 pub const GRAVITY: f32 = -9.81;
 pub const PLAYER_GRAVITY: f32 = -1.51;
 pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;

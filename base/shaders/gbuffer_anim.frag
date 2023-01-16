@@ -18,7 +18,7 @@ uniform bool unlit = false;
 
 void main() {
     out_pos = vec4(frag_pos, opacity);
-    out_normal = vec4(texture(normalmap, uv).rgb, 1.0);
+    out_normal = vec4(normalize(normal), 1.0);//vec4(texture(normalmap, uv).rgb, 1.0);
     out_albedospec = vec4(texture(diffuse, uv).rgb, 1.0);
     out_info = vec4(texture(specular, uv).r, opacity, unlit ? 1.0 : 0.0, 1.0);
 }

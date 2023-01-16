@@ -6,6 +6,10 @@ use std::ffi::CString;
 use std::process;
 use std::ptr::null;
 use std::time::SystemTime;
+use fyrox_sound::buffer::{DataSource, SoundBufferResource};
+use fyrox_sound::context::SoundContext;
+use fyrox_sound::futures::executor::block_on;
+use fyrox_sound::source::{SoundSourceBuilder, Status};
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use kira::manager::AudioManager;
 use kira::manager::backend::cpal::CpalBackend;
@@ -18,7 +22,7 @@ use crate::renderer::{Colour, ht_renderer};
 use crate::textures::Texture;
 use crate::uimesh::UiMesh;
 
-pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) {
+pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     // load ht2-mesh logo model
     renderer.load_texture_if_not_already_loaded("ht2").expect("failed to load ht2-mesh texture");
     renderer.load_mesh_if_not_already_loaded("ht2").expect("failed to load ht2 mesh");
@@ -58,12 +62,18 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
 
     ui_developedby.scale = window_size;
 
-    let mut sunlust_sfx = StaticSoundData::from_file("base/snd/sunlust.wav", StaticSoundSettings::default()).expect("failed to load sunlust.wav");
+    let mut sunlust_sfx = SoundBufferResource::new_generic(block_on(DataSource::from_file("base/snd/sunlust.wav")).unwrap()).unwrap();
 
     // wait 2 seconds
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    sss.play(sunlust_sfx.clone());
+    let source = SoundSourceBuilder::new()
+        .with_buffer(sunlust_sfx)
+        .with_looping(false)
+        .with_status(Status::Playing)
+        .build().unwrap();
+
+    let source_handle = sss.state().add_source(source);
     debug!("playing sunlust.wav");
     let time_of_start = SystemTime::now(); // when the animation started
     let mut current_time = SystemTime::now(); // for later
@@ -196,4 +206,6 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
             process::exit(0);
         }
     }
+
+    sss.state().remove_source(source_handle);
 }

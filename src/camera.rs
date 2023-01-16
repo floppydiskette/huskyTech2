@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use gfx_maths::*;
 use crate::helpers;
+use crate::helpers::gfx_maths_mat4_to_glmatrix_mat4;
 
 pub const EYE_HEIGHT: f32 = 1.68;
 
@@ -39,9 +40,12 @@ impl Camera {
     }
 
     pub fn get_front(&self) -> Vec3 {
-        let mut front = Vec3::new(0.0, 0.0, 1.0);
-        front = helpers::rotate_vector_by_quaternion(front, self.rotation);
-        *front.normalize().deref()
+        // forward vector is third column of view matrix
+        let view = self.view;
+        let view = gfx_maths_mat4_to_glmatrix_mat4(view);
+        let view = gl_matrix::mat4::invert(&mut gl_matrix::common::Mat4::default(), &view).unwrap();
+        let view = helpers::glmatrix_mat4_to_gfx_maths_mat4(view);
+        *helpers::column_mat_to_vec(view, 2).normalize().deref()
     }
 
     pub fn get_forward_no_pitch(&self) -> Vec3 {
@@ -52,15 +56,19 @@ impl Camera {
     }
 
     pub fn get_right(&self) -> Vec3 {
-        let mut right = Vec3::new(-1.0, 0.0, 0.0);
-        right = helpers::rotate_vector_by_quaternion(right, self.rotation);
-        *right.normalize().deref()
+        // right vector is first column of view matrix
+        let view = self.view;
+        let view = gfx_maths_mat4_to_glmatrix_mat4(view);
+        let view = gl_matrix::mat4::invert(&mut gl_matrix::common::Mat4::default(), &view).unwrap();
+        let view = helpers::glmatrix_mat4_to_gfx_maths_mat4(view);
+        -helpers::column_mat_to_vec(view, 0)
     }
 
     pub fn get_up(&self) -> Vec3 {
-        let mut up = Vec3::new(0.0, -1.0, 0.0);
-        up = helpers::rotate_vector_by_quaternion(up, self.rotation);
-        *up.normalize().deref()
+        // cross product of right and forward vectors
+        let right = self.get_right();
+        let front = self.get_front();
+        right.cross(front)
     }
 
     // sets rotation to be looking at the target, with the up vector being up, and recalculates the view matrix
@@ -81,7 +89,7 @@ impl Camera {
 
     // calculates the view matrix from the camera's position and rotation
     fn recalculate_view(&mut self) {
-        self.view = Mat4::rotate(self.rotation) * Mat4::translate(self.position);
+        self.view = Mat4::rotate(self.rotation) * Mat4::translate(-self.position);
     }
 
     // getters and setters
@@ -95,7 +103,7 @@ impl Camera {
     }
 
     pub fn set_position_from_player_position(&mut self, player_position: Vec3) {
-        self.position = Vec3::new(0.0, -EYE_HEIGHT, 0.0) - player_position;
+        self.position = player_position + Vec3::new(0.0, EYE_HEIGHT, 0.0);
         self.recalculate_view();
     }
 

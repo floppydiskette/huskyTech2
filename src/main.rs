@@ -10,6 +10,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Instant;
 use egui_glfw_gl::egui;
+use fyrox_sound::context::SoundContext;
+use fyrox_sound::engine::SoundEngine;
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
@@ -49,6 +51,7 @@ pub mod mouse;
 pub mod optimisations;
 pub mod skeletal_animation;
 pub mod ui;
+pub mod audio;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -92,7 +95,12 @@ async fn main() {
         server_clone.run().await;
     } else {
         info!("good day! initialising huskyTech2");
-        let mut sss = AudioManager::<CpalBackend>::new(AudioManagerSettings::default()).expect("failed to initialise audio subsystem");
+        let sengine = SoundEngine::new();
+        let scontext = SoundContext::new();
+
+        sengine.lock().unwrap().add_context(scontext.clone());
+
+        let mut audio = crate::audio::AudioBackend::new();
         info!("initialised audio subsystem");
         let renderer = ht_renderer::init();
         if renderer.is_err() {
@@ -135,7 +143,7 @@ async fn main() {
 
         debug!("connected to server");
 
-        if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
+        if !skip_intro { sunlust_intro::animate(&mut renderer, &scontext) }
         crate::ui::SHOW_UI.store(true, std::sync::atomic::Ordering::SeqCst);
 
         renderer.camera.set_fov(DEFAULT_FOV);
@@ -143,10 +151,16 @@ async fn main() {
         let mut last_frame_time = std::time::Instant::now();
         loop {
             let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
+
+            // calculate fps based on delta
+            let fps = 1.0 / delta;
+            *crate::ui::FPS.lock().unwrap() = fps;
+
             renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
             renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
             let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
+            worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer);
 
             last_frame_time = std::time::Instant::now();

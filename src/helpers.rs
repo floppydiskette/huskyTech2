@@ -157,3 +157,11 @@ pub fn interpolate_mats(a: Mat4, b: Mat4, t: f64) -> Mat4 {
     }
     result
 }
+
+pub fn column_mat_to_vec(mat: Mat4, column: usize) -> Vec3 {
+    Vec3::new(mat.get(column, 0), mat.get(column, 1), mat.get(column, 2))
+}
+
+pub fn row_mat_to_vec(mat: Mat4, row: usize) -> Vec3 {
+    Vec3::new(mat.get(0, row), mat.get(1, row), mat.get(2, row))
+}

@@ -39,11 +39,13 @@ void main()
         mat4 view_model = u_view * u_model;
         gl_Position = u_projection * view_model * total_position;
         frag_pos = vec3(u_model * total_position);
-        normal = total_normal;
+        mat3 normal_mat = transpose(inverse(mat3(u_model)));
+        normal = normal_mat * in_normal;
     } else {
-        gl_Position = u_mvp * vec4(in_pos, 1);
-        frag_pos = vec3(u_model * vec4(in_pos, 1));
-        normal = in_normal;
+        gl_Position = u_projection * u_view * u_model * vec4(in_pos, 1.0);
+        frag_pos = vec3(u_model * vec4(in_pos, 1.0));
+        mat3 normal_mat = transpose(inverse(mat3(u_model)));
+        normal = normal_mat * in_normal;
     }
 
     uv = in_uv;

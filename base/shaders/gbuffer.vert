@@ -20,9 +20,11 @@ uniform bool care_about_animation;
 
 void main()
 {
-    gl_Position = u_mvp * vec4(in_pos, 1.0);
-    frag_pos = vec3(u_model * vec4(in_pos, 1.0));
+    vec4 world_pos = u_model * vec4(in_pos, 1.0);
+    frag_pos = world_pos.xyz;
 
     uv = in_uv;
-    normal = in_normal;
+    mat3 normal_mat = transpose(inverse(mat3(u_model)));
+    normal = normal_mat * in_normal;
+    gl_Position = u_projection * u_view * world_pos;
 }

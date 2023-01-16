@@ -11,6 +11,7 @@ lazy_static! {
     pub static ref COMPONENT_TYPE_TERRAIN: ComponentType = ComponentType::create_if_not_exists("Terrain");
     pub static ref COMPONENT_TYPE_LIGHT: ComponentType = ComponentType::create_if_not_exists("Light");
     pub static ref COMPONENT_TYPE_BOX_COLLIDER: ComponentType = ComponentType::create_if_not_exists("BoxCollider");
+    pub static ref COMPONENT_TYPE_JUKEBOX: ComponentType = ComponentType::create_if_not_exists("Jukebox");
 
     pub static ref COMPONENTS_INITIALISED: bool = {
         register_component_types();
@@ -26,6 +27,7 @@ pub fn register_component_types() {
     let _ = COMPONENT_TYPE_TERRAIN.clone();
     let _ = COMPONENT_TYPE_LIGHT.clone();
     let _ = COMPONENT_TYPE_BOX_COLLIDER.clone();
+    let _ = COMPONENT_TYPE_JUKEBOX.clone();
 }
 
 // player component is defined in src/worldmachine/player.rs
@@ -105,5 +107,26 @@ impl Terrain {
     }
     pub fn default() -> Component {
         Self::new("default")
+    }
+}
+
+pub struct Jukebox {}
+
+impl Jukebox {
+    pub fn new() -> Component {
+        let mut parameters = BTreeMap::new();
+        parameters.insert("volume".to_string(), Parameter::new("volume", ParameterValue::Float(1.0)));
+        parameters.insert("playing".to_string(), Parameter::new("playing", ParameterValue::Bool(false)));
+        parameters.insert("track".to_string(), Parameter::new("track", ParameterValue::String("".to_string())));
+        parameters.insert("uuid".to_string(), Parameter::new("uuid", ParameterValue::String("".to_string())));
+
+        Component {
+            name: "Jukebox".to_string(),
+            parameters,
+            component_type: COMPONENT_TYPE_JUKEBOX.clone(),
+        }
+    }
+    pub fn default() -> Component {
+        Self::new()
     }
 }

@@ -14,6 +14,7 @@ gfx-maths = { version = "0.2.8", features = ["serde"]}
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.1.2", features = ["v4"] }
 egui_glfw_gl = { git = "https://github.com/floppydiskette/egui_glfw_gl" }
+fyrox-sound = "0.30.0"
 halfbrown = "0.1.15"
 glfw = "0.49.1"
 async-recursion = "1.0.0"

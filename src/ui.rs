@@ -8,7 +8,9 @@ use crate::renderer::ht_renderer;
 lazy_static!{
     pub static ref SHOW_UI: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     pub static ref SHOW_DEBUG_LOCATION: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+    pub static ref SHOW_FPS: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
     pub static ref DEBUG_LOCATION: Arc<Mutex<Vec3>> = Arc::new(Mutex::new(Vec3::new(0.0, 0.0, 0.0)));
+    pub static ref FPS: Arc<Mutex<f32>> = Arc::new(Mutex::new(0.0));
 }
 
 pub fn render(renderer: &mut ht_renderer) {
@@ -22,9 +24,10 @@ pub fn render(renderer: &mut ht_renderer) {
             if SHOW_DEBUG_LOCATION.load(Ordering::Relaxed) {
                 render_debug_location(ui);
             }
+            if SHOW_FPS.load(Ordering::Relaxed) {
+                render_fps(ui);
+            }
         });
-
-
 
     let egui::FullOutput {
         platform_output,
@@ -47,5 +50,13 @@ fn render_debug_location(ui: &mut Ui) {
     // label at top right
     ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
         ui.label(format!("x: {}, y: {}, z: {}", debug_location.x, debug_location.y, debug_location.z));
+    });
+}
+
+fn render_fps(ui: &mut Ui) {
+    let fps = FPS.lock().unwrap();
+    // label at top right
+    ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
+        ui.label(format!("FPS: {}", fps));
     });
 }

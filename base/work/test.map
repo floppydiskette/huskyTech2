@@ -12,7 +12,7 @@ entities:
         value: !String basic
       texture:
         name: texture
-        value: !String default
+        value: !String grass1
     component_type:
       id: 2
       name: MeshRenderer
@@ -264,13 +264,13 @@ entities:
     parameters:
       mesh:
         name: mesh
-        value: !String skintest
+        value: !String puro
       shader:
         name: shader
         value: !String basic
       texture:
         name: texture
-        value: !String ht2
+        value: !String puro
     component_type:
       id: 2
       name: MeshRenderer
@@ -280,7 +280,7 @@ entities:
         name: position
         value: !Vec3
           x: 5.0
-          y: 0.0
+          y: -0.9
           z: -10.0
       rotation:
         name: rotation
@@ -292,13 +292,116 @@ entities:
       scale:
         name: scale
         value: !Vec3
-          x: 1.0
-          y: 1.0
-          z: 1.0
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  children: []
+  parent: null
+- name: skintest
+  uid: 9
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 10.0
+          y: -0.9
+          z: -10.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  - name: Jukebox
+    parameters:
+      playing:
+        name: playing
+        value: !Bool true
+      track:
+        name: track
+        value: !String sunlust.wav
+      uuid:
+        name: uuid
+        value: !String 6190fcec9540e99c98a515e570d10391
+      volume:
+        name: volume
+        value: !Float 1.0
+    component_type:
+      id: 6
+      name: Jukebox
+  children: []
+  parent: null
+- name: skintest
+  uid: 10
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 15.0
+          y: -0.9
+          z: -10.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
     component_type:
       id: 1
       name: Transform
   children: []
   parent: null
 systems: []
-eid_manager: 8
+eid_manager: 10

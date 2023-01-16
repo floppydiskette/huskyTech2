@@ -22,6 +22,7 @@ pub struct Mesh {
     pub num_vertices: usize,
     pub num_indices: usize,
     pub uvbo: GLuint,
+    pub normal_vbo: GLuint,
     pub animations: Option<SkeletalAnimations>,
     pub animation_delta: Option<Instant>,
 }
@@ -65,15 +66,16 @@ impl Mesh {
 
         if let Some(skin) = skin {
             animations = Some(SkeletalAnimations::load_skeleton_stuff(&skin, &mesh, document.animations(), &buffers).expect("Failed to load skeleton stuff"));
-
-            let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
-            shader_index = gbuffer_shader;
         }
+
+        let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
+        shader_index = gbuffer_shader;
 
         // for each primitive in the mesh
         let mut vertices_array = Vec::new();
         let mut indices_array = Vec::new();
         let mut uvs_array = Vec::new();
+        let mut normals_array = Vec::new();
         let mut joint_array = Vec::new();
         let mut weight_array = Vec::new();
         for primitive in mesh.primitives() {
@@ -91,6 +93,10 @@ impl Mesh {
             let tex_coords = tex_coords.into_f32();
             let tex_coords = tex_coords.collect::<Vec<_>>();
 
+            // get the normals
+            let normals = reader.read_normals().ok_or(MeshError::MeshComponentNotFound(MeshComponent::SourceMap))?;
+            let normals = normals.collect::<Vec<_>>();
+
             // add the vertices (with each grouping of three f32s as three separate f32s)
             vertices_array.extend(positions.iter().flat_map(|v| vec![v[0], v[1], v[2]]));
 
@@ -99,6 +105,9 @@ impl Mesh {
 
             // add the uvs (with each grouping of two f32s as two separate f32s)
             uvs_array.extend(tex_coords.iter().flat_map(|v| vec![v[0], v[1]]));
+
+            // add the normals (with each grouping of three f32s as three separate f32s)
+            normals_array.extend(normals.iter().flat_map(|v| vec![v[0], v[1], v[2]]));
 
             // get the bone ids
 
@@ -121,6 +130,7 @@ impl Mesh {
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
         let mut uvbo= 0 as GLuint;
+        let mut normal_vbo = 0 as GLuint;
         let mut joint_bo = 0 as GLuint;
         let mut weight_bo = 0 as GLuint;
         unsafe {
@@ -147,6 +157,16 @@ impl Mesh {
             let uv = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_uv_c.as_ptr());
             VertexAttribPointer(uv as GLuint, 2, FLOAT, FALSE as GLboolean, 0, null());
             EnableVertexAttribArray(1);
+
+            // normals
+            GenBuffers(1, &mut normal_vbo);
+            BindBuffer(ARRAY_BUFFER, normal_vbo);
+            BufferData(ARRAY_BUFFER, (normals_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, normals_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+            // vertex normals for fragment shader
+            let in_normal_c = CString::new("in_normal").unwrap();
+            let normal = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_normal_c.as_ptr());
+            VertexAttribPointer(normal as GLuint, 3, FLOAT, FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(2);
 
             if animations.is_some() {
                 // joint array
@@ -187,12 +207,13 @@ impl Mesh {
             num_indices: indices_array.len() as usize,
             animations,
             animation_delta: Some(Instant::now()),
+            normal_vbo,
         })
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>) {
         // load the shader
-        let gbuffer_shader = *renderer.shaders.get("gbuffer").unwrap();
+        let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
         set_shader_if_not_already(renderer, gbuffer_shader);
         let mut shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
@@ -226,28 +247,32 @@ impl Mesh {
             }
 
             if let Some(animations) = self.animations.as_mut() {
-                let animation = animations.animations.get("ArmatureAction");
-                let mut animation = animation.unwrap().clone();
-                let current_time = Instant::now();
-                let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
+                if let Some(mut animation) = animations.animations.get("auto").cloned() {
+                    let current_time = Instant::now();
+                    let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
 
-                animation.advance_time(delta);
+                    animation.advance_time(delta);
 
-                // fill bone matrice uniform
-                for bone in animations.root_bones.clone() {
-                    animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(bone, Mat4::identity(), &animation);
+                    // fill bone matrice uniform
+                    for bone in animations.root_bones.clone().iter() {
+                        animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &animation);
+                    }
+                    for (i, transform) in animation.get_joint_matrices(animations).iter().enumerate() {
+                        let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
+                        let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
+                        UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
+                    }
+                    let care_about_animation_c = CString::new("care_about_animation").unwrap();
+                    let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+                    Uniform1i(care_about_animation_loc, 1);
+
+                    self.animation_delta = Some(current_time);
+                    *animations.animations.get_mut("auto").unwrap() = animation;
                 }
-                for (i, transform) in animation.get_joint_matrices(animations).iter().enumerate() {
-                    let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
-                    let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
-                    UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
-                }
+            } else {
                 let care_about_animation_c = CString::new("care_about_animation").unwrap();
                 let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
-                Uniform1i(care_about_animation_loc, 1);
-
-                *animations.animations.get_mut("ArmatureAction").unwrap() = animation;
-                self.animation_delta = Some(current_time);
+                Uniform1i(care_about_animation_loc, 0);
             }
 
             // transformation time!
@@ -280,12 +305,12 @@ impl Mesh {
             UniformMatrix4fv(model_loc, 1, FALSE as GLboolean, model_matrix.as_ptr());
 
             // send the camera position to the shader
-            let camera_pos_c = CString::new("u_camera_pos").unwrap();
-            let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr());
-            Uniform3f(camera_pos_loc,
-                        renderer.camera.get_position().x*-1.0,
-                        renderer.camera.get_position().y*-1.0,
-                        renderer.camera.get_position().z*-1.0);
+            //let camera_pos_c = CString::new("u_camera_pos").unwrap();
+            //let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr());
+            //Uniform3f(camera_pos_loc,
+            //            renderer.camera.get_position().x,
+            //            renderer.camera.get_position().y,
+            //            renderer.camera.get_position().z);
 
             DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
 

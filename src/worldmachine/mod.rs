@@ -5,6 +5,7 @@ use std::collections::{VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Instant;
+use fyrox_sound::context::SoundContext;
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use gl_matrix::common::Quat;
 use serde::{Deserialize, Serialize};
@@ -12,10 +13,11 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
+use crate::audio::AudioBackend;
 use crate::physics::{Materials, PhysicsSystem};
 use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
-use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
+use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_JUKEBOX, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::MapLoadError::FolderNotFound;
 use crate::worldmachine::player::{MovementInfo, Player, PlayerContainer};
@@ -270,9 +272,9 @@ impl WorldMachine {
     }
 
     pub fn send_lights_to_renderer(&mut self) -> Option<Vec<crate::light::Light>> {
-        if !self.lights_changed {
-            return Option::None;
-        }
+        //if !self.lights_changed {
+        //    return Option::None;
+        //}
         let mut lights = Vec::new();
         for entity in &self.world.entities {
             let components = entity.get_components();
@@ -322,7 +324,7 @@ impl WorldMachine {
                             Vec3::new(0.0, 0.0, 0.0)
                         }
                     };
-                    position = position + trans_position;
+                    position += trans_position;
                 }
                 lights.push(crate::light::Light {
                     position,
@@ -989,6 +991,7 @@ impl WorldMachine {
                         // add a bit of rotation to the transform to make things more interesting
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
+
                         mesh.render(renderer, Some(texture));
                         mesh.position = old_position;
                         mesh.rotation = old_rotation;
@@ -1081,6 +1084,102 @@ impl WorldMachine {
                     mesh.position = old_position;
                     mesh.rotation = old_rotation;
                     *renderer.meshes.get_mut("ht2").unwrap() = mesh;
+                }
+            }
+        }
+    }
+
+    pub fn handle_audio(&mut self, renderer: &ht_renderer, audio: &AudioBackend, scontext: &SoundContext) {
+        audio.update(renderer.camera.get_position(), -renderer.camera.get_front(), renderer.camera.get_up(), scontext);
+
+        for index in self.entities_wanting_to_load_things.clone() {
+            let entity = &self.world.entities[index];
+            let components = entity.get_components();
+            for component in components {
+                match component.get_type() {
+                    x if x == COMPONENT_TYPE_JUKEBOX.clone() => {
+                        let track = component.get_parameter("track").unwrap();
+                        let track = match track.value {
+                            ParameterValue::String(ref s) => s.clone(),
+                            _ => {
+                                error!("audio: jukebox track is not a string");
+                                continue;
+                            }
+                        };
+                        // check if the track is already loaded
+                        if !audio.is_sound_loaded(&track) {
+                            audio.load_sound(&track);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // don't clear here because that's done later in rendering
+
+
+        for (i, entity) in self.world.entities.iter_mut().enumerate() {
+            if let Some(jukebox) = entity.get_component(COMPONENT_TYPE_JUKEBOX.clone()) {
+                let track = jukebox.get_parameter("track").unwrap();
+                let track = match track.value {
+                    ParameterValue::String(ref s) => s.clone(),
+                    _ => {
+                        error!("audio: jukebox track is not a string");
+                        continue;
+                    }
+                };
+                let volume = jukebox.get_parameter("volume").unwrap();
+                let volume = match volume.value {
+                    ParameterValue::Float(v) => v,
+                    _ => {
+                        error!("audio: jukebox volume is not a float");
+                        continue;
+                    }
+                };
+                let playing = jukebox.get_parameter("playing").unwrap();
+                let playing = match playing.value {
+                    ParameterValue::Bool(ref s) => s.clone(),
+                    _ => {
+                        error!("audio: jukebox playing is not a string");
+                        continue;
+                    }
+                };
+                let uuid = jukebox.get_parameter("uuid").unwrap();
+                let uuid = match uuid.value {
+                    ParameterValue::String(ref s) => s.clone(),
+                    _ => {
+                        error!("audio: jukebox uuid is not a string");
+                        continue;
+                    }
+                };
+
+                let position = if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
+                    let position = transform.get_parameter("position").unwrap();
+                    let position = match position.value {
+                        ParameterValue::Vec3(v) => v,
+                        _ => {
+                            error!("audio: transform position is not a vec3");
+                            continue;
+                        }
+                    };
+                    position
+                } else {
+                    Vec3::new(0.0, 0.0, 0.0)
+                };
+
+                if audio.is_sound_loaded(&track) {
+                    if playing && !audio.is_sound_playing(&uuid) {
+                        audio.play_sound_with_uuid(&uuid, &track, scontext);
+                    } else if !playing && audio.is_sound_playing(&uuid) {
+                        audio.stop_sound_with_uuid(&uuid, scontext);
+                    }
+                    if playing {
+                        debug!("playing!");
+                        audio.set_sound_position(&uuid, position, scontext);
+                    }
+                } else {
+                    // if not, add it to the list of things to load
+                    self.entities_wanting_to_load_things.push(i);
                 }
             }
         }

@@ -165,7 +165,7 @@ impl ht_renderer {
                     let mut posttexture = 0;
                     GenTextures(1, &mut posttexture);
                     BindTexture(TEXTURE_2D, posttexture);
-                    TexImage2D(TEXTURE_2D, 0, RGB as i32, window_width as i32, window_height as i32, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, SRGB as i32, window_width as i32, window_height as i32, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, posttexture, 0);
@@ -368,9 +368,6 @@ impl ht_renderer {
         self.backend.ui_master = ui_master;
         // load default texture
         self.load_texture_if_not_already_loaded("default").expect("failed to load default texture");
-
-        // for debugging
-        self.load_mesh_if_not_already_loaded("skintest").expect("failed to load skintest mesh");
     }
 
     pub fn load_texture_if_not_already_loaded(&mut self, name: &str) -> Result<(), crate::textures::TextureError> {
@@ -544,7 +541,7 @@ impl ht_renderer {
             DepthFunc(LESS);
 
             // disable gamma correction
-            Disable(FRAMEBUFFER_SRGB);
+            Enable(FRAMEBUFFER_SRGB);
 
             // set the clear color to black
             ClearColor(0.0, 0.0, 0.0, 1.0);
@@ -566,7 +563,7 @@ impl ht_renderer {
             Viewport(0, 0, self.window_size.x as GLsizei, self.window_size.y as GLsizei);
 
             // set the clear color to black
-            ClearColor(0.0, 0.0, 0.0, 1.0);
+            ClearColor(0.0, 0.5, 0.5, 1.0);
             Clear(COLOR_BUFFER_BIT);
 
             // send the lights to the shader
@@ -610,6 +607,11 @@ impl ht_renderer {
             let gbuffer_info_c = CString::new("info").unwrap();
             let gbuffer_info_loc = GetUniformLocation(lighting_shader.program, gbuffer_info_c.as_ptr());
             Uniform1i(gbuffer_info_loc, 3);
+            // send camera position to the shader
+            let camera_pos_c = CString::new("u_camera_pos").unwrap();
+            let camera_pos_loc = GetUniformLocation(lighting_shader.program, camera_pos_c.as_ptr());
+            let pos = self.camera.get_position();
+            Uniform3f(camera_pos_loc, pos.x, pos.y, pos.z);
 
             // draw the quad
             BindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);
