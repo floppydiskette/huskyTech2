@@ -366,7 +366,7 @@ impl SkeletalAnimations {
 
 impl SkeletalAnimation {
     pub fn advance_time(&mut self, delta_time: f32) {
-        const SCALE: f32 = 5.0;
+        const SCALE: f32 = 1.0;
         self.time += (delta_time * SCALE);
         if self.time > self.max_time {
             self.time = 0.0;

@@ -136,6 +136,7 @@ async fn main() {
         debug!("connected to server");
 
         if !skip_intro { sunlust_intro::animate(&mut renderer, &mut sss) }
+        crate::ui::SHOW_UI.store(true, std::sync::atomic::Ordering::SeqCst);
 
         renderer.camera.set_fov(DEFAULT_FOV);
 

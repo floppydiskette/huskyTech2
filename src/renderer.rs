@@ -515,21 +515,6 @@ impl ht_renderer {
 
         crate::ui::render(self);
 
-        let egui::FullOutput {
-            platform_output,
-            repaint_after: _,
-            textures_delta,
-            shapes,
-        } = self.backend.egui_context.lock().unwrap().end_frame();
-
-        //Handle cut, copy text from egui
-        if !platform_output.copied_text.is_empty() {
-            egui_glfw_gl::copy_to_clipboard(&mut self.backend.input_state.lock().unwrap(), platform_output.copied_text);
-        }
-
-        let clipped_shapes = self.backend.egui_context.lock().unwrap().tessellate(shapes);
-        self.backend.painter.lock().unwrap().paint_and_update_textures(1.0, &clipped_shapes, &textures_delta);
-
         unsafe {
             self.backend.window.lock().unwrap().swap_buffers();
             let mut width = 0;

@@ -163,10 +163,8 @@ impl UiMesh {
             BindTexture(TEXTURE_2D, self.texture.unwrap().diffuse_texture);
             let texture_c = CString::new("diffuse").unwrap();
             Uniform1i(GetUniformLocation(shader.program, texture_c.as_ptr() as *const GLchar), 0);
-            if self.opacity != 1.0 {
-                let opacity_c = CString::new("opacity").unwrap();
-                Uniform1f(GetUniformLocation(shader.program, opacity_c.as_ptr()), self.opacity);
-            }
+            let opacity_c = CString::new("opacity").unwrap();
+            Uniform1f(GetUniformLocation(shader.program, opacity_c.as_ptr()), self.opacity);
             let unlit_c = CString::new("unlit").unwrap();
             Uniform1i(GetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 1);
 
@@ -182,10 +180,8 @@ impl UiMesh {
 
             DrawElements(TRIANGLES, master.num_indices as GLsizei, UNSIGNED_INT, std::ptr::null());
 
-            if self.opacity != 1.0 {
-                let opacity_c = CString::new("opacity").unwrap();
-                Uniform1f(GetUniformLocation(shader.program, opacity_c.as_ptr()), 1.0);
-            }
+            let opacity_c = CString::new("opacity").unwrap();
+            Uniform1f(GetUniformLocation(shader.program, opacity_c.as_ptr()), 1.0);
             let unlit_c = CString::new("unlit").unwrap();
             Uniform1i(GetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 0);
 
