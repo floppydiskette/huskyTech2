@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::mem::MaybeUninit;
 use halfbrown::HashMap;
 use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
@@ -113,6 +114,7 @@ impl PhysicsSystem {
                 Some(PhysicsCharacterController {
                     controller,
                     flags: Arc::new(Mutex::new(CollisionFlags::default())),
+                    scene: self.scene,
                     y_velocity: Arc::new(UnsafeCell::new(0.0)),
                 })
             } else {
@@ -195,6 +197,7 @@ impl CollisionFlags {
 pub struct PhysicsCharacterController {
     pub controller: *mut PxController,
     pub flags: Arc<Mutex<CollisionFlags>>,
+    scene: *mut PxScene,
     y_velocity: Arc<UnsafeCell<f32>>,
 }
 
@@ -205,7 +208,7 @@ unsafe impl Sync for PhysicsCharacterController {
 }
 
 impl PhysicsCharacterController {
-    pub fn move_by(&mut self, displacement: Vec3, jump: bool, cheat: bool, delta_time: f32) {
+    pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32) {
         let mut displacement = PxVec3 {
             x: displacement.x,
             y: displacement.y,

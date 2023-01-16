@@ -947,6 +947,10 @@ impl WorldMachine {
                         let shader = shader.unwrap();
                         let texture = texture.unwrap();
 
+                        let old_position = mesh.position;
+                        let old_rotation = mesh.rotation;
+                        let old_scale = mesh.scale;
+
                         // if this entity has a transform, apply it
                         if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
                             if let Some(position) = transform.get_parameter("position") {
@@ -957,7 +961,7 @@ impl WorldMachine {
                                         continue;
                                     }
                                 };
-                                mesh.position = position;
+                                mesh.position += position;
                             }
                             if let Some(rotation) = transform.get_parameter("rotation") {
                                 let rotation = match rotation.value {
@@ -978,7 +982,7 @@ impl WorldMachine {
                                         continue;
                                     }
                                 };
-                                mesh.scale = scale;
+                                mesh.scale += scale;
                             }
                         }
 
@@ -986,6 +990,9 @@ impl WorldMachine {
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
                         mesh.render(renderer, Some(texture));
+                        mesh.position = old_position;
+                        mesh.rotation = old_rotation;
+                        mesh.scale = old_scale;
                         *renderer.meshes.get_mut(&*mesh_name).unwrap() = mesh;
                     } else {
                         // if not, add it to the list of things to load

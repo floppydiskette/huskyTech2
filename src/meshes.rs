@@ -233,15 +233,11 @@ impl Mesh {
 
                 animation.advance_time(delta);
 
-                debug!("time: {}", animation.time);
-                debug!("delta: {}", delta);
-
                 // fill bone matrice uniform
                 for bone in animations.root_bones.clone() {
                     animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(bone, Mat4::identity(), &animation);
                 }
                 for (i, transform) in animation.get_joint_matrices(animations).iter().enumerate() {
-                    debug!("bone {} has transform {:?}", i, transform);
                     let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
                     let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
                     UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());

@@ -1,4 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::sync::Mutex;
 use gfx_maths::*;
 use serde::{Deserialize, Serialize};
 use crate::{helpers, ht_renderer, keyboard, mouse};
@@ -253,7 +256,14 @@ impl Player {
 
         movement.y = 0.0;
         //let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(movement, jump, false, delta_time);
+        self.physics_controller.as_mut().unwrap().move_by(movement, jump, false,false, delta_time);
+        // uncomment next three lines for FLIGHT
+        //let mut position = self.physics_controller.as_ref().unwrap().get_position();
+        //position.y += 5.0;
+        //self.physics_controller.as_mut().unwrap().set_position(position);
+
+        *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
+
         self.last_move_call = std::time::Instant::now();
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {

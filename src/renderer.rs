@@ -6,6 +6,8 @@ use std::os::raw::{c_uint, c_ulong};
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Receiver;
+use egui_glfw_gl::egui;
+use egui_glfw_gl::egui::Rect;
 use gfx_maths::*;
 use glad_gl::gl::*;
 use glfw::{Context, Window, WindowEvent};
@@ -41,8 +43,11 @@ pub struct GLFWBackend {
     pub active_vbo: Option<GLuint>,
     pub current_shader: Option<usize>,
     pub shaders: Option<Vec<Shader>>,
-    pub ui_master: Option<UiMesh>,
+    pub ui_master: Arc<Mutex<Option<UiMesh>>>,
     pub framebuffers: Framebuffers,
+    pub egui_context: Arc<Mutex<egui::Context>>,
+    pub painter: Arc<Mutex<egui_glfw_gl::Painter>>,
+    pub input_state: Arc<Mutex<egui_glfw_gl::EguiInputState>>,
 }
 
 #[derive(Clone)]
@@ -101,6 +106,7 @@ impl ht_renderer {
                     glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
                     glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
                     glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
+                    glfw.window_hint(glfw::WindowHint::DoubleBuffer(true));
 
                     let (mut window, events) = glfw.create_window(
                         window_width,
@@ -290,14 +296,28 @@ impl ht_renderer {
                         error = GetError();
                     }
 
+                    // setup egui
+
+                    let native_ppp = window.get_content_scale().0;
+                    let mut painter = egui_glfw_gl::Painter::new(&mut window);
+                    let egui_ctx = egui::Context::default();
+                    let mut egui_input_state = egui_glfw_gl::EguiInputState::new(egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(window_width as f32, window_height as f32))),
+                        pixels_per_point: Some(native_ppp),
+                        ..Default::default()
+                    });
+
                     GLFWBackend {
                         window: Arc::new(Mutex::new(window)),
                         events: Arc::new(Mutex::new(events)),
                         current_shader: Option::None,
                         active_vbo: Option::None,
                         shaders: Option::None,
-                        ui_master: Option::None,
+                        ui_master: Arc::new(Mutex::new(None)),
                         framebuffers,
+                        egui_context: Arc::new(Mutex::new(egui_ctx)),
+                        painter: Arc::new(Mutex::new(painter)),
+                        input_state: Arc::new(Mutex::new(egui_input_state)),
                     }
                 }
             };
@@ -345,7 +365,7 @@ impl ht_renderer {
         let unlit = self.load_shader("unlit").expect("failed to load unlit shader");
         // load master uimesh
         let ui_master = UiMesh::new_master(self, unlit).expect("failed to load master uimesh");
-        self.backend.ui_master = Some(ui_master);
+        self.backend.ui_master = ui_master;
         // load default texture
         self.load_texture_if_not_already_loaded("default").expect("failed to load default texture");
 
@@ -491,12 +511,32 @@ impl ht_renderer {
     pub fn swap_buffers(&mut self) {
         self.setup_pass_two();
         self.setup_pass_three();
+        /* egui */
+
+        crate::ui::render(self);
+
+        let egui::FullOutput {
+            platform_output,
+            repaint_after: _,
+            textures_delta,
+            shapes,
+        } = self.backend.egui_context.lock().unwrap().end_frame();
+
+        //Handle cut, copy text from egui
+        if !platform_output.copied_text.is_empty() {
+            egui_glfw_gl::copy_to_clipboard(&mut self.backend.input_state.lock().unwrap(), platform_output.copied_text);
+        }
+
+        let clipped_shapes = self.backend.egui_context.lock().unwrap().tessellate(shapes);
+        self.backend.painter.lock().unwrap().paint_and_update_textures(1.0, &clipped_shapes, &textures_delta);
+
         unsafe {
             self.backend.window.lock().unwrap().swap_buffers();
             let mut width = 0;
             let mut height = 0;
             (width, height) = self.backend.window.lock().unwrap().get_framebuffer_size();
             self.window_size = Vec2::new(width as f32, height as f32);
+            self.backend.input_state.lock().unwrap().input.screen_rect = Some(egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(width as f32, height as f32)))
         }
         self.setup_pass_one();
     }

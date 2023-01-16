@@ -62,7 +62,6 @@ impl SkeletalBone {
         let mut min = (None, None, None); // (translate, rotate, scale)
         let mut max = (None, None, None);
         let mut stop_min_mode = false;
-        debug!("time: {}", animation.time);
         for i in 0..animation.framecount {
             if !animation.frames[i].contains_key(&self.index) {
                 continue;
@@ -155,8 +154,8 @@ impl SkeletalBone {
             mat
         };
 
-        //interpolate_mats(mat_a, mat_b, animation.time as f64)
-        mat_b
+        interpolate_mats(mat_a, mat_b, animation.time as f64)
+        //mat_b
     }
 }
 
@@ -329,8 +328,6 @@ impl SkeletalAnimations {
             let mut keyframes_ordered: Vec<HashMap<usize, SkeletalKeyframe>> = keyframes.values().cloned().collect();
             keyframes_ordered.sort_by(|a, b| a[&0].time.partial_cmp(&b[&0].time).unwrap());
 
-            debug!("keyframes: {}", keyframes.len());
-
             animations_final.insert(animation.name().unwrap_or("").to_string(), SkeletalAnimation {
                 name: animation.name().unwrap_or("").to_string(),
                 time: 0.0,
@@ -340,9 +337,6 @@ impl SkeletalAnimations {
                 frames: keyframes_ordered,
             });
         }
-
-        debug!("total of {} bones", bones_final.len());
-        debug!("total of {} animations", animations_final.len());
 
         // last step: order bones by index
         let mut bones_ordered: Vec<SkeletalBone> = Vec::new();
@@ -365,7 +359,6 @@ impl SkeletalAnimations {
         for child in &bone.children {
             self.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*child, pose, animation);
         }
-        debug!("bone {} has transform {:?}", joint, pose);
         pose = pose * bone.inverse_bind_matrix;
         self.bones[joint].animated_transform = pose;
     }
@@ -373,8 +366,8 @@ impl SkeletalAnimations {
 
 impl SkeletalAnimation {
     pub fn advance_time(&mut self, delta_time: f32) {
-        const fps: f32 = 30.0;
-        self.time += delta_time;
+        const SCALE: f32 = 5.0;
+        self.time += (delta_time * SCALE);
         if self.time > self.max_time {
             self.time = 0.0;
         }

@@ -1,4 +1,6 @@
 use std::ffi::CString;
+use std::sync::Mutex;
+use std::sync::Arc;
 use gfx_maths::*;
 use glad_gl::gl::*;
 use crate::camera::Camera;
@@ -22,9 +24,13 @@ pub struct UiMesh {
     pub num_indices: usize,
 }
 
+lazy_static!{
+    pub static ref UI_MASTER: Arc<Mutex<Option<UiMesh>>> = Arc::new(Mutex::new(None));
+}
+
 impl UiMesh {
     #[cfg(feature = "glfw")]
-    pub fn new_master(renderer: &mut ht_renderer, shader_index: usize) -> Result<UiMesh, String> {
+    pub fn new_master(renderer: &mut ht_renderer, shader_index: usize) -> Result<Arc<Mutex<Option<UiMesh>>>, String> {
         // create the mesh
         let vertices: [f32; 12] = [
             -1.0, -1.0, 0.0,
@@ -81,7 +87,7 @@ impl UiMesh {
 
         }
 
-        Ok(UiMesh {
+        let master = UiMesh {
             position: Vec2::new(0.0, 0.0),
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             scale: Vec2::new(1.0, 1.0),
@@ -93,13 +99,36 @@ impl UiMesh {
             uvbo,
             num_vertices: vertices.len(),
             num_indices: indices.len(),
-        })
+        };
+
+        *UI_MASTER.lock().unwrap() = Some(master.clone());
+
+        Ok(UI_MASTER.clone())
     }
 
     #[cfg(feature = "glfw")]
     pub fn new_element_from_name(name: &str, master: &UiMesh, renderer: &mut ht_renderer, shader_index: usize) -> Result<UiMesh, String> {
         // load the texture
         let texture = UiTexture::new_from_name(name.to_string())?;
+        Ok(UiMesh {
+            position: Vec2::new(0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec2::new(128.0, 128.0),
+            texture: Option::Some(texture),
+            opacity: 1.0,
+            vao: master.vao,
+            vbo: master.vbo,
+            ebo: master.ebo,
+            uvbo: master.uvbo,
+            num_vertices: master.num_vertices,
+            num_indices: master.num_indices,
+        })
+    }
+
+    #[cfg(feature = "glfw")]
+    pub fn new_element_from_data_assume_master_init(data: &[u8], dimensions: (u32, u32)) -> Result<UiMesh, String> {
+        let texture = UiTexture::new_from_rgba_bytes(data, dimensions)?;
+        let master = UI_MASTER.lock().unwrap().unwrap().clone();
         Ok(UiMesh {
             position: Vec2::new(0.0, 0.0),
             rotation: Quaternion::identity(),

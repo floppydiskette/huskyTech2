@@ -13,7 +13,8 @@ pub const DEFAULT_RADIUS: f32 = 0.5;
 pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
 
-pub const ERROR_MARGIN: f32 = 1.0;
+pub const ERROR_MARGIN: f32 = 5.0;
+pub const MAX_HEIGHT_BEFORE_FLIGHT: f32 = 10.0;
 
 #[derive(Clone)]
 pub struct ServerPlayerContainer {
@@ -32,6 +33,8 @@ pub struct ServerPlayer {
     physics_controller: Option<PhysicsCharacterController>,
     movement_speed: f32,
     last_move_call: std::time::Instant,
+    height_gained_since_grounded: f32,
+    last_height: f32,
 }
 
 impl Default for ServerPlayer {
@@ -46,6 +49,8 @@ impl Default for ServerPlayer {
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
             last_move_call: std::time::Instant::now(),
+            height_gained_since_grounded: 0.0,
+            last_height: 0.0,
         }
     }
 }
@@ -62,6 +67,8 @@ impl ServerPlayer {
             physics_controller: None,
             movement_speed: DEFAULT_MOVESPEED,
             last_move_call: std::time::Instant::now(),
+            height_gained_since_grounded: 0.0,
+            last_height: 0.0,
         }
     }
 
@@ -88,7 +95,7 @@ impl ServerPlayer {
 
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, false, delta);
+        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta);
         self.last_move_call = current_time;
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
@@ -96,6 +103,18 @@ impl ServerPlayer {
         worldmachine.last_physics_update = current_time;
         let new_position_calculated = self.physics_controller.as_mut().unwrap().get_position();
         let distance = helpers::distance(new_position_calculated, new_position);
+        if !self.physics_controller.as_ref().unwrap().is_on_ground() {
+            self.height_gained_since_grounded += self.last_height - new_position_calculated.y;
+        } else {
+            self.height_gained_since_grounded = 0.0;
+        }
+        self.last_height = new_position_calculated.y;
+
+        if self.height_gained_since_grounded > MAX_HEIGHT_BEFORE_FLIGHT {
+            warn!("player {} is flying", self.uuid);
+            return false;
+        }
+
         if distance < ERROR_MARGIN {
             self.set_position(new_position, entity_id, worldmachine).await;
             self.set_rotation(new_rotation, entity_id, worldmachine).await;
@@ -112,7 +131,7 @@ impl ServerPlayer {
     pub async fn gravity_tick(&mut self, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) {
         let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
         let previous_position = self.physics_controller.as_mut().unwrap().get_position();
-        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), false, false, delta);
+        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), false, true, false, delta);
         let new_position = self.physics_controller.as_mut().unwrap().get_position();
         self.last_move_call = std::time::Instant::now();
         if previous_position != new_position {

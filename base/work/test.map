@@ -56,7 +56,7 @@ entities:
           z: 2.105
       visualise:
         name: visualise
-        value: !Bool true
+        value: !Bool false
     component_type:
       id: 5
       name: BoxCollider
@@ -251,7 +251,7 @@ entities:
           z: 1.0
       visualise:
         name: visualise
-        value: !Bool true
+        value: !Bool false
     component_type:
       id: 5
       name: BoxCollider
@@ -281,7 +281,7 @@ entities:
         value: !Vec3
           x: 5.0
           y: 0.0
-          z: -2.0
+          z: -10.0
       rotation:
         name: rotation
         value: !Quaternion
@@ -298,26 +298,6 @@ entities:
     component_type:
       id: 1
       name: Transform
-  - name: Light
-    parameters:
-      colour:
-        name: colour
-        value: !Vec3
-          x: 1.0
-          y: 1.0
-          z: 1.0
-      intensity:
-        name: intensity
-        value: !Float 1.0
-      position:
-        name: position
-        value: !Vec3
-          x: 4.0
-          y: 10.0
-          z: 0.0
-    component_type:
-      id: 4
-      name: Light
   children: []
   parent: null
 systems: []

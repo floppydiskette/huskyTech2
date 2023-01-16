@@ -8,6 +8,8 @@ use std::borrow::BorrowMut;
 use std::{process, thread};
 use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Instant;
+use egui_glfw_gl::egui;
 use gfx_maths::{Quaternion, Vec3};
 use kira::manager::{AudioManager, AudioManagerSettings};
 use kira::manager::backend::cpal::CpalBackend;
@@ -46,6 +48,7 @@ pub mod keyboard;
 pub mod mouse;
 pub mod optimisations;
 pub mod skeletal_animation;
+pub mod ui;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -74,6 +77,8 @@ async fn main() {
             _ => {}
         }
     }
+
+    let start_time = Instant::now();
 
     if run_as_lan_server {
         info!("good day! running as lan server");
@@ -124,7 +129,6 @@ async fn main() {
             tokio::spawn(async move {
                 server_clone.run().await;
             });
-
             let server_connection = server.join_local_server().await;
             worldmachine.connect_to_server(ConnectionClientside::Local(server_connection.clone()));
         }
@@ -138,15 +142,19 @@ async fn main() {
         let mut last_frame_time = std::time::Instant::now();
         loop {
             let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
+            renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
+            renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
             let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
             worldmachine.render(&mut renderer);
+
             last_frame_time = std::time::Instant::now();
             renderer.swap_buffers();
             renderer.backend.window.lock().unwrap().glfw.poll_events();
             keyboard::reset_keyboard_state();
             mouse::reset_mouse_state();
             for (_, event) in glfw::flush_messages(renderer.backend.events.lock().unwrap().deref()) {
+                egui_glfw_gl::handle_event(event.clone(), &mut renderer.backend.input_state.lock().unwrap());
                 keyboard::tick_keyboard(event.clone());
                 mouse::tick_mouse(event);
             }

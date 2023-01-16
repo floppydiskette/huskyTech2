@@ -188,6 +188,36 @@ impl UiTexture {
             })
         }
     }
+
+    pub fn new_from_rgba_bytes(bytes: &[u8], dimensions: (u32, u32)) -> Result<UiTexture, String> {
+        #[cfg(feature = "glfw")]
+        {
+            // load opengl textures
+            let mut textures: [GLuint; 1] = [0; 1];
+            unsafe {
+                GenTextures(1, textures.as_mut_ptr());
+            }
+            let diffuse_texture = textures[0];
+
+            // diffuse texture
+            unsafe {
+                BindTexture(TEXTURE_2D, diffuse_texture);
+                TexImage2D(TEXTURE_2D, 0, RGBA as i32, dimensions.0 as i32, dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, bytes.as_ptr() as *const GLvoid);
+
+                TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                GenerateMipmap(TEXTURE_2D);
+            }
+
+            // return
+            Ok(UiTexture {
+                dimensions,
+                diffuse_texture,
+            })
+        }
+    }
 }
 
 fn load_image(file_name: &str) -> Result<Image, String> { // todo: use dds

@@ -24,23 +24,27 @@ void main()
 {
     if (care_about_animation) {
         vec4 total_position = vec4(0.0f);
+        vec3 total_normal = vec3(0.0f);
         for (int i = 0; i < MAX_BONER_INFLUENCE; i++) {
             if (a_joint[i] >= MAX_BONES) {
                 total_position = vec4(in_pos, 1.0f);
+                total_normal = in_normal;
                  break;
             }
             vec4 local_pos = joint_matrix[a_joint[i]] * vec4(in_pos, 1.0f);
             total_position += local_pos * a_weight[i];
             vec3 local_normal = mat3(joint_matrix[a_joint[i]]) * in_normal;
+            total_normal += local_normal * a_weight[i];
         }
         mat4 view_model = u_view * u_model;
         gl_Position = u_projection * view_model * total_position;
         frag_pos = vec3(u_model * total_position);
+        normal = total_normal;
     } else {
         gl_Position = u_mvp * vec4(in_pos, 1);
         frag_pos = vec3(u_model * vec4(in_pos, 1));
+        normal = in_normal;
     }
 
     uv = in_uv;
-    normal = in_normal;
 }

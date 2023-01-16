@@ -26,7 +26,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &mut AudioManager<CpalBackend>) 
     let mut mesh = renderer.meshes.get("ht2").expect("failed to get ht2 mesh").clone();
     let mut texture = renderer.textures.get("ht2").expect("failed to get ht2-mesh texture").clone();
 
-    let ui_master = renderer.backend.ui_master.unwrap().clone();
+    let ui_master = renderer.backend.ui_master.lock().unwrap().clone().unwrap().clone();
     let basic_shader = renderer.shaders.get("gbuffer").unwrap().clone();
     let rainbow_shader = renderer.shaders.get("rainbow").unwrap().clone();
     let unlit_shader = renderer.shaders.get("unlit").unwrap().clone();
