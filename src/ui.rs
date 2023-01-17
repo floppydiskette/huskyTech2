@@ -57,6 +57,6 @@ fn render_fps(ui: &mut Ui) {
     let fps = FPS.lock().unwrap();
     // label at top right
     ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
-        ui.label(format!("FPS: {}", fps));
+        ui.label(format!("FPS: {}", *fps as u32));
     });
 }

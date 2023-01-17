@@ -5,6 +5,7 @@ use std::ops::{DerefMut};
 use std::os::raw::{c_uint, c_ulong};
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::Receiver;
 use egui_glfw_gl::egui;
 use egui_glfw_gl::egui::Rect;
@@ -23,11 +24,45 @@ pub static MAX_LIGHTS: usize = 100;
 pub static SHADOW_SIZE: usize = 1024;
 
 #[derive(Clone, Copy)]
-pub struct Colour {
+pub struct RGBA {
     pub r: u8,
     pub g: u8,
     pub b: u8,
     pub a: u8,
+}
+
+pub struct AtomicRGBA {
+    pub r: AtomicU8,
+    pub g: AtomicU8,
+    pub b: AtomicU8,
+    pub a: AtomicU8,
+}
+
+impl AtomicRGBA {
+    pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self {
+            r: AtomicU8::new(r),
+            g: AtomicU8::new(g),
+            b: AtomicU8::new(b),
+            a: AtomicU8::new(a),
+        }
+    }
+
+    pub fn load(&self, order: std::sync::atomic::Ordering) -> RGBA {
+        RGBA {
+            r: self.r.load(order),
+            g: self.g.load(order),
+            b: self.b.load(order),
+            a: self.a.load(order),
+        }
+    }
+
+    pub fn store(&self, val: RGBA, order: std::sync::atomic::Ordering) {
+        self.r.store(val.r, order);
+        self.g.store(val.g, order);
+        self.b.store(val.b, order);
+        self.a.store(val.a, order);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -40,6 +75,7 @@ pub enum RenderType {
 pub struct GLFWBackend {
     pub window: Arc<Mutex<Window>>,
     pub events: Arc<Mutex<Receiver<(f64, WindowEvent)>>>,
+    pub clear_colour: Arc<AtomicRGBA>,
     pub active_vbo: Option<GLuint>,
     pub current_shader: Option<usize>,
     pub shaders: Option<Vec<Shader>>,
@@ -311,6 +347,7 @@ impl ht_renderer {
                         window: Arc::new(Mutex::new(window)),
                         events: Arc::new(Mutex::new(events)),
                         current_shader: Option::None,
+                        clear_colour: Arc::new(AtomicRGBA::new(0, 0, 0, 255)),
                         active_vbo: Option::None,
                         shaders: Option::None,
                         ui_master: Arc::new(Mutex::new(None)),
@@ -562,8 +599,9 @@ impl ht_renderer {
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.postbuffer as GLuint);
             Viewport(0, 0, self.window_size.x as GLsizei, self.window_size.y as GLsizei);
 
-            // set the clear color to black
-            ClearColor(0.0, 0.5, 0.5, 1.0);
+            // set the clear color to preferred color
+            let colour = self.backend.clear_colour.load(Ordering::Relaxed);
+            ClearColor(colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
             Clear(COLOR_BUFFER_BIT);
 
             // send the lights to the shader

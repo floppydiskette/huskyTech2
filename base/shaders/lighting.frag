@@ -34,7 +34,7 @@ vec3 calculate_light(Light light, vec3 albedo, float specu, vec2 uv, vec3 normal
 
     vec3 reflect_dir = reflect(-light_dir, normal);
 
-    float shininess = 32.0;
+    float shininess = specu * 4.0;
     float spec = pow(max(dot(normal, halfway_dir), 0.0), shininess);
 
     return light.intensity * (diff * light.colour + spec * light.colour);

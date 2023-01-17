@@ -5,6 +5,7 @@
 use std::ffi::CString;
 use std::process;
 use std::ptr::null;
+use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 use fyrox_sound::buffer::{DataSource, SoundBufferResource};
 use fyrox_sound::context::SoundContext;
@@ -18,11 +19,12 @@ use glad_gl::gl::*;
 use crate::animation::Animation;
 use crate::helpers::{gen_rainbow, set_shader_if_not_already};
 use crate::light::Light;
-use crate::renderer::{Colour, ht_renderer};
+use crate::renderer::{RGBA, ht_renderer};
 use crate::textures::Texture;
 use crate::uimesh::UiMesh;
 
 pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
+    renderer.backend.clear_colour.store(RGBA { r: 0, g: 0, b: 0, a: 255 }, Ordering::SeqCst);
     // load ht2-mesh logo model
     renderer.load_texture_if_not_already_loaded("ht2").expect("failed to load ht2-mesh texture");
     renderer.load_mesh_if_not_already_loaded("ht2").expect("failed to load ht2 mesh");
@@ -64,8 +66,6 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
 
     let mut sunlust_sfx = SoundBufferResource::new_generic(block_on(DataSource::from_file("base/snd/sunlust.wav")).unwrap()).unwrap();
 
-    // wait 2 seconds
-    std::thread::sleep(std::time::Duration::from_millis(1000));
 
     let source = SoundSourceBuilder::new()
         .with_buffer(sunlust_sfx)
@@ -168,14 +168,14 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
             light_b.intensity = (-intensity_downtimer / 100.0) * 888.0;
         } else if intensity_timer < 1000.0 {
             intensity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
-            light_a.intensity = (intensity_timer / 1000.0) * 1.0;
-            light_b.intensity = (intensity_timer / 1000.0) * 1.0;
+            light_a.intensity = (intensity_timer / 1000.0) * 0.3;
+            light_b.intensity = (intensity_timer / 1000.0) * 0.3;
             light_a.color.y = (-intensity_timer / 1000.0) * 0.01;
             light_b.color.x = (-intensity_timer / 1000.0) * 0.01;
         }
 
-        light_a.position = mesh.position + Vec3::new(-0.5, 0.0, 0.0);
-        light_b.position = mesh.position + Vec3::new(0.5, 0.0, 0.0);
+        light_a.position = mesh.position + Vec3::new(-0.5, 0.0, -1.2);
+        light_b.position = mesh.position + Vec3::new(0.5, 0.0, -1.2);
 
         // swap buffers
         renderer.swap_buffers();
@@ -208,4 +208,5 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     }
 
     sss.state().remove_source(source_handle);
+    renderer.backend.clear_colour.store(RGBA { r: 0, g: 75, b: 75, a: 255 }, Ordering::SeqCst);
 }

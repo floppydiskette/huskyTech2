@@ -148,7 +148,7 @@ impl UiMesh {
     pub fn render_at(&self, master: UiMesh, renderer: &mut ht_renderer) {
         let master = master;
 
-        let gbuffer_shader = *renderer.shaders.get("gbuffer").unwrap();
+        let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
         set_shader_if_not_already(renderer, gbuffer_shader);
         let shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
 
@@ -168,6 +168,10 @@ impl UiMesh {
             let unlit_c = CString::new("unlit").unwrap();
             Uniform1i(GetUniformLocation(shader.program, unlit_c.as_ptr() as *const GLchar), 1);
 
+            // turn off care_about_animation
+            let care_about_animation_c = CString::new("care_about_animation").unwrap();
+            Uniform1i(GetUniformLocation(shader.program, care_about_animation_c.as_ptr() as *const GLchar), 0);
+
             // transformation time!
             // calculate the model matrix
             let fake_coords = screen_coords_to_gl_coords(self.position, self.scale, renderer.window_size);
@@ -177,6 +181,11 @@ impl UiMesh {
             let mvp_c = CString::new("u_mvp").unwrap();
             let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
             UniformMatrix4fv(mvp_loc, 1, FALSE as GLboolean, model_matrix.as_ptr());
+
+            // also send model matrix to shader
+            let model_c = CString::new("u_model").unwrap();
+            let model_loc = GetUniformLocation(shader.program, model_c.as_ptr());
+            UniformMatrix4fv(model_loc, 1, FALSE as GLboolean, model_matrix.as_ptr());
 
             DrawElements(TRIANGLES, master.num_indices as GLsizei, UNSIGNED_INT, std::ptr::null());
 
