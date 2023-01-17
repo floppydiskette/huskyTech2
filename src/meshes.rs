@@ -4,6 +4,8 @@ use std::ops::Index;
 use std::ptr::null;
 use std::time::Instant;
 use gfx_maths::*;
+use gl_matrix::vec3::{dot, multiply, normalize, subtract};
+use gl_matrix::vec4::add;
 use glad_gl::gl::*;
 use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
@@ -23,6 +25,7 @@ pub struct Mesh {
     pub num_indices: usize,
     pub uvbo: GLuint,
     pub normal_vbo: GLuint,
+    pub tangent_vbo: GLuint,
     pub animations: Option<SkeletalAnimations>,
     pub animation_delta: Option<Instant>,
 }
@@ -39,6 +42,8 @@ pub enum MeshComponent {
     SourceArray,
     UvSourceArray,
     Indices,
+    Tangents,
+    Normals,
 }
 
 #[derive(Debug)]
@@ -48,6 +53,58 @@ pub enum MeshError {
     MeshNameNotFound,
     MeshComponentNotFound(MeshComponent),
     UnsupportedArrayType,
+}
+
+fn calculate_tangents(positions: &Vec<[f32; 3]>, uvs: &[[f32; 2]], normals: &Vec<[f32; 3]>, indices: &Vec<u32>) -> Vec<[f32; 4]> {
+    let mut tangents = vec![[0.0, 0.0, 0.0, 0.0]; positions.len() * 2];
+    let mut i = 0;
+    while i < indices.len() {
+        let i0 = indices[i];
+        let i1 = indices[i + 1];
+        let i2 = indices[i + 2];
+        let p0 = positions[i0 as usize];
+        let p1 = positions[i1 as usize];
+        let p2 = positions[i2 as usize];
+        let uv0 = uvs[i0 as usize];
+        let uv1 = uvs[i1 as usize];
+        let uv2 = uvs[i2 as usize];
+
+        let edge1 = subtract(&mut gl_matrix::common::Vec3::default(), &p1, &p0);
+        let edge2 = subtract(&mut gl_matrix::common::Vec3::default(), &p2, &p0);
+        let x1 = uv1[0] - uv0[0];
+        let x2 = uv2[0] - uv0[0];
+        let y1 = uv1[1] - uv0[1];
+        let y2 = uv2[1] - uv0[1];
+
+        let r = 1.0 / (x1 * y2 - x2 * y1);
+        let tx = (y2 * edge1[0] - y1 * edge2[0]) * r;
+        let ty = (y2 * edge1[1] - y1 * edge2[1]) * r;
+        let tz = (y2 * edge1[2] - y1 * edge2[2]) * r;
+        let tangent = [tx, ty, tz, 0.0];
+
+        let t0 = add(&mut gl_matrix::common::Vec4::default(), &tangents[i0 as usize], &tangent);
+        let t1 = add(&mut gl_matrix::common::Vec4::default(), &tangents[i1 as usize], &tangent);
+        let t2 = add(&mut gl_matrix::common::Vec4::default(), &tangents[i2 as usize], &tangent);
+        tangents[i0 as usize] = t0;
+        tangents[i1 as usize] = t1;
+        tangents[i2 as usize] = t2;
+
+        i += 3;
+    }
+
+    let mut i = 0;
+    while i < positions.len() {
+        let t = tangents[i];
+        let n = normals[i];
+        let mut tangentXYZ = [t[0], t[1], t[2]];
+        let mut tangentXYZN = normalize(&mut gl_matrix::common::Vec3::default(), &tangentXYZ);
+        let mut dotTN = dot(&tangentXYZN, &n);
+        let mut tangent = [tangentXYZN[0], tangentXYZN[1], tangentXYZN[2], dotTN];
+        tangents[i] = tangent;
+        i += 1;
+    }
+
+    tangents
 }
 
 impl Mesh {
@@ -76,6 +133,7 @@ impl Mesh {
         let mut indices_array = Vec::new();
         let mut uvs_array = Vec::new();
         let mut normals_array = Vec::new();
+        let mut tangents_array = Vec::new();
         let mut joint_array = Vec::new();
         let mut weight_array = Vec::new();
         for primitive in mesh.primitives() {
@@ -94,8 +152,12 @@ impl Mesh {
             let tex_coords = tex_coords.collect::<Vec<_>>();
 
             // get the normals
-            let normals = reader.read_normals().ok_or(MeshError::MeshComponentNotFound(MeshComponent::SourceMap))?;
+            let normals = reader.read_normals().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Normals))?;
             let normals = normals.collect::<Vec<_>>();
+
+            // get the tangents
+            let tangents = calculate_tangents(&positions, &tex_coords, &normals, &indices);
+            tangents_array.extend(tangents.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
 
             // add the vertices (with each grouping of three f32s as three separate f32s)
             vertices_array.extend(positions.iter().flat_map(|v| vec![v[0], v[1], v[2]]));
@@ -131,6 +193,7 @@ impl Mesh {
         let mut ebo = 0 as GLuint;
         let mut uvbo= 0 as GLuint;
         let mut normal_vbo = 0 as GLuint;
+        let mut tangent_vbo = 0 as GLuint;
         let mut joint_bo = 0 as GLuint;
         let mut weight_bo = 0 as GLuint;
         unsafe {
@@ -167,6 +230,16 @@ impl Mesh {
             let normal = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_normal_c.as_ptr());
             VertexAttribPointer(normal as GLuint, 3, FLOAT, FALSE as GLboolean, 0, null());
             EnableVertexAttribArray(2);
+
+            // tangents
+            GenBuffers(1, &mut tangent_vbo);
+            BindBuffer(ARRAY_BUFFER, tangent_vbo);
+            BufferData(ARRAY_BUFFER, (tangents_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, tangents_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+            // vertex tangents for fragment shader
+            let in_tangent_c = CString::new("in_tangent").unwrap();
+            let tangent = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_tangent_c.as_ptr());
+            VertexAttribPointer(tangent as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(7);
 
             if animations.is_some() {
                 // joint array
@@ -208,6 +281,7 @@ impl Mesh {
             animations,
             animation_delta: Some(Instant::now()),
             normal_vbo,
+            tangent_vbo,
         })
     }
 

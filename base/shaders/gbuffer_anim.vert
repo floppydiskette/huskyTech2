@@ -3,11 +3,12 @@
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec3 in_normal;
+layout(location = 7) in vec4 in_tangent;
 layout(location = 5) in ivec4 a_joint;
 layout(location = 6) in vec4 a_weight;
 
 out vec2 uv;
-out vec3 normal;
+out mat3 TBN;
 out vec3 frag_pos;
 
 uniform mat4 u_mvp;
@@ -19,6 +20,15 @@ const int MAX_BONES = 100;
 const int MAX_BONER_INFLUENCE = 4; // (:
 uniform mat4 joint_matrix[MAX_BONES];
 uniform bool care_about_animation;
+
+mat3 calculate_normals(vec3 in_normals) {
+    mat4 normalMatrix = transpose(inverse(u_model));
+    vec3 N = normalize( ( normalMatrix * vec4( in_normals, 0.0 ) ).xyz );
+    vec3 T = normalize( ( normalMatrix * vec4( in_tangent.xyz, 0.0 ) ).xyz );
+    vec3 B = normalize( ( normalMatrix * vec4( ( cross( in_normals, in_tangent.xyz ) ), 0.0 ) ).xyz );
+
+    return mat3(T, B, N);
+}
 
 void main()
 {
@@ -39,13 +49,13 @@ void main()
         mat4 view_model = u_view * u_model;
         gl_Position = u_projection * view_model * total_position;
         frag_pos = vec3(u_model * total_position);
-        mat3 normal_mat = transpose(inverse(mat3(u_model)));
-        normal = normal_mat * in_normal;
+
+        TBN = calculate_normals(total_normal);
     } else {
         gl_Position = u_mvp * vec4(in_pos, 1.0);
         frag_pos = vec3(u_model * vec4(in_pos, 1.0));
-        mat3 normal_mat = transpose(inverse(mat3(u_model)));
-        normal = normal_mat * in_normal;
+
+        TBN = calculate_normals(in_normal);
     }
 
     uv = in_uv;

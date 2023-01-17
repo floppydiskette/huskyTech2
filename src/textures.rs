@@ -96,7 +96,7 @@ impl Texture {
                 // normal texture
                 unsafe {
                     BindTexture(TEXTURE_2D, normal_texture);
-                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, normal_data.dimensions.0 as i32, normal_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, normal_data.data.as_ptr() as *const GLvoid);
+                    TexImage2D(TEXTURE_2D, 0, RGB as i32, normal_data.dimensions.0 as i32, normal_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, normal_data.data.as_ptr() as *const GLvoid);
 
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);

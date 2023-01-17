@@ -283,7 +283,7 @@ impl ht_renderer {
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, gbuffer_textures[0], 0);
                     // normal
                     BindTexture(TEXTURE_2D, gbuffer_textures[1]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA16F as i32, window_width as i32, window_height as i32, 0, RGBA, FLOAT, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGBA8 as i32, window_width as i32, window_height as i32, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT1, TEXTURE_2D, gbuffer_textures[1], 0);
@@ -389,7 +389,7 @@ impl ht_renderer {
         // load postbuffer shader
         self.load_shader("postbuffer").expect("failed to load postbuffer shader");
         // load gbuffer shader
-        self.load_shader("gbuffer").expect("failed to load gbuffer shader");
+        //self.load_shader("gbuffer").expect("failed to load gbuffer shader");
         // load gbuffer animation shader
         self.load_shader("gbuffer_anim").expect("failed to load gbuffer animation shader");
         // load lighting shader
@@ -562,7 +562,7 @@ impl ht_renderer {
 
     // geometry pass
     fn setup_pass_one(&mut self) {
-        let gbuffer_shader = *self.shaders.get("gbuffer").unwrap();
+        let gbuffer_shader = *self.shaders.get("gbuffer_anim").unwrap();
 
         set_shader_if_not_already(self, gbuffer_shader);
 
@@ -578,7 +578,7 @@ impl ht_renderer {
             DepthFunc(LESS);
 
             // disable gamma correction
-            Enable(FRAMEBUFFER_SRGB);
+            Disable(FRAMEBUFFER_SRGB);
 
             // set the clear color to black
             ClearColor(0.0, 0.0, 0.0, 1.0);
@@ -603,6 +603,9 @@ impl ht_renderer {
             let colour = self.backend.clear_colour.load(Ordering::Relaxed);
             ClearColor(colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
             Clear(COLOR_BUFFER_BIT);
+
+            // disable srgb
+            Enable(FRAMEBUFFER_SRGB);
 
             // send the lights to the shader
             let light_count = self.lights.len();

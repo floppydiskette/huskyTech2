@@ -6,8 +6,8 @@ layout (location = 2) out vec4 out_albedospec;
 layout (location = 3) out vec4 out_info;
 
 in vec2 uv;
+in mat3 TBN;
 in vec3 frag_pos;
-in vec3 normal;
 
 uniform sampler2D diffuse;
 uniform sampler2D specular;
@@ -18,12 +18,15 @@ uniform bool unlit = false;
 
 void main() {
     if (!unlit) {
+        vec3 normal = texture(normalmap, uv).rgb * 2.0 - 1.0;
+        normal = normalize(TBN * normal) * vec3(0.5) + vec3(0.5);
+
         out_pos = vec4(frag_pos, opacity);
-        out_normal = vec4(normalize(normal), 1.0);//vec4(texture(normalmap, uv).rgb, 1.0);
+        out_normal = vec4(normal, 1.0);
         out_albedospec = vec4(texture(diffuse, uv).rgb, 1.0);
         out_info = vec4(texture(specular, uv).r, opacity, unlit ? 1.0 : 0.0, 1.0);
     } else {
-        out_normal = vec4(normal, 1.0);
+        out_normal = vec4(0.0, 0.0, 0.0, 1.0);
         out_albedospec = vec4(texture(diffuse, uv).rgb, 1.0);
         out_info = vec4(0.0, opacity, unlit ? 1.0 : 0.0, 1.0);
     }

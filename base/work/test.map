@@ -12,7 +12,7 @@ entities:
         value: !String basic
       texture:
         name: texture
-        value: !String grass1
+        value: !String gold4k
     component_type:
       id: 2
       name: MeshRenderer

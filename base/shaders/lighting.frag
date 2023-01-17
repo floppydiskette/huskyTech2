@@ -42,7 +42,7 @@ vec3 calculate_light(Light light, vec3 albedo, float specu, vec2 uv, vec3 normal
 
 void main() {
     vec3 frag_pos = texture(position, uv).rgb;
-    vec3 normal = texture(normal, uv).rgb;
+    vec3 normal = texture(normal, uv).rgb * 2.0 - 1.0;
     vec3 albedo = texture(albedospec, uv).rgb;
 
     vec3 info = texture(info, uv).rgb;
@@ -50,7 +50,6 @@ void main() {
     float opacity = info.g;
     float unlit = info.b;
 
-    //vec3 norm = normalize(normal * 2.0 - 1.0);
 
     vec3 view_dir = normalize(u_camera_pos - frag_pos);
 
