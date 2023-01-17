@@ -348,7 +348,7 @@ entities:
         value: !Bool true
       track:
         name: track
-        value: !String sunlust.wav
+        value: !String demo.wav
       uuid:
         name: uuid
         value: !String 6190fcec9540e99c98a515e570d10391

@@ -1174,7 +1174,6 @@ impl WorldMachine {
                         audio.stop_sound_with_uuid(&uuid, scontext);
                     }
                     if playing {
-                        debug!("playing!");
                         audio.set_sound_position(&uuid, position, scontext);
                     }
                 } else {
