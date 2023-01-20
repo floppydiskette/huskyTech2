@@ -3,7 +3,7 @@ use glad_gl::gl::*;
 use crate::ht_renderer;
 
 #[cfg(feature = "glfw")]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Texture {
     pub dimensions: (u32, u32),
     pub material: GLMaterial,
@@ -14,7 +14,7 @@ pub struct Texture {
 }
 
 #[cfg(feature = "glfw")]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct GLMaterial {
     pub diffuse_texture: GLuint,
     pub metallic_texture: GLuint,
@@ -28,7 +28,7 @@ pub enum TextureError {
     InvalidImage,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct UiTexture {
     pub dimensions: (u32, u32),
     pub diffuse_texture: GLuint,
@@ -37,6 +37,12 @@ pub struct UiTexture {
 pub struct Image {
     pub dimensions: (u32, u32),
     pub data: Vec<u8>,
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        self.unload();
+    }
 }
 
 impl Texture {
@@ -148,6 +154,18 @@ impl Texture {
             })
         }
     }
+
+    pub fn unload(&mut self) {
+        unsafe {
+            DeleteTextures(4, [self.diffuse_texture, self.normal_texture, self.metallic_texture, self.roughness_texture].as_ptr());
+        }
+    }
+}
+
+impl Drop for UiTexture {
+    fn drop(&mut self) {
+        self.unload();
+    }
 }
 
 impl UiTexture {
@@ -217,6 +235,15 @@ impl UiTexture {
                 dimensions,
                 diffuse_texture,
             })
+        }
+    }
+
+    pub fn unload(&mut self) {
+        #[cfg(feature = "glfw")]
+        {
+            unsafe {
+                DeleteTextures(1, &self.diffuse_texture);
+            }
         }
     }
 }

@@ -107,6 +107,12 @@ fn calculate_tangents(positions: &Vec<[f32; 3]>, uvs: &[[f32; 2]], normals: &Vec
     tangents
 }
 
+impl Drop for Mesh {
+    fn drop(&mut self) {
+        self.unload();
+    }
+}
+
 impl Mesh {
     pub fn new(path: &str, mesh_name: &str, shader_index: usize, renderer: &mut ht_renderer) -> Result<Mesh, MeshError> {
         // load from gltf
@@ -283,6 +289,18 @@ impl Mesh {
             normal_vbo,
             tangent_vbo,
         })
+    }
+
+    // removes the mesh from the gpu
+    pub fn unload(&mut self) {
+        unsafe {
+            DeleteBuffers(1, &self.vbo);
+            DeleteBuffers(1, &self.uvbo);
+            DeleteBuffers(1, &self.ebo);
+            DeleteBuffers(1, &self.normal_vbo);
+            DeleteBuffers(1, &self.tangent_vbo);
+            DeleteVertexArrays(1, &self.vao);
+        }
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>) {
