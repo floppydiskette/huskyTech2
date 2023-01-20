@@ -1,3 +1,6 @@
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use gfx_maths::Vec2;
 use glad_gl::gl::*;
 use crate::ht_renderer;
@@ -37,6 +40,13 @@ pub struct UiTexture {
 pub struct Image {
     pub dimensions: (u32, u32),
     pub data: Vec<u8>,
+}
+
+pub struct IntermidiaryTexture {
+    pub diffuse: Image,
+    pub normal: Image,
+    pub metallic: Image,
+    pub roughness: Image,
 }
 
 impl Drop for Texture {
@@ -152,6 +162,130 @@ impl Texture {
                 metallic_texture,
                 roughness_texture,
             })
+        }
+    }
+
+    /// begins loading an image on a new thread; once complete, the returned atomic bool will be set to true
+    /// and the image data will be available in the returned Arc<Mutex<Option<IntermidiaryTexture>>>
+    /// then, you must call `Texture::load_from_intermidiary` to load the texture into opengl
+    pub fn new_from_name_asynch_begin(name: &str) -> (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryTexture>>>) {
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_clone = finished.clone();
+        let texture = Arc::new(Mutex::new(None));
+        let texture_clone = texture.clone();
+        thread::spawn(move || {
+            let base_file_name = format!("base/textures/{}_", name);
+            // substance painter file names
+            let diffuse_file_name = base_file_name.clone() + "diff.png";
+            let normal_file_name = base_file_name.clone() + "normal.png";
+            let metallic_file_name = base_file_name.clone() + "metal.png";
+            let roughness_file_name = base_file_name.clone() + "rough.png";
+
+            let diffuse_data = load_image(diffuse_file_name.as_str()).unwrap();
+            let normal_data = load_image(normal_file_name.as_str()).unwrap();
+            let metallic_data = load_image(metallic_file_name.as_str()).unwrap();
+            let roughness_data = load_image(roughness_file_name.as_str()).unwrap();
+
+            assert!(diffuse_data.dimensions.0 == metallic_data.dimensions.0 && diffuse_data.dimensions.1 == metallic_data.dimensions.1);
+            assert!(diffuse_data.dimensions.0 == roughness_data.dimensions.0 && diffuse_data.dimensions.1 == roughness_data.dimensions.1);
+            assert!(diffuse_data.dimensions.0 == normal_data.dimensions.0 && diffuse_data.dimensions.1 == normal_data.dimensions.1);
+
+            let texture = IntermidiaryTexture {
+                diffuse: diffuse_data,
+                normal: normal_data,
+                metallic: metallic_data,
+                roughness: roughness_data,
+            };
+
+            *texture_clone.lock().unwrap() = Some(texture);
+            finished_clone.store(true, Ordering::SeqCst);
+        });
+        (finished, texture)
+    }
+
+    /// loads a texture from an intermidiary texture
+    pub fn load_from_intermidiary(inter: IntermidiaryTexture) -> Self {
+        let diffuse_data = inter.diffuse;
+        let normal_data = inter.normal;
+        let metallic_data = inter.metallic;
+        let roughness_data = inter.roughness;
+        
+        {
+            // load opengl textures
+            let mut textures: [GLuint; 4] = [0; 4];
+            unsafe {
+                GenTextures(4, textures.as_mut_ptr());
+            }
+            let diffuse_texture = textures[0];
+            let normal_texture = textures[1];
+            let metallic_texture = textures[2];
+            let roughness_texture = textures[3];
+
+            // diffuse texture
+            unsafe {
+                BindTexture(TEXTURE_2D, diffuse_texture);
+                // IF YOU'RE GETTING A SEGFAULT HERE, MAKE SURE THE TEXTURE HAS AN ALPHA CHANNEL
+                TexImage2D(TEXTURE_2D, 0, SRGB_ALPHA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
+
+                TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                GenerateMipmap(TEXTURE_2D);
+
+                // normal texture
+                unsafe {
+                    BindTexture(TEXTURE_2D, normal_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGB as i32, normal_data.dimensions.0 as i32, normal_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, normal_data.data.as_ptr() as *const GLvoid);
+
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    GenerateMipmap(TEXTURE_2D);
+                }
+
+                // metallic texture
+                unsafe {
+                    BindTexture(TEXTURE_2D, metallic_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, metallic_data.dimensions.0 as i32, metallic_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, metallic_data.data.as_ptr() as *const GLvoid);
+
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    GenerateMipmap(TEXTURE_2D);
+                }
+
+                // roughness texture
+                unsafe {
+                    BindTexture(TEXTURE_2D, roughness_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, roughness_data.dimensions.0 as i32, roughness_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, roughness_data.data.as_ptr() as *const GLvoid);
+
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    GenerateMipmap(TEXTURE_2D);
+                }
+            }
+
+            let material = GLMaterial {
+                diffuse_texture,
+                metallic_texture,
+                roughness_texture,
+                normal_texture
+            };
+
+            // return
+            Texture {
+                dimensions: diffuse_data.dimensions,
+                material,
+                diffuse_texture,
+                normal_texture,
+                metallic_texture,
+                roughness_texture,
+            }
         }
     }
 
