@@ -153,7 +153,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         // draw the mesh
         mesh.render(renderer, Some(&texture));
         // draw the powered by text
-        ui_poweredby.render_at(ui_master, renderer);
+        ui_poweredby.render_at(ui_master.clone(), renderer);
 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
@@ -197,7 +197,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
             break;
         }
 
-        ui_developedby.render_at(ui_master, renderer);
+        ui_developedby.render_at(ui_master.clone(), renderer);
         // swap buffers
         renderer.swap_buffers();
 

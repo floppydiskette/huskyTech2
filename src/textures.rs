@@ -1,12 +1,11 @@
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use gfx_maths::Vec2;
 use glad_gl::gl::*;
 use crate::ht_renderer;
 
 #[cfg(feature = "glfw")]
-#[derive(Clone)]
 pub struct Texture {
     pub dimensions: (u32, u32),
     pub material: GLMaterial,
@@ -14,10 +13,26 @@ pub struct Texture {
     pub normal_texture: GLuint,
     pub metallic_texture: GLuint,
     pub roughness_texture: GLuint,
+    atomic_ref_count: Arc<AtomicUsize>,
+}
+
+impl Clone for Texture {
+    fn clone(&self) -> Self {
+        self.atomic_ref_count.fetch_add(1, Ordering::SeqCst);
+        Texture {
+            dimensions: self.dimensions,
+            material: self.material,
+            diffuse_texture: self.diffuse_texture,
+            normal_texture: self.normal_texture,
+            metallic_texture: self.metallic_texture,
+            roughness_texture: self.roughness_texture,
+            atomic_ref_count: self.atomic_ref_count.clone(),
+        }
+    }
 }
 
 #[cfg(feature = "glfw")]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct GLMaterial {
     pub diffuse_texture: GLuint,
     pub metallic_texture: GLuint,
@@ -31,10 +46,21 @@ pub enum TextureError {
     InvalidImage,
 }
 
-#[derive(Clone)]
 pub struct UiTexture {
     pub dimensions: (u32, u32),
     pub diffuse_texture: GLuint,
+    atomic_ref_count: Arc<AtomicUsize>,
+}
+
+impl Clone for UiTexture {
+    fn clone(&self) -> Self {
+        self.atomic_ref_count.fetch_add(1, Ordering::SeqCst);
+        UiTexture {
+            dimensions: self.dimensions,
+            diffuse_texture: self.diffuse_texture,
+            atomic_ref_count: self.atomic_ref_count.clone(),
+        }
+    }
 }
 
 pub struct Image {
@@ -51,7 +77,9 @@ pub struct IntermidiaryTexture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        self.unload();
+        if self.atomic_ref_count.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.unload();
+        }
     }
 }
 
@@ -161,6 +189,7 @@ impl Texture {
                 normal_texture,
                 metallic_texture,
                 roughness_texture,
+                atomic_ref_count: Arc::new(AtomicUsize::new(1)),
             })
         }
     }
@@ -173,8 +202,10 @@ impl Texture {
         let finished_clone = finished.clone();
         let texture = Arc::new(Mutex::new(None));
         let texture_clone = texture.clone();
+        let name_clone = name.to_string();
+
         thread::spawn(move || {
-            let base_file_name = format!("base/textures/{}_", name);
+            let base_file_name = format!("base/textures/{}_", name_clone);
             // substance painter file names
             let diffuse_file_name = base_file_name.clone() + "diff.png";
             let normal_file_name = base_file_name.clone() + "normal.png";
@@ -209,7 +240,7 @@ impl Texture {
         let normal_data = inter.normal;
         let metallic_data = inter.metallic;
         let roughness_data = inter.roughness;
-        
+
         {
             // load opengl textures
             let mut textures: [GLuint; 4] = [0; 4];
@@ -285,6 +316,7 @@ impl Texture {
                 normal_texture,
                 metallic_texture,
                 roughness_texture,
+                atomic_ref_count: Arc::new(AtomicUsize::new(1)),
             }
         }
     }
@@ -298,7 +330,9 @@ impl Texture {
 
 impl Drop for UiTexture {
     fn drop(&mut self) {
-        self.unload();
+        if self.atomic_ref_count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.unload();
+        }
     }
 }
 
@@ -337,6 +371,7 @@ impl UiTexture {
             Ok(UiTexture {
                 dimensions: diffuse_data.dimensions,
                 diffuse_texture,
+                atomic_ref_count: Arc::new(AtomicUsize::new(1)),
             })
         }
     }
@@ -368,6 +403,7 @@ impl UiTexture {
             Ok(UiTexture {
                 dimensions,
                 diffuse_texture,
+                atomic_ref_count: Arc::new(AtomicUsize::new(1)),
             })
         }
     }

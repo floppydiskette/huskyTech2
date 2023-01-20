@@ -2,6 +2,8 @@ use std::ffi::CString;
 use std::mem;
 use std::ops::Index;
 use std::ptr::null;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use gfx_maths::*;
 use gl_matrix::vec3::{dot, multiply, normalize, subtract};
@@ -13,7 +15,6 @@ use crate::renderer::MAX_LIGHTS;
 use crate::skeletal_animation::SkeletalAnimations;
 use crate::textures::Texture;
 
-#[derive(Clone)]
 pub struct Mesh {
     pub position: Vec3,
     pub rotation: Quaternion,
@@ -28,6 +29,29 @@ pub struct Mesh {
     pub tangent_vbo: GLuint,
     pub animations: Option<SkeletalAnimations>,
     pub animation_delta: Option<Instant>,
+    atomic_ref_count: Arc<AtomicUsize>,
+}
+
+impl Clone for Mesh {
+    fn clone(&self) -> Self {
+        self.atomic_ref_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Mesh {
+            position: self.position,
+            rotation: self.rotation,
+            scale: self.scale,
+            vao: self.vao,
+            vbo: self.vbo,
+            ebo: self.ebo,
+            num_vertices: self.num_vertices,
+            num_indices: self.num_indices,
+            uvbo: self.uvbo,
+            normal_vbo: self.normal_vbo,
+            tangent_vbo: self.tangent_vbo,
+            animations: self.animations.clone(),
+            animation_delta: self.animation_delta.clone(),
+            atomic_ref_count: self.atomic_ref_count.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -109,7 +133,9 @@ fn calculate_tangents(positions: &Vec<[f32; 3]>, uvs: &[[f32; 2]], normals: &Vec
 
 impl Drop for Mesh {
     fn drop(&mut self) {
-        self.unload();
+        if self.atomic_ref_count.fetch_sub(1, std::sync::atomic::Ordering::AcqRel) == 1 {
+            self.unload();
+        }
     }
 }
 
@@ -288,6 +314,7 @@ impl Mesh {
             animation_delta: Some(Instant::now()),
             normal_vbo,
             tangent_vbo,
+            atomic_ref_count: Arc::new(AtomicUsize::new(1)),
         })
     }
 

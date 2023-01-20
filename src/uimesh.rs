@@ -9,7 +9,7 @@ use crate::ht_renderer;
 use crate::meshes::Mesh;
 use crate::textures::UiTexture;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct UiMesh {
     pub position: Vec2,
     pub rotation: Quaternion,
@@ -128,7 +128,7 @@ impl UiMesh {
     #[cfg(feature = "glfw")]
     pub fn new_element_from_data_assume_master_init(data: &[u8], dimensions: (u32, u32)) -> Result<UiMesh, String> {
         let texture = UiTexture::new_from_rgba_bytes(data, dimensions)?;
-        let master = UI_MASTER.lock().unwrap().unwrap().clone();
+        let master = UI_MASTER.lock().unwrap().as_ref().unwrap().clone();
         Ok(UiMesh {
             position: Vec2::new(0.0, 0.0),
             rotation: Quaternion::identity(),
@@ -160,7 +160,7 @@ impl UiMesh {
             EnableVertexAttribArray(0);
             BindVertexArray(master.vao);
             ActiveTexture(TEXTURE0);
-            BindTexture(TEXTURE_2D, self.texture.unwrap().diffuse_texture);
+            BindTexture(TEXTURE_2D, self.texture.as_ref().unwrap().diffuse_texture);
             let texture_c = CString::new("diffuse").unwrap();
             Uniform1i(GetUniformLocation(shader.program, texture_c.as_ptr() as *const GLchar), 0);
             let opacity_c = CString::new("opacity").unwrap();
