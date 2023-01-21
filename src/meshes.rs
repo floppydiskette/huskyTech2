@@ -1,9 +1,10 @@
 use std::ffi::CString;
-use std::mem;
+use std::{mem, thread};
+use std::fmt::Debug;
 use std::ops::Index;
 use std::ptr::null;
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::Instant;
 use gfx_maths::*;
 use gl_matrix::vec3::{dot, multiply, normalize, subtract};
@@ -30,6 +31,17 @@ pub struct Mesh {
     pub animations: Option<SkeletalAnimations>,
     pub animation_delta: Option<Instant>,
     atomic_ref_count: Arc<AtomicUsize>,
+}
+
+pub struct IntermidiaryMesh {
+    pub vertices: Vec<f32>,
+    pub indices: Vec<u32>,
+    pub uvs: Vec<f32>,
+    pub normals: Vec<f32>,
+    pub tangents: Vec<f32>,
+    pub joints: Option<Vec<i32>>,
+    pub weights: Option<Vec<f32>>,
+    pub animations: Option<SkeletalAnimations>,
 }
 
 impl Clone for Mesh {
@@ -308,14 +320,280 @@ impl Mesh {
             vao,
             ebo,
             uvbo,
-            num_vertices: indices_array.len() as usize,
-            num_indices: indices_array.len() as usize,
+            num_vertices: indices_array.len(),
+            num_indices: indices_array.len(),
             animations,
             animation_delta: Some(Instant::now()),
             normal_vbo,
             tangent_vbo,
             atomic_ref_count: Arc::new(AtomicUsize::new(1)),
         })
+    }
+
+    /// begins loading a mesh on a new thread; once complete, the returned atomic bool will be set to true
+    /// and the mesh data will be available in the returned Arc<Mutex<Option<IntermidiaryMesh>>>
+    /// then, you must call `Mesh::load_from_intermidiary` to load the texture into opengl
+    pub fn new_from_name_asynch_begin(path: &str, mesh_name: &str) -> (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryMesh>>>) {
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_clone = finished.clone();
+        let mesh = Arc::new(Mutex::new(None));
+        let mesh_clone = mesh.clone();
+        let path_clone = path.to_string();
+        let mesh_name_clone = mesh_name.to_string();
+
+        thread::spawn(move || {
+            fn on_failure(failure: impl Debug) {
+                error!("failed to load mesh: {:?}", failure);
+            }
+
+            // load from gltf
+            let res = gltf::import(path_clone).map_err(|_| MeshError::MeshNotFound);
+            if let Err(e) = res {
+                on_failure(e);
+                return;
+            }
+            let (document, buffers, _images) = res.unwrap();
+
+            // get the mesh
+            let mesh = document.meshes().find(|m| m.name() == Some(&mesh_name_clone)).ok_or(MeshError::MeshNameNotFound);
+            if let Err(e) = mesh {
+                on_failure(e);
+                return;
+            }
+            let mesh = mesh.unwrap();
+
+            let skin = document.skins().next();
+
+            let mut animations = None;
+
+            if let Some(skin) = skin {
+                let skeletal_stuff = SkeletalAnimations::load_skeleton_stuff(&skin, &mesh, document.animations(), &buffers);
+                if let Err(e) = skeletal_stuff {
+                    on_failure(e);
+                    return;
+                }
+                let skeletal_stuff = skeletal_stuff.unwrap();
+                animations = Some(skeletal_stuff);
+            }
+
+            // for each primitive in the mesh
+            let mut vertices_array = Vec::new();
+            let mut indices_array = Vec::new();
+            let mut uvs_array = Vec::new();
+            let mut normals_array = Vec::new();
+            let mut tangents_array = Vec::new();
+            let mut joint_array = Vec::new();
+            let mut weight_array = Vec::new();
+            for primitive in mesh.primitives() {
+                // get the vertex positions
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+                let positions = reader.read_positions().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Vertices));
+                if let Err(e) = positions {
+                    on_failure(e);
+                    return;
+                }
+                let positions = positions.unwrap();
+                let positions = positions.collect::<Vec<_>>();
+
+                // get the indices
+                let indices = reader.read_indices().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Indices));
+                if let Err(e) = indices {
+                    on_failure(e);
+                    return;
+                }
+                let indices = indices.unwrap();
+                let indices = indices.into_u32().collect::<Vec<_>>();
+
+                // get the texture coordinates
+                let tex_coords = reader.read_tex_coords(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::UvSource));
+                if let Err(e) = tex_coords {
+                    on_failure(e);
+                    return;
+                }
+                let tex_coords = tex_coords.unwrap();
+                let tex_coords = tex_coords.into_f32();
+                let tex_coords = tex_coords.collect::<Vec<_>>();
+
+                // get the normals
+                let normals = reader.read_normals().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Normals));
+                if let Err(e) = normals {
+                    on_failure(e);
+                    return;
+                }
+                let normals = normals.unwrap();
+                let normals = normals.collect::<Vec<_>>();
+
+                // get the tangents
+                let tangents = calculate_tangents(&positions, &tex_coords, &normals, &indices);
+                tangents_array.extend(tangents.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
+
+                // add the vertices (with each grouping of three f32s as three separate f32s)
+                vertices_array.extend(positions.iter().flat_map(|v| vec![v[0], v[1], v[2]]));
+
+                // add the indices
+                indices_array.extend_from_slice(&indices);
+
+                // add the uvs (with each grouping of two f32s as two separate f32s)
+                uvs_array.extend(tex_coords.iter().flat_map(|v| vec![v[0], v[1]]));
+
+                // add the normals (with each grouping of three f32s as three separate f32s)
+                normals_array.extend(normals.iter().flat_map(|v| vec![v[0], v[1], v[2]]));
+
+                // get the bone ids
+
+                if let Some(animations) = animations.clone() {
+                    let joints = reader.read_joints(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::Source));
+                    if let Err(e) = joints {
+                        on_failure(e);
+                        return;
+                    }
+                    let joints = joints.unwrap();
+                    let joints = joints.into_u16();
+                    let joints = joints.collect::<Vec<_>>();
+
+                    let weights = reader.read_weights(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::Source));
+                    if let Err(e) = weights {
+                        on_failure(e);
+                        return;
+                    }
+                    let weights = weights.unwrap();
+                    let weights = weights.into_f32();
+                    let weights = weights.collect::<Vec<_>>();
+
+                    joint_array.extend(joints.iter().flat_map(|v| vec![v[0] as i32, v[1] as i32, v[2] as i32, v[3] as i32]));
+                    weight_array.extend(weights.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
+                }
+            }
+
+            let mesh = IntermidiaryMesh {
+                vertices: vertices_array,
+                indices: indices_array,
+                uvs: uvs_array,
+                normals: normals_array,
+                tangents: tangents_array,
+                joints: if animations.is_some() { Some(joint_array) } else { None },
+                weights: if animations.is_some() { Some(weight_array) } else { None },
+                animations,
+            };
+
+            mesh_clone.lock().unwrap().replace(mesh);
+        });
+
+        (finished, mesh)
+    }
+
+    pub fn load_from_intermidiary(mesh: IntermidiaryMesh, renderer: &mut ht_renderer) -> Self {
+        let vertices_array = mesh.vertices;
+        let indices_array = mesh.indices;
+        let uvs_array = mesh.uvs;
+        let normals_array = mesh.normals;
+        let tangents_array = mesh.tangents;
+        let joint_array = mesh.joints;
+        let weight_array = mesh.weights;
+        let animations = mesh.animations;
+
+        let shader_index = *renderer.shaders.get("gbuffer_anim").unwrap();
+
+        // get the u32 data from the mesh
+        let mut vbo = 0 as GLuint;
+        let mut vao = 0 as GLuint;
+        let mut ebo = 0 as GLuint;
+        let mut uvbo= 0 as GLuint;
+        let mut normal_vbo = 0 as GLuint;
+        let mut tangent_vbo = 0 as GLuint;
+        let mut joint_bo = 0 as GLuint;
+        let mut weight_bo = 0 as GLuint;
+        unsafe {
+            // set the shader program
+            set_shader_if_not_already(renderer, shader_index);
+
+            GenVertexArrays(1, &mut vao);
+            BindVertexArray(vao);
+            GenBuffers(1, &mut vbo);
+            BindBuffer(ARRAY_BUFFER, vbo);
+            BufferData(ARRAY_BUFFER, (vertices_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, vertices_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+            // vertex positions for vertex shader
+            let in_pos_c = CString::new("in_pos").unwrap();
+            let pos = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_pos_c.as_ptr());
+            VertexAttribPointer(pos as GLuint, 3, FLOAT, FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(0);
+
+            // uvs
+            GenBuffers(1, &mut uvbo);
+            BindBuffer(ARRAY_BUFFER, uvbo);
+            BufferData(ARRAY_BUFFER, (uvs_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, uvs_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+            // vertex uvs for fragment shader
+            let in_uv_c = CString::new("in_uv").unwrap();
+            let uv = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_uv_c.as_ptr());
+            VertexAttribPointer(uv as GLuint, 2, FLOAT, FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(1);
+
+            // normals
+            GenBuffers(1, &mut normal_vbo);
+            BindBuffer(ARRAY_BUFFER, normal_vbo);
+            BufferData(ARRAY_BUFFER, (normals_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, normals_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+            // vertex normals for fragment shader
+            let in_normal_c = CString::new("in_normal").unwrap();
+            let normal = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_normal_c.as_ptr());
+            VertexAttribPointer(normal as GLuint, 3, FLOAT, FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(2);
+
+            // tangents
+            GenBuffers(1, &mut tangent_vbo);
+            BindBuffer(ARRAY_BUFFER, tangent_vbo);
+            BufferData(ARRAY_BUFFER, (tangents_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, tangents_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+            // vertex tangents for fragment shader
+            let in_tangent_c = CString::new("in_tangent").unwrap();
+            let tangent = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_tangent_c.as_ptr());
+            VertexAttribPointer(tangent as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
+            EnableVertexAttribArray(7);
+
+            if animations.is_some() {
+                let joint_array = joint_array.unwrap();
+                let weight_array = weight_array.unwrap();
+
+                // joint array
+                GenBuffers(1, &mut joint_bo);
+                BindBuffer(ARRAY_BUFFER, joint_bo);
+                BufferData(ARRAY_BUFFER, (joint_array.len() * mem::size_of::<GLint>()) as GLsizeiptr, joint_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+                let in_joint_c = CString::new("a_joint").unwrap();
+                let joint = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_joint_c.as_ptr());
+                VertexAttribPointer(joint as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
+                EnableVertexAttribArray(5);
+
+                // weight array
+                GenBuffers(1, &mut weight_bo);
+                BindBuffer(ARRAY_BUFFER, weight_bo);
+                BufferData(ARRAY_BUFFER, (weight_array.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, weight_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+                let in_weight_c = CString::new("a_weight").unwrap();
+                let weight = GetAttribLocation(renderer.backend.shaders.as_mut().unwrap()[shader_index].program, in_weight_c.as_ptr());
+                VertexAttribPointer(weight as GLuint, 4, FLOAT, FALSE as GLboolean, 0, null());
+                EnableVertexAttribArray(6);
+            }
+
+
+            // now the indices
+            GenBuffers(1, &mut ebo);
+            BindBuffer(ELEMENT_ARRAY_BUFFER, ebo);
+            BufferData(ELEMENT_ARRAY_BUFFER, (indices_array.len() * mem::size_of::<GLuint>()) as GLsizeiptr, indices_array.as_ptr() as *const GLvoid, STATIC_DRAW);
+        }
+
+        Mesh {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+            vbo,
+            vao,
+            ebo,
+            uvbo,
+            num_vertices: indices_array.len(),
+            num_indices: indices_array.len(),
+            animations,
+            animation_delta: Some(Instant::now()),
+            normal_vbo,
+            tangent_vbo,
+            atomic_ref_count: Arc::new(AtomicUsize::new(1)),
+        }
     }
 
     // removes the mesh from the gpu
