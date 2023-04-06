@@ -165,3 +165,50 @@ pub fn column_mat_to_vec(mat: Mat4, column: usize) -> Vec3 {
 pub fn row_mat_to_vec(mat: Mat4, row: usize) -> Vec3 {
     Vec3::new(mat.get(0, row), mat.get(1, row), mat.get(2, row))
 }
+
+pub fn multiply_vec3_by_f64(vec: Vec3, f: f64) -> Vec3 {
+    Vec3::new(vec.x * f as f32, vec.y * f as f32, vec.z * f as f32)
+}
+
+// 0 = x, 1 = y, 2 = z, 3 = w
+pub fn interpolate_quaternion(a: (f64,f64,f64,f64), b: (f64,f64,f64,f64), t: f64) -> (f64,f64,f64,f64) {
+    let mut dot = a.0 * b.0 + a.1 * b.1 + a.2 * b.2 + a.3 * b.3;
+    let mut b = b;
+    if dot < 0.0 {
+        dot = -dot;
+        b.0 = -b.0;
+        b.1 = -b.1;
+        b.2 = -b.2;
+        b.3 = -b.3;
+    }
+    if dot > 0.9995 {
+        return add_quaternion(a, multiply_quaternion(subtract_quaternion(b, a), t));
+    }
+    let theta_0 = dot.acos();
+    let theta = theta_0 * t;
+    let sin_theta = theta.sin();
+    let sin_theta_0 = theta_0.sin();
+    let s0 = (theta_0 - theta) / sin_theta_0;
+    let s1 = sin_theta / sin_theta_0;
+    return add_quaternion(multiply_quaternion(a, s0), multiply_quaternion(b, s1));
+}
+
+pub fn multiply_quaternion(a: (f64,f64,f64,f64), b: f64) -> (f64,f64,f64,f64) {
+    (a.0 * b, a.1 * b, a.2 * b, a.3 * b)
+}
+
+pub fn subtract_quaternion(a: (f64,f64,f64,f64), b: (f64,f64,f64,f64)) -> (f64,f64,f64,f64) {
+    (a.0 - b.0, a.1 - b.1, a.2 - b.2, a.3 - b.3)
+}
+
+pub fn add_quaternion(a: (f64,f64,f64,f64), b: (f64,f64,f64,f64)) -> (f64,f64,f64,f64) {
+    (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3)
+}
+
+pub fn to_q64(quat: Quaternion) -> (f64,f64,f64,f64) {
+    (quat.x as f64, quat.y as f64, quat.z as f64, quat.w as f64)
+}
+
+pub fn from_q64(quat: (f64,f64,f64,f64)) -> Quaternion {
+    Quaternion::new(quat.0 as f32, quat.1 as f32, quat.2 as f32, quat.3 as f32)
+}

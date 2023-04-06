@@ -26,8 +26,8 @@ use crate::uimesh::UiMesh;
 pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     renderer.backend.clear_colour.store(RGBA { r: 0, g: 0, b: 0, a: 255 }, Ordering::SeqCst);
     // load ht2-mesh logo model
-    renderer.load_texture_if_not_already_loaded("ht2").expect("failed to load ht2-mesh texture");
-    renderer.load_mesh_if_not_already_loaded("ht2").expect("failed to load ht2 mesh");
+    renderer.load_texture_if_not_already_loaded_synch("ht2").expect("failed to load ht2-mesh texture");
+    renderer.load_mesh_if_not_already_loaded_synch("ht2").expect("failed to load ht2 mesh");
 
     let mut mesh = renderer.meshes.get("ht2").expect("failed to get ht2 mesh").clone();
     let mut texture = renderer.textures.get("ht2").expect("failed to get ht2-mesh texture").clone();

@@ -96,7 +96,7 @@ impl Texture {
     }
 
     pub fn new_from_name(name: &str) -> Result<Texture, TextureError> {
-        let base_file_name = format!("base/textures/{}_", name);
+        let base_file_name = format!("base/textures/{}/{}_", name, name);
         // substance painter file names
         let diffuse_file_name = base_file_name.clone() + "diff.png";
         let normal_file_name = base_file_name.clone() + "normal.png";
@@ -205,17 +205,29 @@ impl Texture {
         let name_clone = name.to_string();
 
         thread::spawn(move || {
-            let base_file_name = format!("base/textures/{}_", name_clone);
+            let base_file_name = format!("base/textures/{}/{}_", name_clone, name_clone);
             // substance painter file names
             let diffuse_file_name = base_file_name.clone() + "diff.png";
             let normal_file_name = base_file_name.clone() + "normal.png";
             let metallic_file_name = base_file_name.clone() + "metal.png";
             let roughness_file_name = base_file_name.clone() + "rough.png";
 
-            let diffuse_data = load_image(diffuse_file_name.as_str()).unwrap();
-            let normal_data = load_image(normal_file_name.as_str()).unwrap();
-            let metallic_data = load_image(metallic_file_name.as_str()).unwrap();
-            let roughness_data = load_image(roughness_file_name.as_str()).unwrap();
+            let diffuse_data = load_image(diffuse_file_name.as_str()).unwrap_or_else(|e| {
+                println!("error loading diffuse texture: {}", e);
+                panic!();
+            });
+            let normal_data = load_image(normal_file_name.as_str()).unwrap_or_else(|e| {
+                println!("error loading normal texture: {}", e);
+                panic!();
+            });
+            let metallic_data = load_image(metallic_file_name.as_str()).unwrap_or_else(|e| {
+                println!("error loading metallic texture: {}", e);
+                panic!();
+            });
+            let roughness_data = load_image(roughness_file_name.as_str()).unwrap_or_else(|e| {
+                println!("error loading roughness texture: {}", e);
+                panic!();
+            });
 
             assert!(diffuse_data.dimensions.0 == metallic_data.dimensions.0 && diffuse_data.dimensions.1 == metallic_data.dimensions.1);
             assert!(diffuse_data.dimensions.0 == roughness_data.dimensions.0 && diffuse_data.dimensions.1 == roughness_data.dimensions.1);
@@ -235,7 +247,8 @@ impl Texture {
     }
 
     /// loads a texture from an intermidiary texture
-    pub fn load_from_intermidiary(inter: IntermidiaryTexture) -> Self {
+    pub fn load_from_intermidiary(inter: Option<IntermidiaryTexture>) -> Result<Self, TextureError> {
+        let inter = inter.ok_or(TextureError::LoadingError("texture failed to load!".to_string()))?;
         let diffuse_data = inter.diffuse;
         let normal_data = inter.normal;
         let metallic_data = inter.metallic;
@@ -309,7 +322,7 @@ impl Texture {
             };
 
             // return
-            Texture {
+            Ok(Texture {
                 dimensions: diffuse_data.dimensions,
                 material,
                 diffuse_texture,
@@ -317,7 +330,7 @@ impl Texture {
                 metallic_texture,
                 roughness_texture,
                 atomic_ref_count: Arc::new(AtomicUsize::new(1)),
-            }
+            })
         }
     }
 

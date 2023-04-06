@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::ops::Index;
 use std::ptr::null;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 use gfx_maths::*;
 use gl_matrix::vec3::{dot, multiply, normalize, subtract};
@@ -152,7 +152,7 @@ impl Drop for Mesh {
 }
 
 impl Mesh {
-    pub fn new(path: &str, mesh_name: &str, shader_index: usize, renderer: &mut ht_renderer) -> Result<Mesh, MeshError> {
+    pub fn new(path: &str, mesh_name: &str, renderer: &mut ht_renderer) -> Result<Mesh, MeshError> {
         // load from gltf
         let (document, buffers, images) = gltf::import(path).map_err(|_| MeshError::MeshNotFound)?;
 
@@ -163,14 +163,11 @@ impl Mesh {
 
         let mut animations = None;
 
-        let mut shader_index = shader_index;
+        let shader_index = *renderer.shaders.get("gbuffer_anim").unwrap();
 
         if let Some(skin) = skin {
             animations = Some(SkeletalAnimations::load_skeleton_stuff(&skin, &mesh, document.animations(), &buffers).expect("Failed to load skeleton stuff"));
         }
-
-        let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
-        shader_index = gbuffer_shader;
 
         // for each primitive in the mesh
         let mut vertices_array = Vec::new();
@@ -477,12 +474,17 @@ impl Mesh {
             };
 
             mesh_clone.lock().unwrap().replace(mesh);
+            finished_clone.store(true, Ordering::SeqCst);
         });
 
         (finished, mesh)
     }
 
-    pub fn load_from_intermidiary(mesh: IntermidiaryMesh, renderer: &mut ht_renderer) -> Self {
+    pub fn load_from_intermidiary(mesh: Option<IntermidiaryMesh>, renderer: &mut ht_renderer) -> Result<Self, MeshError> {
+        if mesh.is_none() {
+            return Err(MeshError::FunctionNotImplemented);
+        }
+        let mesh = mesh.unwrap();
         let vertices_array = mesh.vertices;
         let indices_array = mesh.indices;
         let uvs_array = mesh.uvs;
@@ -578,7 +580,7 @@ impl Mesh {
             BufferData(ELEMENT_ARRAY_BUFFER, (indices_array.len() * mem::size_of::<GLuint>()) as GLsizeiptr, indices_array.as_ptr() as *const GLvoid, STATIC_DRAW);
         }
 
-        Mesh {
+        Ok(Mesh {
             position: Vec3::new(0.0, 0.0, 0.0),
             rotation: Quaternion::identity(),
             scale: Vec3::new(1.0, 1.0, 1.0),
@@ -593,7 +595,7 @@ impl Mesh {
             normal_vbo,
             tangent_vbo,
             atomic_ref_count: Arc::new(AtomicUsize::new(1)),
-        }
+        })
     }
 
     // removes the mesh from the gpu
@@ -644,27 +646,33 @@ impl Mesh {
             }
 
             if let Some(animations) = self.animations.as_mut() {
-                if let Some(mut animation) = animations.animations.get("auto").cloned() {
-                    let current_time = Instant::now();
-                    let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
+                let current_time = Instant::now();
+                let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
+                animations.advance_time(delta);
 
-                    animation.advance_time(delta);
+                if let Some(mut animation_a) = animations.animations.get("auto").cloned() {
+                    if let Some(mut animation_b) = animations.animations.get("auto_b").cloned() {
 
-                    // fill bone matrice uniform
-                    for bone in animations.root_bones.clone().iter() {
-                        animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &animation);
+                        let anim_a = Arc::new(animation_a.clone());
+                        let anim_b = Arc::new(animation_b.clone());
+
+                        // fill bone matrice uniform
+                        for bone in animations.root_bones.clone().iter() {
+                            animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &vec![(anim_a.clone(), 0.5), (anim_b.clone(), 0.5)]);
+                        }
+                        for (i, transform) in animations.get_joint_matrices().iter().enumerate() {
+                            let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
+                            let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
+                            UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
+                        }
+                        let care_about_animation_c = CString::new("care_about_animation").unwrap();
+                        let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+                        Uniform1i(care_about_animation_loc, 1);
+
+                        self.animation_delta = Some(current_time);
+                        *animations.animations.get_mut("auto").unwrap() = animation_a;
+                        *animations.animations.get_mut("auto_b").unwrap() = animation_b;
                     }
-                    for (i, transform) in animation.get_joint_matrices(animations).iter().enumerate() {
-                        let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
-                        let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
-                        UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
-                    }
-                    let care_about_animation_c = CString::new("care_about_animation").unwrap();
-                    let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
-                    Uniform1i(care_about_animation_loc, 1);
-
-                    self.animation_delta = Some(current_time);
-                    *animations.animations.get_mut("auto").unwrap() = animation;
                 }
             } else {
                 let care_about_animation_c = CString::new("care_about_animation").unwrap();

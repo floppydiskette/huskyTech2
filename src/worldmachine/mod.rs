@@ -849,9 +849,11 @@ impl WorldMachine {
         if lights.is_some() {
             renderer.set_lights(lights.unwrap());
         }
+        let mut indices_to_remove = Vec::new();
         for index in self.entities_wanting_to_load_things.clone() {
             let entity = &self.world.entities[index];
             let components = entity.get_components();
+            let mut finished_loading = components.len();
             for component in components {
                 match component.get_type() {
                     x if x == COMPONENT_TYPE_MESH_RENDERER.clone() => {
@@ -877,9 +879,14 @@ impl WorldMachine {
                         if res.is_err() {
                             warn!("render: failed to load mesh '{}': {:?}", mesh, res);
                         }
+                        let mesh_loaded = res.unwrap();
                         let res = renderer.load_texture_if_not_already_loaded(texture);
                         if res.is_err() {
                             warn!("render: failed to load texture '{}': {:?}", texture, res);
+                        }
+                        let texture_loaded = res.unwrap();
+                        if mesh_loaded && texture_loaded {
+                            finished_loading -= 1;
                         }
                     }
                     x if x == COMPONENT_TYPE_TERRAIN.clone() => {
@@ -897,16 +904,29 @@ impl WorldMachine {
                             warn!("render: failed to load terrain: {:?}", res);
                         }
                          */
+                        let terrain_loaded = true;
+                        if terrain_loaded {
+                            finished_loading -= 1;
+                        }
                     }
                     x if x == COMPONENT_TYPE_LIGHT.clone() => {
                         self.lights_changed = true;
+                        finished_loading -= 1;
                     }
-                    _ => {}
+                    _ => {
+                        finished_loading -= 1;
+                    }
                 }
             }
+            if finished_loading == 0 {
+                indices_to_remove.push(index);
+            }
         }
-        self.entities_wanting_to_load_things.clear();
+        self.entities_wanting_to_load_things.retain(|x| !indices_to_remove.contains(x));
         for (i, entity) in self.world.entities.iter_mut().enumerate() {
+            if self.entities_wanting_to_load_things.contains(&i) {
+                continue;
+            }
             if let Some(mesh_renderer) = entity.get_component(COMPONENT_TYPE_MESH_RENDERER.clone()) {
                 if let Some(mesh) = mesh_renderer.get_parameter("mesh") {
                     // get the string value of the mesh

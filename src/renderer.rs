@@ -5,7 +5,7 @@ use std::ops::{DerefMut};
 use std::os::raw::{c_uint, c_ulong};
 use std::ptr::{null_mut};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc::Receiver;
 use egui_glfw_gl::egui;
 use egui_glfw_gl::egui::Rect;
@@ -16,8 +16,8 @@ use crate::shaders::*;
 use crate::camera::*;
 use crate::helpers::{load_string_from_file, set_shader_if_not_already};
 use crate::light::Light;
-use crate::meshes::Mesh;
-use crate::textures::Texture;
+use crate::meshes::{IntermidiaryMesh, Mesh};
+use crate::textures::{IntermidiaryTexture, Texture};
 use crate::uimesh::UiMesh;
 
 pub static MAX_LIGHTS: usize = 100;
@@ -92,7 +92,9 @@ pub struct ht_renderer {
     pub window_size: Vec2,
     pub camera: Camera,
     pub textures: HashMap<String, Texture>,
+    pub loading_textures: HashMap<String, (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryTexture>>>)>,
     pub meshes: HashMap<String, Mesh>,
+    pub loading_meshes: HashMap<String, (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryMesh>>>)>,
     pub shaders: HashMap<String, usize>,
     pub lights: Vec<Light>,
     #[cfg(feature = "glfw")]
@@ -364,7 +366,9 @@ impl ht_renderer {
                 window_size: Vec2::new(window_width as f32, window_height as f32),
                 camera,
                 textures: Default::default(),
+                loading_textures: Default::default(),
                 meshes: Default::default(),
+                loading_meshes: Default::default(),
                 shaders: Default::default(),
                 lights: Vec::new(),
                 backend,
@@ -404,20 +408,70 @@ impl ht_renderer {
         let ui_master = UiMesh::new_master(self, unlit).expect("failed to load master uimesh");
         self.backend.ui_master = ui_master;
         // load default texture
-        self.load_texture_if_not_already_loaded("default").expect("failed to load default texture");
+        self.load_texture_if_not_already_loaded_synch("default").expect("failed to load default texture");
     }
 
-    pub fn load_texture_if_not_already_loaded(&mut self, name: &str) -> Result<(), crate::textures::TextureError> {
+    pub fn load_texture_if_not_already_loaded(&mut self, name: &str) -> Result<bool, crate::textures::TextureError> {
         if !self.textures.contains_key(name) {
-            Texture::load_texture(name, format!("{}/{}", name, name).as_str(), self)?;
+            let (texture_done, int_texture_container) = {
+                if !self.loading_textures.contains_key(name) {
+                    let (done, container) = Texture::new_from_name_asynch_begin(name);
+                    self.loading_textures.insert(name.to_string(), (done.clone(), container.clone()));
+                    (done, container)
+                } else {
+                    self.loading_textures.get(name).unwrap().clone()
+                }
+            };
+            if texture_done.load(Ordering::Relaxed) {
+                let final_texture = int_texture_container.lock().unwrap().take();
+                let final_texture = Texture::load_from_intermidiary(final_texture)?;
+                self.textures.insert(name.to_string(), final_texture);
+                self.loading_meshes.remove(name);
+                return Ok(true)
+            } else {
+                return Ok(false)
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn load_texture_if_not_already_loaded_synch(&mut self, name: &str) -> Result<(), crate::textures::TextureError> {
+        if !self.textures.contains_key(name) {
+            let texture = Texture::new_from_name(name)?;
+            self.textures.insert(name.to_string(), texture);
         }
         Ok(())
     }
 
-    pub fn load_mesh_if_not_already_loaded(&mut self, name: &str) -> Result<(), crate::meshes::MeshError> {
+    /// returns true if the mesh was loaded, false if it is still loading
+    pub fn load_mesh_if_not_already_loaded(&mut self, name: &str) -> Result<bool, crate::meshes::MeshError> {
         if !self.meshes.contains_key(name) {
-            let mesh = Mesh::new(format!("base/models/{}.glb", name).as_str(), name,
-                                 *self.shaders.get("basic").unwrap(), self)?;
+            let (mesh_done, int_mesh_container) = {
+                if !self.loading_meshes.contains_key(name) {
+                    let (done, container) = Mesh::new_from_name_asynch_begin(format!("base/models/{}.glb", name).as_str(), name);
+                    self.loading_meshes.insert(name.to_string(), (done.clone(), container.clone()));
+                    (done, container)
+                } else {
+                    self.loading_meshes.get(name).unwrap().clone()
+                }
+            };
+            // unlikely, but check if the mesh is already done
+            if mesh_done.load(Ordering::Relaxed) {
+                let final_mesh = int_mesh_container.lock().unwrap().take();
+                let final_mesh = Mesh::load_from_intermidiary(final_mesh, self)?;
+                self.meshes.insert(name.to_string(), final_mesh);
+                self.loading_meshes.remove(name);
+                return Ok(true);
+            } else {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn load_mesh_if_not_already_loaded_synch(&mut self, name: &str) -> Result<(), crate::meshes::MeshError> {
+        if !self.meshes.contains_key(name) {
+            let mesh = Mesh::new(format!("base/models/{}.glb", name).as_str(), name, self)?;
             self.meshes.insert(name.to_string(), mesh);
         }
         Ok(())

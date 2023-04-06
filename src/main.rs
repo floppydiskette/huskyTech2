@@ -50,6 +50,7 @@ pub mod keyboard;
 pub mod mouse;
 pub mod optimisations;
 pub mod skeletal_animation;
+pub mod animgraph;
 pub mod ui;
 pub mod audio;
 
