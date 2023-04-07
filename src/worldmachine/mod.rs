@@ -633,6 +633,9 @@ impl WorldMachine {
                         let position_diff = new_position - prev_position;
                         let forward_mag = position_diff.dot(new_rotation.forward());
                         let strafe_mag = position_diff.dot(new_rotation.right());
+                        const threshold: f32 = 0.01;
+                        let forward_mag = if forward_mag.abs() < threshold { 0.0 } else { 1.0 * forward_mag.signum() };
+                        let strafe_mag = if strafe_mag.abs() < threshold { 0.0 } else { 1.0 * strafe_mag.signum() };
 
                         // set speed and strafe for animation
                         let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "speed", ParameterValue::Float(forward_mag as f64));
@@ -806,6 +809,7 @@ impl WorldMachine {
         world_updates.drain(..).for_each(|update| {
             updates.push(update);
         });
+        drop(world_updates);
 
         if !updates.is_empty() {
             Some(updates)
@@ -837,7 +841,7 @@ impl WorldMachine {
         }
     }
 
-    pub fn client_tick(&mut self, renderer: &mut ht_renderer, physics_engine: PhysicsSystem, delta_time: f32) -> Vec<ClientUpdate> {
+    pub async fn client_tick(&mut self, renderer: &mut ht_renderer, physics_engine: PhysicsSystem, delta_time: f32) -> Vec<ClientUpdate> {
         if self.is_server {
             warn!("client_tick: called on server");
             return vec![];

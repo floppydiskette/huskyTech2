@@ -14,7 +14,7 @@ use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, S
 use crate::server::connections::SteadyMessageQueue;
 
 pub const FAST_QUEUE_LIMIT: usize = 4;
-pub const FAKE_LAG: bool = true;
+pub const FAKE_LAG: bool = false;
 pub const FAKE_LAG_TIME: u64 = 10;
 
 #[derive(Default, Debug)]
@@ -382,8 +382,8 @@ impl LanConnection {
     }
 
     pub async fn tcp_thread(&self) {
+        let mut buffer = [0; 2048];
         loop {
-            let mut buffer = [0; 2048];
             let attempt = self.attempt_receive_steady_update(&mut buffer).await;
             if let Err(e) = attempt {
                 continue;

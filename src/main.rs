@@ -92,7 +92,7 @@ async fn main() {
         let mut physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
-        let mut server = server::Server::new_host_lan_server("test", physics, 25565, 25566, "0.0.0.0").await;
+        let mut server = server::Server::new_host_lan_server("test", physics, 25566, 25567, "0.0.0.0").await;
         let mut server_clone = server.clone();
         info!("initialised server");
         server_clone.run().await;
@@ -124,7 +124,7 @@ async fn main() {
         info!("initialised worldmachine");
 
         if let Some(ip) = connect_to_lan_server {
-            let server_connection = ClientLanConnection::connect(ip.as_str(), 25565, 25566).await.expect("failed to connect to server");
+            let server_connection = ClientLanConnection::connect(ip.as_str(), 25566, 25567).await.expect("failed to connect to server");
             worldmachine.connect_to_server(ConnectionClientside::Lan(server_connection.clone()));
             let the_clone = server_connection.clone();
             tokio::spawn(async move {
@@ -173,7 +173,7 @@ async fn main() {
 
             renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
             renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
-            let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta); // physics ticks are also simulated here clientside
+            let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta).await; // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
             worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer);

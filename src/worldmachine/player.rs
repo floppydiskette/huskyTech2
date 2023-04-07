@@ -72,6 +72,7 @@ pub struct Player {
     head_rotation_changed: bool,
     locked_mouse: bool,
     first_run: bool,
+    was_moving: bool,
 }
 
 impl Default for Player {
@@ -97,6 +98,7 @@ impl Default for Player {
             head_rotation_changed: false,
             locked_mouse: true,
             first_run: true,
+            was_moving: false,
         }
     }
 }
@@ -284,6 +286,10 @@ impl Player {
         self.last_move_call = std::time::Instant::now();
         camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
+            self.was_moving = true;
+            Some((movement, info))
+        } else if self.was_moving {
+            self.was_moving = false;
             Some((movement, info))
         } else {
             None

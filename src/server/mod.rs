@@ -170,23 +170,21 @@ impl Server {
     }
 
     pub async fn listen_for_lan_connections(&mut self) {
-        if let Connections::Lan(listener_raw, connections_raw) = self.connections.clone() {
-            let listener = listener_raw.clone();
-            let mut connections_incoming = self.connections_incoming.clone();
-            let mut connections_incoming = connections_incoming.lock().await;
+        if let Connections::Lan(listener, connections_raw) = self.connections.clone() {
+            let mut connections_incoming = self.connections_incoming.lock().await;
             while let Some(connection) = connections_incoming.pop_front() {
-                let connection = listener.clone().init_new_connection(connection).await;
-                if connection.is_none() {
-                    continue;
-                }
-                let connection = connection.unwrap();
-                let listener = listener_raw.clone();
-                let connection_clone = connection.clone();
                 let the_clone = self.clone();
-                let the_listener_clone = listener_raw.clone();
+                let listener_clone = listener.clone();
                 tokio::spawn(async move {
+                    let connection = listener_clone.clone().init_new_connection(connection).await;
+                    if connection.is_none() {
+                        return;
+                    }
+                    let connection = connection.unwrap();
+                    let the_listener_clone = listener_clone.clone();
                     the_clone.new_connection(Connection::Lan(the_listener_clone.clone(), connection.clone())).await;
                 });
+                debug!("spawned new connection thread");
             }
         }
     }
@@ -282,7 +280,7 @@ impl Server {
     }
 
     async fn send_steady_packet(&self, connection: &Connection, packet: SteadyPacket) -> bool {
-        return match connection.clone() {
+        match connection.clone() {
             Connection::Local(connection) => {
                 let uuid = generate_uuid();
                 let packet_data = SteadyPacketData {
@@ -406,6 +404,8 @@ impl Server {
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = worldmachine.world.clone();
         let physics = worldmachine.physics.clone().unwrap();
+        // drop worldmachine so we don't hold the lock while we send packets
+        drop(worldmachine);
         for entity in world_clone.entities.iter() {
             let res = self.send_steady_packet(&connection, SteadyPacket::InitialiseEntity(entity.uid, entity.clone())).await;
             if !res {
@@ -429,6 +429,8 @@ impl Server {
         let mut player_component = PlayerComponent::new(name, position, rotation, scale);
         player_entity.add_component(player_component);
 
+        // relock worldmachine
+        let mut worldmachine = self.worldmachine.lock().await;
         worldmachine.world.entities.push(player_entity.clone());
         let res =  self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(
             player.uuid.clone(),
@@ -712,6 +714,7 @@ impl Server {
                         let mut connections = connections.lock().await;
                         connections.retain(|x| x.uuid != lan_connection.uuid);
                         debug!("connections: {:?}", connections.len());
+                        drop(connections);
                         // remove the player from the world
                         let mut worldmachine = self.worldmachine.clone();
                         let mut worldmachine = worldmachine.lock().await;
