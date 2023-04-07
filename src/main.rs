@@ -8,6 +8,7 @@ use std::borrow::BorrowMut;
 use std::{process, thread};
 use std::ops::Deref;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use egui_glfw_gl::egui;
 use fyrox_sound::context::SoundContext;
@@ -18,7 +19,7 @@ use kira::manager::backend::cpal::CpalBackend;
 use glad_gl::gl::*;
 use tokio::sync::Mutex;
 use crate::keyboard::{HTKey, Keyboard};
-use crate::renderer::ht_renderer;
+use crate::renderer::{ht_renderer, RGBA};
 use crate::server::ConnectionClientside;
 use crate::server::lan::ClientLanConnection;
 use crate::worldmachine::player::DEFAULT_FOV;
@@ -53,6 +54,7 @@ pub mod skeletal_animation;
 pub mod animgraph;
 pub mod ui;
 pub mod audio;
+pub mod common_anim;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -144,10 +146,22 @@ async fn main() {
 
         debug!("connected to server");
 
+        renderer.load_mesh_if_not_already_loaded("player");
         if !skip_intro { sunlust_intro::animate(&mut renderer, &scontext) }
-        crate::ui::SHOW_UI.store(true, std::sync::atomic::Ordering::SeqCst);
+        renderer.backend.clear_colour.store(RGBA { r: 0, g: 75, b: 75, a: 255 }, Ordering::SeqCst);
+        crate::ui::SHOW_UI.store(true, Ordering::SeqCst);
 
         renderer.camera.set_fov(DEFAULT_FOV);
+
+        loop {
+            if let Ok(res) = renderer.load_mesh_if_not_already_loaded("player") {
+                if res {
+                    break;
+                }
+            } else {
+                panic!("failed to load player mesh");
+            }
+        }
 
         let mut last_frame_time = std::time::Instant::now();
         loop {

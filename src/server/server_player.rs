@@ -35,6 +35,8 @@ pub struct ServerPlayer {
     last_move_call: std::time::Instant,
     height_gained_since_grounded: f32,
     last_height: f32,
+    pub speed: f32,
+    pub strafe: f32,
 }
 
 impl Default for ServerPlayer {
@@ -51,6 +53,8 @@ impl Default for ServerPlayer {
             last_move_call: std::time::Instant::now(),
             height_gained_since_grounded: 0.0,
             last_height: 0.0,
+            speed: 0.0,
+            strafe: 0.0,
         }
     }
 }
@@ -69,6 +73,8 @@ impl ServerPlayer {
             last_move_call: std::time::Instant::now(),
             height_gained_since_grounded: 0.0,
             last_height: 0.0,
+            speed: 0.0,
+            strafe: 0.0,
         }
     }
 
@@ -88,6 +94,9 @@ impl ServerPlayer {
         } else {
             self.movement_speed = DEFAULT_MOVESPEED;
         }
+
+        self.speed = movement_info.speed;
+        self.strafe = movement_info.strafe;
 
         let mut displacement_vector = displacement_vector;
         displacement_vector.y = 0.0;

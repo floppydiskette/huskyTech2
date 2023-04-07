@@ -29,6 +29,9 @@ impl PlayerComponent {
         parameters.insert("head_rotation".to_string(), Parameter::new("head_rotation", ParameterValue::Quaternion(rotation)));
         parameters.insert("rotation".to_string(), Parameter::new("rotation", ParameterValue::Quaternion(rotation)));
         parameters.insert("scale".to_string(), Parameter::new("scale", ParameterValue::Vec3(scale)));
+        parameters.insert("sprinting".to_string(), Parameter::new("sprinting", ParameterValue::Bool(false)));
+        parameters.insert("speed".to_string(), Parameter::new("speed", ParameterValue::Float(0.0)));
+        parameters.insert("strafe".to_string(), Parameter::new("strafe", ParameterValue::Float(0.0)));
 
         Component {
             name: "Player".to_string(),
@@ -57,6 +60,8 @@ pub struct Player {
     pitch: f64,
     yaw: f64,
     pub scale: Vec3,
+    pub speed: f64,
+    pub strafe: f64,
     sprinting: bool,
     last_mouse_pos: Option<Vec2>,
     physics_controller: Option<PhysicsCharacterController>,
@@ -80,6 +85,8 @@ impl Default for Player {
             pitch: 0.0,
             yaw: 0.0,
             scale: Vec3::new(1.0, 1.0, 1.0),
+            speed: 0.0,
+            strafe: 0.0,
             sprinting: false,
             last_mouse_pos: None,
             physics_controller: None,
@@ -98,6 +105,8 @@ impl Default for Player {
 pub struct MovementInfo {
     pub jumped: bool,
     pub sprinting: bool,
+    pub speed: f32,
+    pub strafe: f32,
 }
 
 impl Player {
@@ -226,16 +235,22 @@ impl Player {
         if keyboard::check_key_released(HTKey::LeftShift) {
             self.sprinting = false;
         }
+        self.speed = 0.0;
+        self.strafe = 0.0;
         if self.wasd[0] {
+            self.speed = lerp(0.0, 1.0, 1.0) as f64;
             movement += camera_forward;
         }
         if self.wasd[1] {
+            self.strafe = lerp(0.0, -1.0, 1.0) as f64;
             movement += camera_right;
         }
         if self.wasd[2] {
+            self.speed = lerp(0.0, -1.0, 1.0) as f64;
             movement -= camera_forward;
         }
         if self.wasd[3] {
+            self.strafe = lerp(0.0, 1.0, 1.0) as f64;
             movement -= camera_right;
         }
         if self.sprinting {
@@ -244,6 +259,8 @@ impl Player {
         } else {
             info.sprinting = false;
         }
+        info.speed = self.speed as f32;
+        info.strafe = self.strafe as f32;
         movement = helpers::clamp_magnitude(movement, 1.0);
 
         if self.sprinting && movement.magnitude() > 0.0 {

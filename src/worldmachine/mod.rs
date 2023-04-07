@@ -13,7 +13,10 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
+use crate::animgraph::{AnimGraph, AnimGraphNode};
 use crate::audio::AudioBackend;
+use crate::common_anim::move_anim::{Features, MoveAnim};
+use crate::helpers::{add_quaternion, from_q64, multiply_quaternion, rotate_vector_by_quaternion, to_q64};
 use crate::physics::{Materials, PhysicsSystem};
 use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
@@ -27,6 +30,7 @@ pub mod components;
 pub mod entities;
 pub mod helpers;
 pub mod player;
+pub mod playermodel;
 
 pub type EntityId = u64;
 
@@ -522,10 +526,12 @@ impl WorldMachine {
                         return;
                     }
                 }
-                let entity_index = self.get_entity_index(entity_id).unwrap();
-                self.world.entities.remove(entity_index);
-                debug!("remove entity message received");
-                debug!("world entities: {:?}", self.world.entities);
+                let entity_index = self.get_entity_index(entity_id);
+                if let Some(entity_index) = entity_index {
+                    self.world.entities.remove(entity_index);
+                    debug!("remove entity message received");
+                    debug!("world entities: {:?}", self.world.entities);
+                }
             }
         }
     }
@@ -611,6 +617,34 @@ impl WorldMachine {
                 }
                 if let Some(entity_index) = self.get_entity_index(entity_id) {
                     let entity = self.world.entities.get_mut(entity_index).unwrap();
+                    let prev_transform = entity.get_component(COMPONENT_TYPE_PLAYER.clone());
+                    if let Some(prev_transform) = prev_transform {
+                        let prev_position = prev_transform.get_parameter("position").unwrap();
+
+                        // calculate the difference between the previous and new position
+                        let prev_position = match prev_position.value {
+                            ParameterValue::Vec3(vec3) => vec3,
+                            _ => {
+                                warn!("process_fast_messages: failed to get previous position");
+                                return;
+                            }
+                        };
+
+                        let position_diff = new_position - prev_position;
+                        let forward_mag = position_diff.dot(new_rotation.forward());
+                        let strafe_mag = position_diff.dot(new_rotation.right());
+
+                        // set speed and strafe for animation
+                        let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "speed", ParameterValue::Float(forward_mag as f64));
+                        if player_component.is_none() {
+                            warn!("process_fast_messages: failed to set transform position");
+                        }
+                        let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "strafe", ParameterValue::Float(strafe_mag as f64));
+                        if player_component.is_none() {
+                            warn!("process_fast_messages: failed to set transform position");
+                        }
+                    }
+
                     let player_component = entity.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "position", ParameterValue::Vec3(new_position));
                     if player_component.is_none() {
                         warn!("process_fast_messages: failed to set transform position");
@@ -623,6 +657,7 @@ impl WorldMachine {
                     if player_component.is_none() {
                         warn!("process_fast_messages: failed to set transform rotation");
                     }
+
                 }
             }
             FastPacket::EntitySetParameter(entity_id, component_type, parameter_name, parameter_value) => {
@@ -835,13 +870,16 @@ impl WorldMachine {
             let rotation = player.player.get_rotation();
             let meshes = &mut renderer.meshes;
             let textures = renderer.textures.clone();
-            if let Some(mesh) = meshes.get_mut("ht2") {
+            if let Some(mesh) = meshes.get_mut("player") {
                 let texture = textures.get("default").unwrap();
                 let mut mesh = mesh.clone();
-                mesh.position = position;
+                mesh.position = position + (rotation.forward() * -0.2);
                 mesh.rotation = rotation;
+                mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
-                mesh.render(renderer, Some(texture));
+                let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
+
+                mesh.render(renderer, Some(texture), Some(move_anim.weights()));
             }
         }
 
@@ -1012,7 +1050,7 @@ impl WorldMachine {
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
 
-                        mesh.render(renderer, Some(texture));
+                        mesh.render(renderer, Some(texture), None);
                         mesh.position = old_position;
                         mesh.rotation = old_rotation;
                         mesh.scale = old_scale;
@@ -1089,21 +1127,40 @@ impl WorldMachine {
                         continue;
                     }
                 };
+                let speed = player_component.get_parameter("speed").unwrap();
+                let speed = match speed.value {
+                    ParameterValue::Float(v) => v,
+                    _ => {
+                        error!("render: player speed is not a float");
+                        continue;
+                    }
+                };
+                let strafe = player_component.get_parameter("strafe").unwrap();
+                let strafe = match strafe.value {
+                    ParameterValue::Float(v) => v,
+                    _ => {
+                        error!("render: player strafe is not a float");
+                        continue;
+                    }
+                };
                 let meshes = renderer.meshes.clone();
                 let textures = renderer.textures.clone();
-                if let Some(mesh) = meshes.get("ht2") {
+                if let Some(mesh) = meshes.get("player") {
                     let texture = textures.get("default").unwrap();
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;
                     let old_rotation = mesh.rotation;
                     mesh.position = position;
                     mesh.rotation = rotation;
+                    mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
-                    mesh.render(renderer, Some(texture));
+                    let move_anim = MoveAnim::from_values(speed, strafe);
+
+                    mesh.render(renderer, Some(texture), Some(move_anim.weights()));
 
                     mesh.position = old_position;
                     mesh.rotation = old_rotation;
-                    *renderer.meshes.get_mut("ht2").unwrap() = mesh;
+                    *renderer.meshes.get_mut("player").unwrap() = mesh;
                 }
             }
         }

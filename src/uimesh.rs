@@ -174,7 +174,7 @@ impl UiMesh {
 
             // transformation time!
             // calculate the model matrix
-            let fake_coords = screen_coords_to_gl_coords(self.position, self.scale, renderer.window_size);
+            let fake_coords = screen_coords_to_gl_coords(self.position, self.scale, renderer.render_size);
             let model_matrix = calculate_model_matrix(fake_coords.0, self.rotation, fake_coords.1);
 
             // send the mvp matrix to the shader

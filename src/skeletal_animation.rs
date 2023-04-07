@@ -220,30 +220,11 @@ impl SkeletalAnimations {
         let mut root_bones = Vec::new();
         let mut animations_final = HashMap::new();
 
-        // first, get the weights from the mesh
-        let mut weights_final = Vec::new();
-        for primitive in mesh.primitives() {
-            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-            let weights = reader.read_weights(0).ok_or(SkeletalAnimationError::WeightLoadingError)?;
-            let weights = weights.into_f32().collect::<Vec<_>>();
-            weights_final.push(weights);
-        }
-
         // for bones, they are layed out as an array with each bone specifying the index of its children
         for (i, joint) in skin.joints().enumerate() {
             let mut children = Vec::new();
             for child in joint.children() {
                 children.push(child.index());
-            }
-            let mut weights = Vec::new();
-            for (i, weight) in weights_final.iter().enumerate() {
-                let weight = weight[joint.index()];
-                if weight[0] != 0.0 {
-                    weights.push(SkeletalWeight {
-                        vertex: i,
-                        weight: weight[0],
-                    });
-                }
             }
             // we'll fill in the inverse_bind_matrix in a second, just insert the bones first
             bones_final.push(SkeletalBone {

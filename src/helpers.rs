@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::os::raw::c_int;
 use std::ptr::null_mut;
-use gfx_maths::{Mat4, Quaternion, Vec3};
+use gfx_maths::{Mat4, Quaternion, Vec2, Vec3};
 use glad_gl::gl::*;
 use crate::renderer::RGBA;
 use crate::ht_renderer;
@@ -60,6 +60,12 @@ pub fn distance(a: Vec3, b: Vec3) -> f32 {
     let y = a.y - b.y;
     let z = a.z - b.z;
     (x * x + y * y + z * z).abs().sqrt()
+}
+
+pub fn distance2d(a: Vec2, b: Vec2) -> f32 {
+    let x = a.x - b.x;
+    let y = a.y - b.y;
+    (x * x + y * y).abs().sqrt()
 }
 
 // make sure to preserve negative vectors

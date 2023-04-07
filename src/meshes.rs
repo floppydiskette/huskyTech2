@@ -13,7 +13,7 @@ use glad_gl::gl::*;
 use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
 use crate::renderer::MAX_LIGHTS;
-use crate::skeletal_animation::SkeletalAnimations;
+use crate::skeletal_animation::{SkeletalAnimation, SkeletalAnimations};
 use crate::textures::Texture;
 
 pub struct Mesh {
@@ -458,7 +458,16 @@ impl Mesh {
                     let weights = weights.collect::<Vec<_>>();
 
                     joint_array.extend(joints.iter().flat_map(|v| vec![v[0] as i32, v[1] as i32, v[2] as i32, v[3] as i32]));
-                    weight_array.extend(weights.iter().flat_map(|v| vec![v[0], v[1], v[2], v[3]]));
+                    weight_array.extend(weights.iter().flat_map(|v|
+                        //vec![v[0], v[1], v[2], v[3]]
+                        // change zero weights to 1, 0, 0, 0
+                        if v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0 && v[3] == 0.0 {
+                            debug!("zero weight found");
+                            vec![1.0, 0.0, 0.0, 0.0]
+                        } else {
+                            vec![v[0], v[1], v[2], v[3]]
+                        }
+                    ));
                 }
             }
 
@@ -610,7 +619,7 @@ impl Mesh {
         }
     }
 
-    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>) {
+    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>) {
         // load the shader
         let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
         set_shader_if_not_already(renderer, gbuffer_shader);
@@ -650,29 +659,42 @@ impl Mesh {
                 let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
                 animations.advance_time(delta);
 
-                if let Some(mut animation_a) = animations.animations.get("auto").cloned() {
-                    if let Some(mut animation_b) = animations.animations.get("auto_b").cloned() {
-
-                        let anim_a = Arc::new(animation_a.clone());
-                        let anim_b = Arc::new(animation_b.clone());
-
-                        // fill bone matrice uniform
-                        for bone in animations.root_bones.clone().iter() {
-                            animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &vec![(anim_a.clone(), 0.5), (anim_b.clone(), 0.5)]);
+                let mut animations_weights = animations_weights;
+                if let Some(anim_weights) = animations_weights.as_mut() {
+                    // if it isn't already there, add the "auto" animation (if it exists)
+                    if !anim_weights.iter().any(|(name, _)| name == "auto") {
+                        if let Some(auto_anim) = animations.animations.get("auto") {
+                            anim_weights.push(("auto".to_string(), 0.1));
                         }
-                        for (i, transform) in animations.get_joint_matrices().iter().enumerate() {
-                            let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
-                            let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
-                            UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
-                        }
-                        let care_about_animation_c = CString::new("care_about_animation").unwrap();
-                        let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
-                        Uniform1i(care_about_animation_loc, 1);
-
-                        self.animation_delta = Some(current_time);
-                        *animations.animations.get_mut("auto").unwrap() = animation_a;
-                        *animations.animations.get_mut("auto_b").unwrap() = animation_b;
                     }
+                } else {
+                    // if there are no animations, add the "auto" animation (if it exists)
+                    if let Some(auto_anim) = animations.animations.get("auto") {
+                        animations_weights = Some(vec![("auto".to_string(), 0.1)]);
+                    }
+                }
+
+                if let Some(animations_weights) = animations_weights {
+                    let mut anims_weights = animations_weights.iter().map(
+                        |(name, weight)| {
+                            (Arc::new(animations.animations.get(name).unwrap().clone()), *weight)
+                        }
+                    ).collect::<Vec<(Arc<SkeletalAnimation>, f64)>>();
+
+                    // fill bone matrice uniform
+                    for bone in animations.root_bones.clone().iter() {
+                        animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &anims_weights);
+                    }
+                    for (i, transform) in animations.get_joint_matrices().iter().enumerate() {
+                        let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
+                        let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
+                        UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
+                    }
+                    let care_about_animation_c = CString::new("care_about_animation").unwrap();
+                    let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+                    Uniform1i(care_about_animation_loc, 1);
+
+                    self.animation_delta = Some(current_time);
                 }
             } else {
                 let care_about_animation_c = CString::new("care_about_animation").unwrap();

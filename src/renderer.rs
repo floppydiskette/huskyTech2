@@ -90,6 +90,7 @@ pub struct GLFWBackend {
 pub struct ht_renderer {
     pub type_: RenderType,
     pub window_size: Vec2,
+    pub render_size: Vec2,
     pub camera: Camera,
     pub textures: HashMap<String, Texture>,
     pub loading_textures: HashMap<String, (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryTexture>>>)>,
@@ -127,8 +128,10 @@ pub struct Framebuffers {
 impl ht_renderer {
     pub fn init() -> Result<ht_renderer, String> {
         // some constants we can later change (todo: make these configurable?)
-        let window_width = 1280;
-        let window_height = 720;
+        let window_width = 1920;
+        let window_height = 1080;
+        let render_width = 1280;
+        let render_height = 720;
 
         let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 10000.0);
 
@@ -145,6 +148,8 @@ impl ht_renderer {
                     glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
                     glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
                     glfw.window_hint(glfw::WindowHint::DoubleBuffer(true));
+                    glfw.window_hint(glfw::WindowHint::Resizable(true));
+                    glfw.window_hint(glfw::WindowHint::Samples(Some(0)));
 
                     let (mut window, events) = glfw.create_window(
                         window_width,
@@ -158,6 +163,7 @@ impl ht_renderer {
                     window.set_sticky_keys(true);
                     window.set_cursor_pos_polling(true);
                     window.set_mouse_button_polling(true);
+                    window.set_size(window_width as i32, window_height as i32);
 
                     load(|s| window.get_proc_address(s) as *const _);
 
@@ -177,6 +183,8 @@ impl ht_renderer {
                         gbuffer_rbuffer: 0
                     };
 
+                    Viewport(0, 0, render_width as i32, render_height as i32);
+
                     // get the number of the current framebuffer
                     let mut original: i32 = 0;
                     GetIntegerv(FRAMEBUFFER_BINDING, &mut original);
@@ -188,6 +196,9 @@ impl ht_renderer {
                     CullFace(FRONT);
                     Enable(DEPTH_TEST);
                     DepthFunc(LESS);
+
+                    // disable multisampling
+                    Disable(MULTISAMPLE);
 
                     // configure stencil test
                     Enable(STENCIL_TEST);
@@ -203,7 +214,7 @@ impl ht_renderer {
                     let mut posttexture = 0;
                     GenTextures(1, &mut posttexture);
                     BindTexture(TEXTURE_2D, posttexture);
-                    TexImage2D(TEXTURE_2D, 0, SRGB as i32, window_width as i32, window_height as i32, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, SRGB as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, posttexture, 0);
@@ -211,7 +222,7 @@ impl ht_renderer {
                     let mut renderbuffer = 0;
                     GenRenderbuffers(1, &mut renderbuffer);
                     BindRenderbuffer(RENDERBUFFER, renderbuffer);
-                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, window_width as i32, window_height as i32);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, renderbuffer);
 
                     // check if framebuffer is complete
@@ -279,25 +290,25 @@ impl ht_renderer {
 
                     // position
                     BindTexture(TEXTURE_2D, gbuffer_textures[0]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA16F as i32, window_width as i32, window_height as i32, 0, RGBA, FLOAT, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGBA16F as i32, render_width, render_height, 0, RGBA, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, gbuffer_textures[0], 0);
                     // normal
                     BindTexture(TEXTURE_2D, gbuffer_textures[1]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA8 as i32, window_width as i32, window_height as i32, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGBA8 as i32, render_width, render_height, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT1, TEXTURE_2D, gbuffer_textures[1], 0);
                     // color
                     BindTexture(TEXTURE_2D, gbuffer_textures[2]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, window_width as i32, window_height as i32, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, render_width, render_height, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT2, TEXTURE_2D, gbuffer_textures[2], 0);
                     // info
                     BindTexture(TEXTURE_2D, gbuffer_textures[3]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, window_width as i32, window_height as i32, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, render_width, render_height, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT3, TEXTURE_2D, gbuffer_textures[3], 0);
@@ -319,10 +330,8 @@ impl ht_renderer {
                     let mut gbuffer_renderbuffer = 0;
                     GenRenderbuffers(1, &mut gbuffer_renderbuffer);
                     BindRenderbuffer(RENDERBUFFER, gbuffer_renderbuffer);
-                    RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT, window_width as i32, window_height as i32);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT, render_width, render_height);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER, gbuffer_renderbuffer);
-
-                    Viewport(0, 0, window_width as i32, window_height as i32);
                     // make top left corner as origin
 
                     Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
@@ -364,6 +373,7 @@ impl ht_renderer {
             Ok(ht_renderer {
                 type_: RenderType::GLX,
                 window_size: Vec2::new(window_width as f32, window_height as f32),
+                render_size: Vec2::new(render_width as f32, render_height as f32),
                 camera,
                 textures: Default::default(),
                 loading_textures: Default::default(),
@@ -621,7 +631,7 @@ impl ht_renderer {
         set_shader_if_not_already(self, gbuffer_shader);
 
         unsafe {
-            Viewport(0, 0, self.window_size.x as i32, self.window_size.y as i32);
+            Viewport(0, 0, self.render_size.x as i32, self.render_size.y as i32);
 
             // set framebuffer to the post processing framebuffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
@@ -651,7 +661,7 @@ impl ht_renderer {
         unsafe {
             // set framebuffer to the post processing framebuffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.postbuffer as GLuint);
-            Viewport(0, 0, self.window_size.x as GLsizei, self.window_size.y as GLsizei);
+            Viewport(0, 0, self.render_size.x as i32, self.render_size.y as i32);
 
             // set the clear color to preferred color
             let colour = self.backend.clear_colour.load(Ordering::Relaxed);

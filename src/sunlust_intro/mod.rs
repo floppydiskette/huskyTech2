@@ -52,7 +52,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         intensity: 1000.0
     };
 
-    let window_size = renderer.window_size.clone();
+    let window_size = renderer.render_size.clone();
 
     let poweredby_width = window_size.y / 2.0;
     let poweredby_height = poweredby_width / 2.0;
@@ -100,6 +100,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
             let colour_c = CString::new("i_colour").unwrap();
             let colour_loc = GetUniformLocation(renderer.backend.shaders.as_mut().unwrap()[rainbow_shader.clone()].program, colour_c.as_ptr());
             Uniform4f(colour_loc, colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
+
+            Viewport(0, 0, renderer.render_size.x as i32, renderer.render_size.y as i32);
         }
 
 
@@ -147,11 +149,15 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
         dutch += 0.01;
 
+        unsafe {
+            Viewport(0, 0, renderer.render_size.x as i32, renderer.render_size.y as i32);
+        }
+
         // send the lights to the renderer
         renderer.set_lights(vec![light_a, light_b]);
 
         // draw the mesh
-        mesh.render(renderer, Some(&texture));
+        mesh.render(renderer, Some(&texture), None);
         // draw the powered by text
         ui_poweredby.render_at(ui_master.clone(), renderer);
 
@@ -197,6 +203,10 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
             break;
         }
 
+        unsafe {
+            Viewport(0, 0, renderer.render_size.x as i32, renderer.render_size.y as i32);
+        }
+
         ui_developedby.render_at(ui_master.clone(), renderer);
         // swap buffers
         renderer.swap_buffers();
@@ -208,5 +218,4 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     }
 
     sss.state().remove_source(source_handle);
-    renderer.backend.clear_colour.store(RGBA { r: 0, g: 75, b: 75, a: 255 }, Ordering::SeqCst);
 }

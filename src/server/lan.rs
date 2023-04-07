@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use serde::{Serialize, Deserialize};
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::time::Instant;
 use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, SteadyPacket, SteadyPacketData};
 use crate::server::connections::SteadyMessageQueue;
 
@@ -196,6 +197,8 @@ impl LanListener {
             let mut peer_addr = None;
 
             // wait for udp connection
+            let starting_time = Instant::now();
+            const TIMEOUT_SECS: u64 = 5;
             loop {
                 let packet = self.check_for_fast_update(&uuid_real).await;
                 if let Some(packet) = packet {
@@ -208,6 +211,10 @@ impl LanListener {
                             }
                         }
                     }
+                }
+                if starting_time.elapsed().as_secs() > TIMEOUT_SECS {
+                    warn!("handshake packet error: timed out");
+                    return None;
                 }
             }
 
