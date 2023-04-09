@@ -346,6 +346,9 @@ impl WorldMachine {
     }
 
     async unsafe fn send_queued_steady_message(&mut self, message: SteadyPacketData) {
+        let mut tries = 0;
+        const MAX_TRIES: i32 = 10;
+
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
@@ -374,11 +377,17 @@ impl WorldMachine {
                     loop {
                         let try_recv = connection.attempt_receive_steady_and_deserialise().await;
                         if let Some(message) = try_recv {
-                            if let SteadyPacket::Consume(uuid) = message.packet.unwrap().clone() {
-                                if uuid == message.uuid.unwrap() {
+                            if let SteadyPacket::Consume(uuid) = message.clone().packet.unwrap() {
+                                if uuid == message.clone().uuid.unwrap() {
                                     debug!("consume message received");
                                     break;
+                                } else {
+                                    // requeue the message
+                                    connection.steady_receiver_queue.lock().await.push(message);
                                 }
+                            } else {
+                                // requeue the message
+                                connection.steady_receiver_queue.lock().await.push(message);
                             }
                         }
                     }
@@ -393,11 +402,11 @@ impl WorldMachine {
                 ConnectionClientside::Local(connection) => {
                     let mut connection = connection.lock().await;
                     let mut queue = connection.steady_sender_queue.lock().await;
-                    while let Some(message) = queue.pop() {}
+                    while let Some(message) = queue.pop().await {}
                 }
                 ConnectionClientside::Lan(connection) => {
                     let mut queue = connection.steady_sender_queue.lock().await;
-                    while let Some(message) = queue.pop() {
+                    while let Some(message) = queue.pop().await {
                         debug!("sending queued steady message");
                         debug!("message: {:?}", message);
                         let attempt = connection.send_steady_and_serialise(message).await;
@@ -558,7 +567,11 @@ impl WorldMachine {
                     let try_recv = connection.attempt_receive_steady_and_deserialise().await;
                     if let Some(message) = try_recv {
                         self.handle_steady_message(message.clone().packet.unwrap()).await;
-                        self.consume_steady_message(message).await;
+                        // don't consume consume packets
+                        if let SteadyPacket::Consume(_) = message.clone().packet.unwrap() {
+                        } else {
+                            self.consume_steady_message(message).await;
+                        }
                     }
                 }
             }

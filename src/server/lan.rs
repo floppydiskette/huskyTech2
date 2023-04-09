@@ -67,7 +67,7 @@ impl FastUpdateQueue<FastPacketLan> {
 #[derive(Clone, Debug)]
 pub struct LanConnection {
     pub steady_update: Arc<Mutex<TcpStream>>,
-    pub steady_update_queue: Arc<Mutex<SteadyMessageQueue>>,
+    pub steady_update_queue: Arc<Mutex<SteadyMessageQueue>>, // fixme: use mpsc
     pub steady_receive_queue: Arc<Mutex<(SteadyMessageQueue, bool)>>,
     pub remote_addr: SocketAddr,
     pub uuid: ConnectionUUID,
@@ -371,7 +371,7 @@ impl LanConnection {
     }
 
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
-        let packet = self.steady_receive_queue.lock().await.0.pop();
+        let packet = self.steady_receive_queue.lock().await.0.pop().await;
         if let Some(packet) = packet {
             Ok(Some(packet))
         } else if !self.steady_receive_queue.lock().await.1 {
@@ -405,6 +405,7 @@ impl LanConnection {
             let queue = &mut self.steady_receive_queue.lock().await.0;
             debug!("received packet: {:?}", packet);
             queue.push(packet);
+            debug!("queue: {:?}", queue);
         }
     }
 }
@@ -515,7 +516,12 @@ impl ClientLanConnection {
             }
             let attempt = attempt.unwrap();
             let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-            let packet = FastPacketLan::deserialize(&mut deserialiser).unwrap();
+            let packet = FastPacketLan::deserialize(&mut deserialiser);
+            if packet.is_err() {
+                warn!("failed to deserialise fast update: {:?}", packet);
+                continue;
+            }
+            let packet = packet.unwrap();
             if let FastPacketPotentials::FastPacket(packet) = packet.data {
                 self.fast_update_queue.lock().await.push(packet);
             }
@@ -565,7 +571,7 @@ impl ClientLanConnection {
 
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {
         let mut steady_receiver_queue = self.steady_receiver_queue.lock().await;
-        let attempt = steady_receiver_queue.pop();
+        let attempt = steady_receiver_queue.pop().await;
         drop(steady_receiver_queue);
         if attempt.is_none() {
             None

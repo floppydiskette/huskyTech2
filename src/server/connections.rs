@@ -1,27 +1,34 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 use crate::server::SteadyPacketData;
 
 #[derive(Clone, Debug)]
 pub struct SteadyMessageQueue {
-    pub queue: VecDeque<SteadyPacketData>,
+    receiver: Arc<Mutex<mpsc::Receiver<SteadyPacketData>>>,
+    sender: mpsc::Sender<SteadyPacketData>,
 }
 
 impl SteadyMessageQueue {
     pub fn new() -> Self {
-        SteadyMessageQueue {
-            queue: VecDeque::new(),
+        let (sender, receiver) = mpsc::channel(100);
+        Self {
+            receiver: Arc::new(Mutex::new(receiver)),
+            sender,
         }
     }
 
-    pub fn peek(&self) -> Option<&SteadyPacketData> {
-        self.queue.front()
-    }
-
-    pub fn pop(&mut self) -> Option<SteadyPacketData> {
-        self.queue.pop_front()
+    pub async fn pop(&mut self) -> Option<SteadyPacketData> {
+        let mut receiver = self.receiver.lock().await;
+        let peek = receiver.try_recv();
+        if let Ok(packet) = peek {
+            Some(packet)
+        } else {
+            None
+        }
     }
 
     pub fn push(&mut self, packet: SteadyPacketData) {
-        self.queue.push_back(packet);
+        let _ = self.sender.try_send(packet);
     }
 }
