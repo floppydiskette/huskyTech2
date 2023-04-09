@@ -20,7 +20,7 @@ use crate::helpers::{add_quaternion, from_q64, multiply_quaternion, rotate_vecto
 use crate::physics::{Materials, PhysicsSystem};
 use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
-use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_JUKEBOX, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, Light, MeshRenderer, Terrain, Transform};
+use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_JUKEBOX, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, COMPONENT_TYPE_TRIGGER, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::MapLoadError::FolderNotFound;
 use crate::worldmachine::player::{MovementInfo, Player, PlayerContainer};
@@ -105,6 +105,7 @@ pub struct WorldMachine {
     client_update_queue: Arc<Mutex<VecDeque<ClientUpdate>>>,
     player: Option<PlayerContainer>,
     ignore_this_entity: Option<EntityId>, // should be the player entity that other players will see, we don't want it's updates to be received because we already know them
+    current_map: String,
     pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>,
 }
 
@@ -129,6 +130,7 @@ impl Default for WorldMachine {
             client_update_queue: Arc::new(Mutex::new(VecDeque::new())),
             player: None,
             ignore_this_entity: None,
+            current_map: "".to_string(),
             players: None,
         }
     }
@@ -185,6 +187,8 @@ impl WorldMachine {
             self.world.entities.push(entity_new);
         }
 
+        self.current_map = map_name.to_string();
+
         // initialise entities
         self.initialise_entities();
 
@@ -237,6 +241,36 @@ impl WorldMachine {
                 }
                 let box_collider_physics = self.physics.as_ref().unwrap().create_box_collider_static(position, scale, Materials::Player).unwrap();
                 box_collider_physics.add_self_to_scene(self.physics.clone().unwrap());
+            }
+            if let Some(trigger) = entity.get_component(COMPONENT_TYPE_TRIGGER.clone()) {
+                let trigger = trigger.borrow();
+                let position = trigger.get_parameter("position").unwrap().borrow().clone();
+                let mut position = match position.value {
+                    ParameterValue::Vec3(position) => position,
+                    _ => panic!("position is not a vec3"),
+                };
+                let scale = trigger.get_parameter("size").unwrap().borrow().clone();
+                let mut scale = match scale.value {
+                    ParameterValue::Vec3(scale) => scale,
+                    _ => panic!("scale is not a vec3"),
+                };
+                if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
+                    let transform = transform.borrow();
+                    let trans_position = transform.get_parameter("position").unwrap().borrow().clone();
+                    let trans_position = match trans_position.value {
+                        ParameterValue::Vec3(position) => position,
+                        _ => panic!("position is not a vec3"),
+                    };
+                    let trans_scale = transform.get_parameter("scale").unwrap().borrow().clone();
+                    let trans_scale = match trans_scale.value {
+                        ParameterValue::Vec3(scale) => scale,
+                        _ => panic!("scale is not a vec3"),
+                    };
+                    position += trans_position;
+                    scale *= trans_scale;
+                }
+                let trigger_physics = self.physics.as_ref().unwrap().create_trigger_shape(position, scale, Materials::Player).unwrap();
+                trigger_physics.add_self_to_scene(self.physics.clone().unwrap());
             }
         }
     }

@@ -4,8 +4,9 @@ version = "0.0.1"
 edition = "2021"
 
 [features]
-default = [ "glfw" ]
-glfw = []
+default = [ "graphical" ]
+headless = [ ]
+graphical = [ "glfw", "egui_glfw_gl", "glad-gl", "fyrox-sound" ]
 
 [dependencies]
 gltf = { version = "1.0", features = ["names", "utils"] }
@@ -13,19 +14,17 @@ serde = { version = "1.0", features = ["derive"] }
 gfx-maths = { version = "0.2.8", features = ["serde"]}
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.1.2", features = ["v4"] }
-egui_glfw_gl = { git = "https://github.com/floppydiskette/egui_glfw_gl" }
-fyrox-sound = "0.30.0"
+egui_glfw_gl = { git = "https://github.com/floppydiskette/egui_glfw_gl", optional = true }
+fyrox-sound = { version = "0.30.0", optional = true }
 halfbrown = "0.1.15"
-glfw = "0.49.1"
+glfw = { version = "0.49.1", optional = true } # todo: update once our egui fork is updated to the latest glfw
 async-recursion = "1.0.0"
-physx-sys = "0.8.1"
+physx-sys = { git = "https://github.com/EmbarkStudios/physx-rs" } # todo: update once "Fix unnecessary recompiles" is added to a release
 rmp-serde = "1.1.0"
-kira = "0.6.0"
+kira = "0.7.3"
 image = "0.24.3"
 log = "0.4.0"
-env_logger = "0.8.4"
+env_logger = "0.10.0"
 gl_matrix = "0.0"
 lazy_static = "1.4.0"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-glad-gl = { path = "./glad-gl" }
+glad-gl = { path = "./glad-gl", optional = true }

@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use halfbrown::HashMap;
 use std::ptr::{null, null_mut};
@@ -7,7 +8,11 @@ use std::sync::atomic::{Ordering};
 use gfx_maths::{Vec3};
 use physx_sys::*;
 
-
+lazy_static!{
+    static ref BOX_COLLIDERS: Arc<Mutex<Vec<PhysicsBoxColliderStatic>>> = Arc::new(Mutex::new(Vec::new()));
+    static ref TRIGGER_SHAPES: Arc<Mutex<Vec<PhysicsTriggerShape>>> = Arc::new(Mutex::new(Vec::new()));
+    static ref PHYSICS_SYSTEM: Arc<Mutex<Option<PhysicsSystem>>> = Arc::new(Mutex::new(None));
+}
 
 pub const GRAVITY: f32 = -9.81;
 pub const PLAYER_GRAVITY: f32 = -1.51;
@@ -30,6 +35,26 @@ unsafe impl Send for PhysicsSystem {
 unsafe impl Sync for PhysicsSystem {
 }
 
+// somewhat just doing what the physx-rs crate does, mostly cause i'm too tired to figure out how their api works
+trait TriggerCallback: Sized {
+    fn on_trigger(&mut self, pairs: &[PxTriggerPair]);
+}
+
+trait TriggerCallbackRaw: TriggerCallback {
+    unsafe extern "C" fn callback(
+        user_data: *mut c_void,
+        pairs: *const PxTriggerPair,
+        nb_pairs: u32,
+    ) {
+        unsafe {
+            Self::on_trigger(
+                &mut *(user_data as *mut Self),
+                std::slice::from_raw_parts(pairs, nb_pairs as usize),
+            )
+        }
+    }
+}
+
 impl PhysicsSystem {
     pub fn init() -> Self {
         let foundation = unsafe { physx_create_foundation() };
@@ -41,12 +66,27 @@ impl PhysicsSystem {
             z: 0.0,
         };
 
-        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate(2, std::ptr::null_mut()) };
+        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate(2, std::ptr::null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
 
         scene_desc.cpuDispatcher = dispatcher as *mut _;
         scene_desc.filterShader = phys_PxDefaultSimulationFilterShader as *mut _;
 
         let scene = unsafe { PxPhysics_createScene_mut(physics, &scene_desc) };
+
+        unsafe {
+            let _ = create_simulation_event_callbacks(&SimulationEventCallbackInfo {
+                collision_callback: None,
+                collision_user_data: (),
+                trigger_callback: None,
+                trigger_user_data: (),
+                constraint_break_callback: None,
+                constraint_break_user_data: (),
+                wake_sleep_callback: None,
+                wake_sleep_user_data: (),
+                advance_callback: None,
+                advance_user_data: (),
+            });
+        }
 
         let controller_manager = unsafe { phys_PxCreateControllerManager(scene, true) };
 
@@ -56,7 +96,17 @@ impl PhysicsSystem {
 
         let physics_materials = Self::init_materials(physics);
 
-        Self { foundation, physics, dispatcher, scene, controller_manager, physics_materials }
+        let sys = Self { foundation, physics, dispatcher, scene, controller_manager, physics_materials };
+        PHYSICS_SYSTEM.lock().unwrap().replace(sys.clone());
+        sys
+    }
+
+    // drop colliders and shapes before switching scenes
+    pub fn cleanup() {
+        let mut box_colliders = BOX_COLLIDERS.lock().unwrap();
+        let mut trigger_shapes = TRIGGER_SHAPES.lock().unwrap();
+        box_colliders.clear();
+        trigger_shapes.clear();
     }
 
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -145,26 +195,57 @@ impl PhysicsSystem {
             },
         };
 
-        let mut geometry = unsafe { PxBoxGeometry_new() };
-        geometry.halfExtents = PxVec3 {
-            x: size.x / 2.0,
-            y: size.y / 2.0,
-            z: size.z / 2.0,
-        };
+        let mut geometry = unsafe { PxBoxGeometry_new(size.x / 2.0, size.y / 2.0, size.z / 2.0) };
 
         let material = self.physics_materials.get(&material).unwrap();
 
         let box_actor = unsafe { PxPhysics_createRigidStatic_mut(self.physics, &transform) };
-        let shape_flags = PxShapeFlag::eSIMULATION_SHAPE | PxShapeFlag::eSCENE_QUERY_SHAPE;
-        let shape_flags = unsafe { PxShapeFlags {
-            mBits: shape_flags as u8,
-        } };
+        let shape_flags = PxShapeFlag::SimulationShape as u8 | PxShapeFlag::SceneQueryShape as u8;
+        let shape_flags = PxShapeFlags::from_bits(shape_flags).unwrap();
         let box_shape = unsafe {
-            PxRigidActorExt_createExclusiveShape_mut(
+            PxRigidActorExt_createExclusiveShape_1(
                 box_actor as *mut PxRigidActor,
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
-                &material.material, 1, shape_flags) };
+                *&material.material, shape_flags) };
         Some(PhysicsBoxColliderStatic {
+            actor: box_actor,
+            shape: box_shape,
+        })
+    }
+
+    pub fn create_trigger_shape(&self, position: Vec3, size: Vec3, material: Materials) -> Option<PhysicsTriggerShape> {
+        // physx defines the center of the box as the center of the bottom face
+        // ht2 defines the center of the box as the top right of the bottom face
+        let position = position + Vec3::new(size.x / 2.0, size.y / 2.0, -size.z / 2.0);
+        let size = size;
+
+        let transform = PxTransform {
+            p: PxVec3 {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            },
+            q: PxQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            },
+        };
+
+        let mut geometry = unsafe { PxBoxGeometry_new(size.x / 2.0, size.y / 2.0, size.z / 2.0) };
+
+        let material = self.physics_materials.get(&material).unwrap();
+
+        let box_actor = unsafe { PxPhysics_createRigidStatic_mut(self.physics, &transform) };
+        let shape_flags = PxShapeFlag::TriggerShape as u8 | PxShapeFlag::SceneQueryShape as u8;
+        let shape_flags = PxShapeFlags::from_bits(shape_flags).unwrap();
+        let box_shape = unsafe {
+            PxRigidActorExt_createExclusiveShape_1(
+                box_actor as *mut PxRigidActor,
+                &geometry as *const PxBoxGeometry as *const PxGeometry,
+                *&material.material, shape_flags) };
+        Some(PhysicsTriggerShape {
             actor: box_actor,
             shape: box_shape,
         })
@@ -243,7 +324,7 @@ impl PhysicsCharacterController {
                                               0.0,
                                               delta_time,
                                               &PxControllerFilters_new(null_mut(), null_mut(), null_mut()), null_mut());
-            *self.flags.lock().unwrap() = CollisionFlags::from_bits(flags.mBits);
+            *self.flags.lock().unwrap() = CollisionFlags::from_bits(flags.bits());
         }
     }
 
@@ -296,10 +377,68 @@ pub struct PhysicsBoxColliderStatic {
     pub shape: *mut PxShape,
 }
 
+unsafe impl Send for PhysicsBoxColliderStatic {
+}
+
+unsafe impl Sync for PhysicsBoxColliderStatic {
+}
+
 impl PhysicsBoxColliderStatic {
     pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
         unsafe {
             PxScene_addActor_mut(physics.scene, self.actor as *mut PxActor, null_mut());
+        }
+        BOX_COLLIDERS.lock().unwrap().push(self.clone());
+    }
+
+    pub fn remove_self(&self, physics: PhysicsSystem) {
+        unsafe {
+            PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
+            PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
+        }
+    }
+}
+
+impl Drop for PhysicsBoxColliderStatic {
+    fn drop(&mut self) {
+        unsafe {
+            self.remove_self(PHYSICS_SYSTEM.lock().unwrap().unwrap().clone());
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PhysicsTriggerShape {
+    pub actor: *mut PxRigidStatic,
+    pub shape: *mut PxShape,
+}
+
+unsafe impl Send for PhysicsTriggerShape {
+}
+
+unsafe impl Sync for PhysicsTriggerShape {
+}
+
+impl PhysicsTriggerShape {
+    pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
+        unsafe {
+            PxScene_addActor_mut(physics.scene, self.shape as *mut PxActor, null_mut());
+        }
+        TRIGGER_SHAPES.lock().unwrap().push(self.clone());
+    }
+
+    pub fn remove_self(&self, physics: PhysicsSystem) {
+        unsafe {
+            PxScene_removeActor_mut(physics.scene, self.shape as *mut PxActor, false);
+            PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
+        }
+    }
+}
+
+impl Drop for PhysicsTriggerShape {
+    fn drop(&mut self) {
+        unsafe {
+            self.remove_self(PHYSICS_SYSTEM.lock().unwrap().unwrap().clone());
         }
     }
 }

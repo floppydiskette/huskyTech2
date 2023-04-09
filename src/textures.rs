@@ -5,7 +5,6 @@ use gfx_maths::Vec2;
 use glad_gl::gl::*;
 use crate::ht_renderer;
 
-#[cfg(feature = "glfw")]
 pub struct Texture {
     pub dimensions: (u32, u32),
     pub material: GLMaterial,

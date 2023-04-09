@@ -55,6 +55,7 @@ pub mod animgraph;
 pub mod ui;
 pub mod audio;
 pub mod common_anim;
+pub mod maps;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -162,6 +163,8 @@ async fn main() {
                 panic!("failed to load player mesh");
             }
         }
+
+        ui::debug_log("haiii! :3 :3 :3");
 
         let mut last_frame_time = std::time::Instant::now();
         loop {

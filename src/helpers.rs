@@ -82,6 +82,10 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
+pub fn lerp_vec3(a: Vec3, b: Vec3, t: f32) -> Vec3 {
+    Vec3::new(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t))
+}
+
 pub fn glmatrix_mat4_to_gfx_maths_mat4(a: gl_matrix::common::Mat4) -> gfx_maths::Mat4 {
     let mut b = gfx_maths::Mat4::identity();
     b.values[0] = a[0];

@@ -70,7 +70,7 @@ pub enum RenderType {
     GLX,
 }
 
-#[cfg(feature = "glfw")]
+
 #[derive(Clone)]
 pub struct GLFWBackend {
     pub window: Arc<Mutex<Window>>,
@@ -98,7 +98,7 @@ pub struct ht_renderer {
     pub loading_meshes: HashMap<String, (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryMesh>>>)>,
     pub shaders: HashMap<String, usize>,
     pub lights: Vec<Light>,
-    #[cfg(feature = "glfw")]
+    
     pub backend: GLFWBackend,
 }
 
@@ -135,7 +135,7 @@ impl ht_renderer {
 
         let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 10000.0);
 
-        #[cfg(feature = "glfw")]{
+        {
             let backend = {
                 info!("running on linux, using glfw as backend");
                 unsafe {
@@ -388,7 +388,7 @@ impl ht_renderer {
 
     pub fn lock_mouse(&mut self, lock: bool) {
         unsafe {
-            #[cfg(feature = "glfw")]
+            
             {
                 if lock {
                     self.backend.window.lock().unwrap().set_cursor_mode(glfw::CursorMode::Disabled);
@@ -499,7 +499,7 @@ impl ht_renderer {
     // closes the window if it needs to, etc.
     // returns true if the window should close
     pub fn manage_window(&mut self) -> bool {
-        #[cfg(feature = "glfw")]{
+        {
             unsafe {
                 self.backend.window.lock().unwrap().glfw.poll_events();
                 if self.backend.window.lock().unwrap().should_close() {

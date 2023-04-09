@@ -102,6 +102,7 @@ impl Camera {
         self.recalculate_view();
     }
 
+    // DEPRECATED
     pub fn set_position_from_player_position(&mut self, player_position: Vec3) {
         self.position = player_position + Vec3::new(0.0, EYE_HEIGHT, 0.0);
         self.recalculate_view();

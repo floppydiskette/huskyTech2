@@ -83,7 +83,7 @@ pub struct LocalConnection {
     pub steady_update_sender: mpsc::Sender<SteadyPacketData>,
     pub fast_update_receiver: watch::Receiver<FastPacketData>,
     steady_update_receiver: watch::Receiver<SteadyPacketData>,
-    pub steady_receiver_queue: Arc<Mutex<SteadyMessageQueue>>,
+    pub consume_receiver_queue: Arc<Mutex<SteadyMessageQueue>>,
     pub uuid: ConnectionUUID,
 }
 
@@ -191,11 +191,11 @@ impl Server {
         }
     }
 
-    async unsafe fn send_steady_packet_unsafe(&self, connection: &Connection, packet: SteadyPacketData) -> bool {
+    async unsafe fn send_steady_packet_unsafe(&self, connection_og: &Connection, packet: SteadyPacketData) -> bool {
         let mut tries = 0;
         const MAX_TRIES: i32 = 10;
 
-        match connection.clone() {
+        match connection_og.clone() {
             Connection::Local(connection) => {
                 let connection_lock = connection.lock().await;
                 connection_lock.steady_update_sender.send(packet.clone()).await.unwrap();
@@ -203,9 +203,12 @@ impl Server {
                 // wait for the packet to be consumed
                 drop(connection_lock);
                 loop {
+                    { // hack so that we can get consume packets
+                        self.handle_steady_packets(connection_og.clone()).await; // TODO: this may cause a stack overflow in the future, watch out!
+                    }
                     {
                         let connection_lock = connection.lock().await.clone();
-                        let mut queue = connection_lock.steady_receiver_queue.lock().await;
+                        let mut queue = connection_lock.consume_receiver_queue.lock().await;
                         if let Some(packet_data) = queue.pop().await {
                             if let SteadyPacket::Consume(uuid) = packet_data.packet.clone().unwrap() {
                                 if uuid == packet.clone().uuid.unwrap() {
@@ -216,6 +219,9 @@ impl Server {
                                     // put the packet back in the queue
                                     queue.push(packet_data);
                                 }
+                            } else {
+                                // put the packet back in the queue
+                                queue.push(packet_data);
                             }
                         }
                     }
@@ -431,8 +437,7 @@ impl Server {
                                 debug!("client sent initialise packet");
                             }
                             SteadyPacket::Consume(_) => {
-                                // oops, requeue the packet
-                                local_connection.steady_receiver_queue.lock().await.push(steady_packet_data);
+                                local_connection.consume_receiver_queue.lock().await.push(steady_packet_data);
                             }
 
                             // client shouldn't be sending these
@@ -701,7 +706,7 @@ impl Server {
             steady_update_sender: steady_update_sender_server,
             fast_update_receiver: fast_update_receiver_server,
             steady_update_receiver: steady_update_receiver_server,
-            steady_receiver_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
+            consume_receiver_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
             uuid,
         };
         let local_connection_client_side = LocalConnectionClientSide {

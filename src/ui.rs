@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use egui_glfw_gl::egui;
-use egui_glfw_gl::egui::{CentralPanel, Frame, Ui};
+use egui_glfw_gl::egui::{CentralPanel, Frame, SidePanel, TopBottomPanel, Ui};
 use gfx_maths::Vec3;
 use crate::renderer::ht_renderer;
 
@@ -9,8 +10,35 @@ lazy_static!{
     pub static ref SHOW_UI: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     pub static ref SHOW_DEBUG_LOCATION: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
     pub static ref SHOW_FPS: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+    pub static ref SHOW_DEBUG_LOG: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
     pub static ref DEBUG_LOCATION: Arc<Mutex<Vec3>> = Arc::new(Mutex::new(Vec3::new(0.0, 0.0, 0.0)));
     pub static ref FPS: Arc<Mutex<f32>> = Arc::new(Mutex::new(0.0));
+    pub static ref DEBUG_LOG: Arc<Mutex<OnScreenDebugLog>> = Arc::new(Mutex::new(OnScreenDebugLog {
+        buffer: VecDeque::new(),
+    }));
+}
+
+pub struct OnScreenDebugLog {
+    buffer: VecDeque<String>,
+}
+
+impl OnScreenDebugLog {
+    const MAX_LOG_SIZE: usize = 10;
+
+    pub fn log(&mut self, message: String) {
+        self.buffer.push_back(message);
+        if self.buffer.len() > Self::MAX_LOG_SIZE {
+            self.buffer.pop_front();
+        }
+    }
+
+    pub fn get(&mut self) -> Vec<String> {
+        self.buffer.iter().cloned().collect()
+    }
+}
+
+pub fn debug_log(message: impl ToString) {
+    DEBUG_LOG.lock().unwrap().log(message.to_string());
 }
 
 pub fn render(renderer: &mut ht_renderer) {
@@ -18,9 +46,19 @@ pub fn render(renderer: &mut ht_renderer) {
         return;
     }
 
-    CentralPanel::default()
+    SidePanel::left("left_debug")
         .frame(Frame::none())
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
+            // left align
+            if SHOW_DEBUG_LOG.load(Ordering::Relaxed) {
+                render_debug_log(ui);
+            }
+        });
+
+    SidePanel::right("right_debug")
+        .frame(Frame::none())
+        .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
+            // right align
             if SHOW_DEBUG_LOCATION.load(Ordering::Relaxed) {
                 render_debug_location(ui);
             }
@@ -47,7 +85,6 @@ pub fn render(renderer: &mut ht_renderer) {
 
 fn render_debug_location(ui: &mut Ui) {
     let debug_location = DEBUG_LOCATION.lock().unwrap();
-    // label at top right
     ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
         ui.label(format!("x: {}, y: {}, z: {}", debug_location.x, debug_location.y, debug_location.z));
     });
@@ -55,8 +92,19 @@ fn render_debug_location(ui: &mut Ui) {
 
 fn render_fps(ui: &mut Ui) {
     let fps = FPS.lock().unwrap();
-    // label at top right
     ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
         ui.label(format!("FPS: {}", *fps as u32));
     });
+}
+
+fn render_debug_log(ui: &mut Ui) {
+    let mut debug_log = DEBUG_LOG.lock().unwrap();
+    let log = debug_log.get();
+    ui.add_space(10.0);
+    for message in log {
+        ui.allocate_ui_with_layout(egui::Vec2::new(200.0, 200.0), egui::Layout::left_to_right(egui::Align::LEFT), |ui| {
+            ui.add_space(10.0);
+            ui.label(message);
+        });
+    }
 }

@@ -12,6 +12,7 @@ lazy_static! {
     pub static ref COMPONENT_TYPE_LIGHT: ComponentType = ComponentType::create_if_not_exists("Light");
     pub static ref COMPONENT_TYPE_BOX_COLLIDER: ComponentType = ComponentType::create_if_not_exists("BoxCollider");
     pub static ref COMPONENT_TYPE_JUKEBOX: ComponentType = ComponentType::create_if_not_exists("Jukebox");
+    pub static ref COMPONENT_TYPE_TRIGGER: ComponentType = ComponentType::create_if_not_exists("Trigger");
 
     pub static ref COMPONENTS_INITIALISED: bool = {
         register_component_types();

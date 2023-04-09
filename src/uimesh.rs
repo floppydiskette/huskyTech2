@@ -29,7 +29,7 @@ lazy_static!{
 }
 
 impl UiMesh {
-    #[cfg(feature = "glfw")]
+    
     pub fn new_master(renderer: &mut ht_renderer, shader_index: usize) -> Result<Arc<Mutex<Option<UiMesh>>>, String> {
         // create the mesh
         let vertices: [f32; 12] = [
@@ -106,7 +106,7 @@ impl UiMesh {
         Ok(UI_MASTER.clone())
     }
 
-    #[cfg(feature = "glfw")]
+    
     pub fn new_element_from_name(name: &str, master: &UiMesh, renderer: &mut ht_renderer, shader_index: usize) -> Result<UiMesh, String> {
         // load the texture
         let texture = UiTexture::new_from_name(name.to_string())?;
@@ -125,7 +125,7 @@ impl UiMesh {
         })
     }
 
-    #[cfg(feature = "glfw")]
+    
     pub fn new_element_from_data_assume_master_init(data: &[u8], dimensions: (u32, u32)) -> Result<UiMesh, String> {
         let texture = UiTexture::new_from_rgba_bytes(data, dimensions)?;
         let master = UI_MASTER.lock().unwrap().as_ref().unwrap().clone();
@@ -144,7 +144,7 @@ impl UiMesh {
         })
     }
 
-    #[cfg(feature = "glfw")]
+    
     pub fn render_at(&self, master: UiMesh, renderer: &mut ht_renderer) {
         let master = master;
 

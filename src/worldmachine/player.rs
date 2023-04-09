@@ -73,6 +73,9 @@ pub struct Player {
     locked_mouse: bool,
     first_run: bool,
     was_moving: bool,
+    bob_t: f32,
+    bob_on: bool,
+    pub has_camera_control: bool,
 }
 
 impl Default for Player {
@@ -99,6 +102,9 @@ impl Default for Player {
             locked_mouse: true,
             first_run: true,
             was_moving: false,
+            bob_t: 0.0,
+            bob_on: true,
+            has_camera_control: true,
         }
     }
 }
@@ -284,7 +290,7 @@ impl Player {
         *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
 
         self.last_move_call = std::time::Instant::now();
-        camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
+        //camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
             self.was_moving = true;
             Some((movement, info))
@@ -339,10 +345,29 @@ impl Player {
         if let Some(look) = look {
             updates.push(ClientUpdate::ILooked(look));
         }
+
+        // how much do we bob?
+        let mut bob_mag = 0.0;
+
         if let Some(movement) = movement {
             let mut new_movement = movement.1;
             new_movement.jumped = jump;
             updates.push(ClientUpdate::IDisplaced((movement.0, Some(movement.1)))); // using displaced as the returned value is a displacement vector for the physics engine
+            bob_mag = movement.0.magnitude() * 5.0;
+            debug!("bob mag: {}", bob_mag);
+        }
+
+        // for lerp
+        self.bob_t += delta_time;
+
+        // head bob
+        if self.bob_on {
+            let initial_head = self.get_position() + Vec3::new(0.0, 1.68, 0.0);
+            let bob = if bob_mag != 0.0 { initial_head + Vec3::new(0.0, 0.1 * ((self.bob_t  * 17.0).sin() * bob_mag), 0.0) } else {
+                self.bob_t = 0.0;
+                helpers::lerp_vec3(initial_head, renderer.camera.get_position(), self.bob_t)
+            };
+            renderer.camera.set_position(bob);
         }
 
         if updates.is_empty() {
