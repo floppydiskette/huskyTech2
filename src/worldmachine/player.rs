@@ -354,7 +354,6 @@ impl Player {
             new_movement.jumped = jump;
             updates.push(ClientUpdate::IDisplaced((movement.0, Some(movement.1)))); // using displaced as the returned value is a displacement vector for the physics engine
             bob_mag = movement.0.magnitude() * 5.0;
-            debug!("bob mag: {}", bob_mag);
         }
 
         // for lerp

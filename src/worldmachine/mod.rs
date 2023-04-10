@@ -178,7 +178,11 @@ impl WorldMachine {
                 Entity::new(entity.name.as_str())
             };
             for component in entity.components {
-                let component_type = ComponentType::get(component.get_type().name).expect("component type not found");
+                let component_type = ComponentType::get(component.get_type().name);
+                if component_type.is_none() {
+                    panic!("component type not found: {}", component.get_type().name);
+                }
+                let component_type = component_type.unwrap();
                 let mut component = component;
                 component.component_type = component_type.clone();
 
@@ -271,6 +275,7 @@ impl WorldMachine {
                 }
                 let trigger_physics = self.physics.as_ref().unwrap().create_trigger_shape(position, scale, Materials::Player).unwrap();
                 trigger_physics.add_self_to_scene(self.physics.clone().unwrap());
+                debug!("added trigger to physics scene with position: {:?} and scale: {:?}", position, scale);
             }
         }
     }

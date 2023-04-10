@@ -12,7 +12,7 @@ entities:
         value: !String basic
       texture:
         name: texture
-        value: !String gold4k
+        value: !String rock4k
     component_type:
       id: 2
       name: MeshRenderer
@@ -172,6 +172,29 @@ entities:
     component_type:
       id: 4
       name: Light
+  - name: Trigger
+    parameters:
+      key:
+        name: key
+        value: !String ''
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      size:
+        name: size
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      visualise:
+        name: visualise
+        value: !Bool true
+    component_type:
+      id: 7
+      name: Trigger
   children: []
   parent: null
 - name: ht2
@@ -251,7 +274,7 @@ entities:
           z: 1.0
       visualise:
         name: visualise
-        value: !Bool false
+        value: !Bool true
     component_type:
       id: 5
       name: BoxCollider

@@ -29,6 +29,7 @@ pub fn register_component_types() {
     let _ = COMPONENT_TYPE_LIGHT.clone();
     let _ = COMPONENT_TYPE_BOX_COLLIDER.clone();
     let _ = COMPONENT_TYPE_JUKEBOX.clone();
+    let _ = COMPONENT_TYPE_TRIGGER.clone();
 }
 
 // player component is defined in src/worldmachine/player.rs

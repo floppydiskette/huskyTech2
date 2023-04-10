@@ -15,6 +15,7 @@ uniform mat4 u_mvp;
 uniform mat4 u_view;
 uniform mat4 u_projection;
 uniform mat4 u_model;
+uniform mat4 u_normal_matrix;
 
 const int MAX_BONES = 100;
 const int MAX_BONER_INFLUENCE = 4; // (:
@@ -22,11 +23,10 @@ uniform mat4 joint_matrix[MAX_BONES];
 uniform bool care_about_animation;
 
 mat3 calculate_normals(vec3 in_normals) {
-    mat4 normalMatrix = transpose(inverse(u_model));
-    vec3 N = normalize( ( normalMatrix * vec4( in_normals, 0.0 ) ).xyz );
-    vec3 T = normalize( ( normalMatrix * vec4( in_tangent.xyz, 0.0 ) ).xyz );
-    vec3 B = normalize( ( normalMatrix * vec4( ( cross( in_normals, in_tangent.xyz ) ), 0.0 ) ).xyz );
-
+    mat3 normal_matrix = mat3(u_model);
+    vec3 N = normalize(normal_matrix * in_normals);
+    vec3 T = normalize(normal_matrix * in_tangent.xyz);
+    vec3 B = cross(N, T);
     return mat3(T, B, N);
 }
 

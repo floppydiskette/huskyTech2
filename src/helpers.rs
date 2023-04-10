@@ -38,6 +38,16 @@ pub fn calculate_model_matrix(position: Vec3, rotation: Quaternion, scale: Vec3)
     model_matrix
 }
 
+pub fn calculate_normal_matrix(model_matrix: Mat4, view_matrix: Mat4) -> Mat4 {
+    let mut normal_matrix = Mat4::identity();
+    normal_matrix = normal_matrix * model_matrix;
+    normal_matrix = normal_matrix * view_matrix;
+    let gl_matrix = gfx_maths_mat4_to_glmatrix_mat4(normal_matrix);
+    let gl_matrix = gl_matrix::mat4::invert(&mut gl_matrix.clone(), &gl_matrix).unwrap();
+    let gl_matrix = gl_matrix::mat4::transpose(&mut gl_matrix.clone(), &gl_matrix);
+    glmatrix_mat4_to_gfx_maths_mat4(gl_matrix)
+}
+
 pub fn largest_angle_between(a: Vec3, b: Vec3) -> f64 {
     let dot = a.dot(b) as f64;
     let angle = dot.acos() as f64;

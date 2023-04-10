@@ -12,8 +12,10 @@ use egui_glfw_gl::egui::Rect;
 use gfx_maths::*;
 use glad_gl::gl::*;
 use glfw::{Context, Window, WindowEvent};
+use rand::Rng;
 use crate::shaders::*;
 use crate::camera::*;
+use crate::helpers;
 use crate::helpers::{load_string_from_file, set_shader_if_not_already};
 use crate::light::Light;
 use crate::meshes::{IntermidiaryMesh, Mesh};
@@ -121,7 +123,11 @@ pub struct Framebuffers {
     pub gbuffer_normal: usize,
     pub gbuffer_albedo: usize, // or colour, call it what you want
     pub gbuffer_info: usize, // specular, lighting, etc
+    pub gbuffer_info2: usize, // depth, etc
     pub gbuffer_rbuffer: usize,
+
+    pub samples: [Vec3; 256],
+    pub noise_texture: usize,
 
 }
 
@@ -180,7 +186,10 @@ impl ht_renderer {
                         gbuffer_normal: 0,
                         gbuffer_albedo: 0,
                         gbuffer_info: 0,
-                        gbuffer_rbuffer: 0
+                        gbuffer_info2: 0,
+                        gbuffer_rbuffer: 0,
+                        samples: [Vec3::new(0.0, 0.0, 0.0); 256],
+                        noise_texture: 0,
                     };
 
                     Viewport(0, 0, render_width as i32, render_height as i32);
@@ -281,40 +290,75 @@ impl ht_renderer {
                     framebuffers.depthbuffer = depthbuffer as usize;
                     framebuffers.depthbuffer_texture = depthtexture as usize;
 
+                    // generate sample kernels
+                    let mut rng = rand::thread_rng();
+                    for i in 0..framebuffers.samples.len() {
+                        let mut sample = Vec3::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0), rng.gen_range(0.0..1.0));
+                        // normalize
+                        sample.normalize();
+                        sample *= rng.gen_range(0.0..1.0);
+                        let scale = i as f32 / framebuffers.samples.len() as f32;
+                        let scale = helpers::lerp(0.1, 1.0, scale * scale);
+                        framebuffers.samples[i] = sample * scale;
+                    }
+
+                    // generate noise texture
+                    let mut noise = Vec::new();
+                    for _ in 0..16 {
+                        noise.push(rng.gen_range(-1.0..1.0));
+                        noise.push(rng.gen_range(-1.0..1.0));
+                        noise.push(0.0);
+                    }
+                    let mut noise_texture = 0;
+                    GenTextures(1, &mut noise_texture);
+                    BindTexture(TEXTURE_2D, noise_texture);
+                    TexImage2D(TEXTURE_2D, 0, RGB16F as i32, 4, 4, 0, RGB, FLOAT, noise.as_ptr() as *const c_void);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
+                    framebuffers.noise_texture = noise_texture as usize;
+
                     // create the gbuffer
                     let mut gbuffer = 0;
                     GenFramebuffers(1, &mut gbuffer);
                     BindFramebuffer(FRAMEBUFFER, gbuffer);
-                    let mut gbuffer_textures = [0; 4];
-                    GenTextures(4, gbuffer_textures.as_mut_ptr());
+                    let mut gbuffer_textures = [0; 5];
+                    GenTextures(5, gbuffer_textures.as_mut_ptr());
 
                     // position
                     BindTexture(TEXTURE_2D, gbuffer_textures[0]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA16F as i32, render_width, render_height, 0, RGBA, FLOAT, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGBA32F as i32, render_width, render_height, 0, RGBA, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, gbuffer_textures[0], 0);
                     // normal
                     BindTexture(TEXTURE_2D, gbuffer_textures[1]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA8 as i32, render_width, render_height, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGB8 as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT1, TEXTURE_2D, gbuffer_textures[1], 0);
                     // color
                     BindTexture(TEXTURE_2D, gbuffer_textures[2]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, render_width, render_height, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGB as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT2, TEXTURE_2D, gbuffer_textures[2], 0);
                     // info
                     BindTexture(TEXTURE_2D, gbuffer_textures[3]);
-                    TexImage2D(TEXTURE_2D, 0, RGBA as i32, render_width, render_height, 0, RGBA, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGB8 as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT3, TEXTURE_2D, gbuffer_textures[3], 0);
+                    // info2
+                    BindTexture(TEXTURE_2D, gbuffer_textures[4]);
+                    TexImage2D(TEXTURE_2D, 0, RGB8 as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT4, TEXTURE_2D, gbuffer_textures[4], 0);
 
-                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, COLOR_ATTACHMENT2, COLOR_ATTACHMENT3];
-                    DrawBuffers(4, attachments.as_ptr());
+                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, COLOR_ATTACHMENT2, COLOR_ATTACHMENT3, COLOR_ATTACHMENT4];
+                    DrawBuffers(5, attachments.as_ptr());
 
                     if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
                         panic!("framebuffer is not complete (gbuffer)!");
@@ -325,6 +369,7 @@ impl ht_renderer {
                     framebuffers.gbuffer_normal = gbuffer_textures[1] as usize;
                     framebuffers.gbuffer_albedo = gbuffer_textures[2] as usize;
                     framebuffers.gbuffer_info = gbuffer_textures[3] as usize;
+                    framebuffers.gbuffer_info2 = gbuffer_textures[4] as usize;
 
                     // renderbuffer for gbuffer
                     let mut gbuffer_renderbuffer = 0;
@@ -408,6 +453,7 @@ impl ht_renderer {
         self.load_shader("gbuffer_anim").expect("failed to load gbuffer animation shader");
         // load lighting shader
         self.load_shader("lighting").expect("failed to load lighting shader");
+
         // load rainbow shader
         self.load_shader("rainbow").expect("failed to load rainbow shader");
         // load basic shader
@@ -659,6 +705,16 @@ impl ht_renderer {
         let lighting_shader = self.backend.shaders.as_ref().unwrap().get(lighting_shader).unwrap();
 
         unsafe {
+            for i in 0..self.backend.framebuffers.samples.len() {
+                let kernel = self.backend.framebuffers.samples[i];
+                let kernel_loc = GetUniformLocation(lighting_shader.program, format!("kernels[{}]", i).as_ptr() as *const i8);
+                Uniform3f(kernel_loc, kernel.x, kernel.y, kernel.z);
+            }
+            let kernel_count_loc = GetUniformLocation(lighting_shader.program, "kernel_count".as_ptr() as *const i8);
+            Uniform1i(kernel_count_loc, self.backend.framebuffers.samples.len() as i32);
+        }
+
+        unsafe {
             // set framebuffer to the post processing framebuffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.postbuffer as GLuint);
             Viewport(0, 0, self.render_size.x as i32, self.render_size.y as i32);
@@ -712,11 +768,24 @@ impl ht_renderer {
             let gbuffer_info_c = CString::new("info").unwrap();
             let gbuffer_info_loc = GetUniformLocation(lighting_shader.program, gbuffer_info_c.as_ptr());
             Uniform1i(gbuffer_info_loc, 3);
+            ActiveTexture(TEXTURE4);
+            BindTexture(TEXTURE_2D, self.backend.framebuffers.gbuffer_info2 as GLuint);
+            let gbuffer_info2_c = CString::new("info2").unwrap();
+            let gbuffer_info2_loc = GetUniformLocation(lighting_shader.program, gbuffer_info2_c.as_ptr());
+            Uniform1i(gbuffer_info2_loc, 4);
             // send camera position to the shader
             let camera_pos_c = CString::new("u_camera_pos").unwrap();
             let camera_pos_loc = GetUniformLocation(lighting_shader.program, camera_pos_c.as_ptr());
             let pos = self.camera.get_position();
             Uniform3f(camera_pos_loc, pos.x, pos.y, pos.z);
+            // send projection matrix to the shader
+            let projection_c = CString::new("u_projection").unwrap();
+            let projection_loc = GetUniformLocation(lighting_shader.program, projection_c.as_ptr());
+            UniformMatrix4fv(projection_loc, 1, FALSE, self.camera.get_projection().as_ptr());
+            // send view matrix to the shader
+            let view_c = CString::new("u_view").unwrap();
+            let view_loc = GetUniformLocation(lighting_shader.program, view_c.as_ptr());
+            UniformMatrix4fv(view_loc, 1, FALSE, self.camera.get_view().as_ptr());
 
             // draw the quad
             BindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);

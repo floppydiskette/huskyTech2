@@ -10,7 +10,7 @@ use gfx_maths::*;
 use gl_matrix::vec3::{dot, multiply, normalize, subtract};
 use gl_matrix::vec4::add;
 use glad_gl::gl::*;
-use crate::helpers::{calculate_model_matrix, set_shader_if_not_already};
+use crate::helpers::{calculate_model_matrix, calculate_normal_matrix, set_shader_if_not_already};
 use crate::ht_renderer;
 use crate::renderer::MAX_LIGHTS;
 use crate::skeletal_animation::{SkeletalAnimation, SkeletalAnimations};
@@ -712,6 +712,9 @@ impl Mesh {
             // calculate the mvp matrix
             let mvp = camera_projection * camera_view * model_matrix;
 
+            // calculate the normal matrix
+            let normal_matrix = calculate_normal_matrix(model_matrix, camera_view);
+
             // send the mvp matrix to the shader
             let mvp_c = CString::new("u_mvp").unwrap();
             let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
@@ -730,6 +733,11 @@ impl Mesh {
             let model_c = CString::new("u_model").unwrap();
             let model_loc = GetUniformLocation(shader.program, model_c.as_ptr());
             UniformMatrix4fv(model_loc, 1, FALSE as GLboolean, model_matrix.as_ptr());
+
+            // send the normal matrix to the shader
+            let normal_c = CString::new("u_normal_matrix").unwrap();
+            let normal_loc = GetUniformLocation(shader.program, normal_c.as_ptr());
+            UniformMatrix3fv(normal_loc, 1, FALSE as GLboolean, normal_matrix.as_ptr());
 
             // send the camera position to the shader
             //let camera_pos_c = CString::new("u_camera_pos").unwrap();
@@ -773,10 +781,18 @@ impl Mesh {
             // calculate the mvp matrix
             let mvp = camera_projection * camera_view * model_matrix;
 
+            // calculate the normal matrix
+            let normal_matrix = calculate_normal_matrix(model_matrix, camera_view);
+
             // send the mvp matrix to the shader
             let mvp_c = CString::new("u_mvp").unwrap();
             let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
             UniformMatrix4fv(mvp_loc, 1, FALSE as GLboolean, mvp.as_ptr());
+
+            // send the normal matrix to the shader
+            let normal_c = CString::new("u_normal_matrix").unwrap();
+            let normal_loc = GetUniformLocation(shader.program, normal_c.as_ptr());
+            UniformMatrix3fv(normal_loc, 1, FALSE as GLboolean, normal_matrix.as_ptr());
 
             // send the model matrix to the shader
             /*let model_c = CString::new("u_model").unwrap();
