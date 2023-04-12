@@ -139,7 +139,7 @@ impl ht_renderer {
         let render_width = 1280;
         let render_height = 720;
 
-        let camera = Camera::new(Vec2::new(window_width as f32, window_height as f32), 45.0, 0.1, 10000.0);
+        let camera = Camera::new(Vec2::new(render_width as f32, render_height as f32), 45.0, 0.1, 10000.0);
 
         {
             let backend = {
@@ -224,8 +224,8 @@ impl ht_renderer {
                     GenTextures(1, &mut posttexture);
                     BindTexture(TEXTURE_2D, posttexture);
                     TexImage2D(TEXTURE_2D, 0, SRGB as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
-                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR as i32);
-                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, posttexture, 0);
                     // create a renderbuffer object for depth and stencil attachment (we won't be sampling these)
                     let mut renderbuffer = 0;
