@@ -18,7 +18,7 @@ uniform float opacity = 1.0;
 uniform bool unlit = false;
 
 float near = 0.1;
-float far = 100.0;
+float far = 1000.0;
 
 // from learnopengl.com
 float LinearizeDepth(float depth)
@@ -29,7 +29,7 @@ float LinearizeDepth(float depth)
 
 void main() {
     float depth = gl_FragCoord.z;
-    //depth = LinearizeDepth(depth);
+    depth = 1.0 - LinearizeDepth(depth) / far;
 
     if (!unlit) {
         vec3 normal = texture(normalmap, uv).rgb * 2.0 - 1.0;
@@ -39,7 +39,7 @@ void main() {
         out_normal = vec4(normal, 1.0);
         out_albedospec = vec4(texture(diffuse, uv).rgb, 1.0);
         out_info = vec4(texture(specular, uv).r, opacity, unlit ? 1.0 : 0.0, 1.0);
-        out_info2 = vec4(depth, 1.0, 0.0, 1.0);
+        out_info2 = vec4(depth, 0.0, 0.0, 1.0);
     } else {
         out_normal = vec4(0.0, 0.0, 0.0, 1.0);
         out_albedospec = vec4(texture(diffuse, uv).rgb, 1.0);

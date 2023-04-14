@@ -8,6 +8,9 @@ uniform sampler2D normal;
 uniform sampler2D albedospec;
 uniform sampler2D info;
 uniform sampler2D info2;
+uniform sampler2D shadow_depth_back;
+uniform sampler2D shadow_depth_front;
+uniform sampler2D shadow_mask;
 
 uniform vec2 noise_scale;
 
@@ -106,11 +109,17 @@ void main() {
 
     vec2 uv_seed = uv;
 
-    vec3 final_colour = (ambient + result) * albedo * vec3(pow(ssao(uv, frag_pos), 2.0));
+    float scene_depth = texture(info2, uv).r;
+
+    float shadow_back_depth = texture(shadow_depth_back, uv).r;
+    float shadow_front_depth = texture(shadow_depth_front, uv).r;
+
+
+    vec3 final_colour = vec3(shadow_front_depth, 0.0, 0.0) + albedo;//(ambient + result) * albedo * vec3(pow(ssao(uv, frag_pos), 2.0)) + ;
 
     if (unlit > 0.5) {
-        FragColor = vec4(albedo, opacity);
+        FragColor = vec4(final_colour, 1.0);
     } else {
-        FragColor = vec4(final_colour, opacity);
+        FragColor = vec4(final_colour, 1.0);
     }
 }

@@ -179,7 +179,9 @@ async fn main() {
             let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta).await; // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
             worldmachine.handle_audio(&renderer, &audio, &scontext);
-            worldmachine.render(&mut renderer);
+            worldmachine.render(&mut renderer, None);
+            renderer.clear_all_shadow_buffers();
+            worldmachine.render(&mut renderer, Some(1));
 
             last_frame_time = std::time::Instant::now();
             renderer.swap_buffers();

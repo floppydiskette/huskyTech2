@@ -126,6 +126,12 @@ pub struct Framebuffers {
     pub gbuffer_info2: usize, // depth, etc
     pub gbuffer_rbuffer: usize,
 
+    pub shadow_buffer_back: usize,
+    pub shadow_buffer_front: usize,
+    pub shadow_buffer_tex_back: usize,
+    pub shadow_buffer_tex_front: usize,
+    pub shadow_buffer_tex_mask: usize,
+
     pub samples: [Vec3; 256],
     pub noise_texture: usize,
 
@@ -139,7 +145,7 @@ impl ht_renderer {
         let render_width = 1280;
         let render_height = 720;
 
-        let camera = Camera::new(Vec2::new(render_width as f32, render_height as f32), 45.0, 0.1, 10000.0);
+        let camera = Camera::new(Vec2::new(render_width as f32, render_height as f32), 45.0, 0.1, 1000.0);
 
         {
             let backend = {
@@ -188,6 +194,11 @@ impl ht_renderer {
                         gbuffer_info: 0,
                         gbuffer_info2: 0,
                         gbuffer_rbuffer: 0,
+                        shadow_buffer_back: 0,
+                        shadow_buffer_front: 0,
+                        shadow_buffer_tex_back: 0,
+                        shadow_buffer_tex_front: 0,
+                        shadow_buffer_tex_mask: 0,
                         samples: [Vec3::new(0.0, 0.0, 0.0); 256],
                         noise_texture: 0,
                     };
@@ -212,9 +223,8 @@ impl ht_renderer {
                     // configure stencil test
                     Enable(STENCIL_TEST);
 
-                    // enable blending
-                    Enable(BLEND);
-                    BlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+                    // disable blending
+                    Disable(BLEND);
 
                     // create the postprocessing framebuffer
                     let mut postbuffer = 0;
@@ -350,9 +360,9 @@ impl ht_renderer {
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT3, TEXTURE_2D, gbuffer_textures[3], 0);
-                    // info2
+                    // depth
                     BindTexture(TEXTURE_2D, gbuffer_textures[4]);
-                    TexImage2D(TEXTURE_2D, 0, RGB8 as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, UNSIGNED_BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT4, TEXTURE_2D, gbuffer_textures[4], 0);
@@ -377,7 +387,61 @@ impl ht_renderer {
                     BindRenderbuffer(RENDERBUFFER, gbuffer_renderbuffer);
                     RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT, render_width, render_height);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER, gbuffer_renderbuffer);
-                    // make top left corner as origin
+
+                    // shadow buffers (back and front, front also contains RGB32I mask)
+                    let mut shadow_buffers = [0; 2];
+                    GenFramebuffers(2, shadow_buffers.as_mut_ptr());
+
+                    // shadow back
+                    BindFramebuffer(FRAMEBUFFER, shadow_buffers[0]);
+                    let mut shadow_buffer_texture = 0;
+                    GenTextures(1, &mut shadow_buffer_texture);
+
+                    // shadow back depth
+                    BindTexture(TEXTURE_2D, shadow_buffer_texture);
+                    TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_texture, 0);
+
+                    let attachments = [COLOR_ATTACHMENT0];
+                    DrawBuffers(1, attachments.as_ptr());
+
+                    if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
+                        panic!("framebuffer is not complete (shadow back)!");
+                    }
+
+                    // shadow front
+                    BindFramebuffer(FRAMEBUFFER, shadow_buffers[1]);
+                    let mut shadow_buffer_textures = [0; 2];
+                    GenTextures(2, shadow_buffer_textures.as_mut_ptr());
+
+                    // shadow front depth
+                    BindTexture(TEXTURE_2D, shadow_buffer_textures[0]);
+                    TexImage2D(TEXTURE_2D, 0, R16F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_textures[0], 0);
+                    // shadow front mask
+                    BindTexture(TEXTURE_2D, shadow_buffer_textures[1]);
+                    TexImage2D(TEXTURE_2D, 0, RGB32I as i32, render_width, render_height, 0, RGB_INTEGER, INT, std::ptr::null());
+                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT1, TEXTURE_2D, shadow_buffer_textures[1], 0);
+
+                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
+                    DrawBuffers(2, attachments.as_ptr());
+
+                    if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
+                        panic!("framebuffer is not complete (shadow front)!");
+                    }
+
+                    framebuffers.shadow_buffer_back = shadow_buffers[0] as usize;
+                    framebuffers.shadow_buffer_front = shadow_buffers[1] as usize;
+                    framebuffers.shadow_buffer_tex_back = shadow_buffer_texture as usize;
+                    framebuffers.shadow_buffer_tex_front = shadow_buffer_textures[0] as usize;
+                    framebuffers.shadow_buffer_tex_mask = shadow_buffer_textures[1] as usize;
+
 
                     Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
 
@@ -451,6 +515,8 @@ impl ht_renderer {
         //self.load_shader("gbuffer").expect("failed to load gbuffer shader");
         // load gbuffer animation shader
         self.load_shader("gbuffer_anim").expect("failed to load gbuffer animation shader");
+        // load shadow shader
+        self.load_shader("shadow").expect("failed to load gbuffer animation shader");
         // load lighting shader
         self.load_shader("lighting").expect("failed to load lighting shader");
 
@@ -696,8 +762,61 @@ impl ht_renderer {
         }
     }
 
+    // shadow pass
+    pub fn setup_shadow_pass(&mut self, iteration: u8) {
+        let shadow_shader = *self.shaders.get("shadow").unwrap();
+
+        set_shader_if_not_already(self, shadow_shader);
+
+        unsafe {
+            // if pass is 1, set framebuffer to the back shadow framebuffer
+            // if pass is 2, set framebuffer to the front shadow framebuffer
+            if iteration == 1 {
+                BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_back as GLuint);
+            } else if iteration == 2 {
+                BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_front as GLuint);
+            }
+
+            if iteration == 1 {
+                Enable(CULL_FACE);
+                CullFace(FRONT);
+            } else if iteration == 2 {
+                Enable(CULL_FACE);
+                CullFace(BACK);
+            }
+
+            // disable gamma correction
+            Disable(FRAMEBUFFER_SRGB);
+
+            // clear if first iteration
+            if iteration == 1 {
+                ClearColor(0.0, 0.0, 0.0, 1.0);
+                Clear(COLOR_BUFFER_BIT);
+            }
+        }
+    }
+
+    pub fn clear_all_shadow_buffers(&mut self) {
+        unsafe {
+            // clear front shadow buffer
+            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_front as GLuint);
+            ClearColor(0.0, 0.0, 0.0, 1.0);
+            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+
+            // clear back shadow buffer
+            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_back as GLuint);
+            ClearColor(0.0, 0.0, 0.0, 1.0);
+            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+
+            Enable(DEPTH_TEST);
+            // render further objects on top
+            DepthFunc(GREATER);
+        }
+    }
+
     // lighting pass
     fn setup_pass_two(&mut self) {
+
         let lighting_shader = *self.shaders.get("lighting").unwrap();
 
         set_shader_if_not_already(self, lighting_shader);
@@ -773,6 +892,22 @@ impl ht_renderer {
             let gbuffer_info2_c = CString::new("info2").unwrap();
             let gbuffer_info2_loc = GetUniformLocation(lighting_shader.program, gbuffer_info2_c.as_ptr());
             Uniform1i(gbuffer_info2_loc, 4);
+            // bind the shadow textures
+            ActiveTexture(TEXTURE5);
+            BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_back as GLuint);
+            let shadow_buffer_depth_c = CString::new("shadow_depth_back").unwrap();
+            let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
+            Uniform1i(shadow_buffer_depth_loc, 5);
+            ActiveTexture(TEXTURE6);
+            ActiveTexture(TEXTURE6);
+            BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_front as GLuint);
+            let shadow_buffer_depth_c = CString::new("shadow_depth_front").unwrap();
+            let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
+            Uniform1i(shadow_buffer_depth_loc, 6);
+            BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_mask as GLuint);
+            let shadow_buffer_position_c = CString::new("shadow_mask").unwrap();
+            let shadow_buffer_position_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_position_c.as_ptr());
+            Uniform1i(shadow_buffer_position_loc, 6);
             // send camera position to the shader
             let camera_pos_c = CString::new("u_camera_pos").unwrap();
             let camera_pos_loc = GetUniformLocation(lighting_shader.program, camera_pos_c.as_ptr());

@@ -619,9 +619,20 @@ impl Mesh {
         }
     }
 
-    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>) {
+    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<u8>) {
+        if let Some(shadow_pass) = shadow_pass {
+            renderer.setup_shadow_pass(1);
+            self.render_inner(renderer, texture, animations_weights.clone(), Some((1, shadow_pass)));
+            renderer.setup_shadow_pass(2);
+            self.render_inner(renderer, texture, animations_weights, Some((2, shadow_pass)));
+        } else {
+            self.render_inner(renderer, texture, animations_weights, None);
+        }
+    }
+
+    fn render_inner(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, u8)>) {
         // load the shader
-        let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
+        let gbuffer_shader = if shadow_pass.is_none() { *renderer.shaders.get("gbuffer_anim").unwrap() } else { *renderer.shaders.get("shadow").unwrap() };
         set_shader_if_not_already(renderer, gbuffer_shader);
         let mut shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
@@ -629,35 +640,48 @@ impl Mesh {
             EnableVertexAttribArray(0);
             BindVertexArray(self.vao);
             if let Some(texture) = texture {
-                let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
-                set_shader_if_not_already(renderer, gbuffer_shader);
-                shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
-                // send the material struct to the shader
-                let material = texture.material;
-                let diffuse_c = CString::new("diffuse").unwrap();
-                let material_diffuse = GetUniformLocation(shader.program, diffuse_c.as_ptr());
-                let roughness_c = CString::new("specular").unwrap();
-                let material_roughness = GetUniformLocation(shader.program, roughness_c.as_ptr());
-                let normal_c = CString::new("normalmap").unwrap();
-                let material_normal = GetUniformLocation(shader.program, normal_c.as_ptr());
+                if shadow_pass.is_none() {
+                    let gbuffer_shader = *renderer.shaders.get("gbuffer_anim").unwrap();
+                    set_shader_if_not_already(renderer, gbuffer_shader);
+                    shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
+                    // send the material struct to the shader
+                    let material = texture.material;
+                    let diffuse_c = CString::new("diffuse").unwrap();
+                    let material_diffuse = GetUniformLocation(shader.program, diffuse_c.as_ptr());
+                    let roughness_c = CString::new("specular").unwrap();
+                    let material_roughness = GetUniformLocation(shader.program, roughness_c.as_ptr());
+                    let normal_c = CString::new("normalmap").unwrap();
+                    let material_normal = GetUniformLocation(shader.program, normal_c.as_ptr());
 
-                // load textures
-                ActiveTexture(TEXTURE0);
-                BindTexture(TEXTURE_2D, material.diffuse_texture);
-                Uniform1i(material_diffuse, 0);
-                ActiveTexture(TEXTURE1);
-                BindTexture(TEXTURE_2D, material.roughness_texture);
-                Uniform1i(material_roughness, 1);
-                ActiveTexture(TEXTURE2);
-                BindTexture(TEXTURE_2D, material.normal_texture);
-                Uniform1i(material_normal, 2);
+                    // load textures
+                    ActiveTexture(TEXTURE0);
+                    BindTexture(TEXTURE_2D, material.diffuse_texture);
+                    Uniform1i(material_diffuse, 0);
+                    ActiveTexture(TEXTURE1);
+                    BindTexture(TEXTURE_2D, material.roughness_texture);
+                    Uniform1i(material_roughness, 1);
+                    ActiveTexture(TEXTURE2);
+                    BindTexture(TEXTURE_2D, material.normal_texture);
+                    Uniform1i(material_normal, 2);
+                }
+            }
 
+            if shadow_pass.is_some() {
+                // send the scene depth buffer to the shadow shader
+                let tex = renderer.backend.framebuffers.gbuffer_info2;
+                let depth_c = CString::new("scene_depth").unwrap();
+                let depth = GetUniformLocation(shader.program, depth_c.as_ptr());
+                ActiveTexture(TEXTURE3);
+                BindTexture(TEXTURE_2D, tex as GLuint);
+                Uniform1i(depth, 3);
             }
 
             if let Some(animations) = self.animations.as_mut() {
                 let current_time = Instant::now();
-                let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
-                animations.advance_time(delta);
+                if shadow_pass.is_none() {
+                    let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
+                    animations.advance_time(delta);
+                }
 
                 let mut animations_weights = animations_weights;
                 if let Some(anim_weights) = animations_weights.as_mut() {
@@ -740,12 +764,29 @@ impl Mesh {
             UniformMatrix3fv(normal_loc, 1, FALSE as GLboolean, normal_matrix.as_ptr());
 
             // send the camera position to the shader
-            //let camera_pos_c = CString::new("u_camera_pos").unwrap();
-            //let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr());
-            //Uniform3f(camera_pos_loc,
-            //            renderer.camera.get_position().x,
-            //            renderer.camera.get_position().y,
-            //            renderer.camera.get_position().z);
+            let camera_pos_c = CString::new("u_camera_pos").unwrap();
+            let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr());
+            Uniform3f(camera_pos_loc,
+                      renderer.camera.get_position().x,
+                      renderer.camera.get_position().y,
+                      renderer.camera.get_position().z);
+
+            if let Some((pass, light_num)) = shadow_pass {
+                // send iteration to shader
+                let pass_c = CString::new("pass").unwrap();
+                let pass_loc = GetUniformLocation(shader.program, pass_c.as_ptr() as *const i8);
+                Uniform1i(pass_loc, pass as i32);
+
+                if pass == 2 {
+                    // send back buffer to front buffer shader
+                    let backface_depth_c = CString::new("backface_depth").unwrap();
+                    let backface_depth_loc = GetUniformLocation(shader.program, backface_depth_c.as_ptr() as *const i8);
+                    let texture = renderer.backend.framebuffers.shadow_buffer_tex_back as GLuint;
+                    ActiveTexture(TEXTURE6);
+                    BindTexture(TEXTURE_2D, texture);
+                    Uniform1i(backface_depth_loc, 6);
+                }
+            }
 
             DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
 

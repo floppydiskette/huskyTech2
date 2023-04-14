@@ -918,24 +918,26 @@ impl WorldMachine {
         updates
     }
 
-    pub fn render(&mut self, renderer: &mut ht_renderer) {
+    pub fn render(&mut self, renderer: &mut ht_renderer, shadow_pass: Option<u8>) {
 
         // todo! actual good player rendering
         if let Some(player) = &mut self.player {
-            let position = player.player.get_position();
-            let rotation = player.player.get_rotation();
-            let meshes = &mut renderer.meshes;
-            let textures = renderer.textures.clone();
-            if let Some(mesh) = meshes.get_mut("player") {
-                let texture = textures.get("default").unwrap();
-                let mut mesh = mesh.clone();
-                mesh.position = position + (rotation.forward() * -0.2);
-                mesh.rotation = rotation;
-                mesh.scale = Vec3::new(0.6, 0.6, 0.6);
+            if shadow_pass.is_none() {
+                let position = player.player.get_position();
+                let rotation = player.player.get_rotation();
+                let meshes = &mut renderer.meshes;
+                let textures = renderer.textures.clone();
+                if let Some(mesh) = meshes.get_mut("player") {
+                    let texture = textures.get("default").unwrap();
+                    let mut mesh = mesh.clone();
+                    mesh.position = position + (rotation.forward() * -0.2);
+                    mesh.rotation = rotation;
+                    mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
-                let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
+                    let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
-                mesh.render(renderer, Some(texture), Some(move_anim.weights()));
+                    mesh.render(renderer, Some(texture), Some(move_anim.weights()), shadow_pass);
+                }
             }
         }
 
@@ -1102,11 +1104,15 @@ impl WorldMachine {
                             }
                         }
 
+                        if shadow_pass.is_some() {
+                            mesh.position += Vec3::new(1.0, -1.0, 1.0);
+                        }
+
                         // add a bit of rotation to the transform to make things more interesting
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
 
-                        mesh.render(renderer, Some(texture), None);
+                        mesh.render(renderer, Some(texture), None, shadow_pass);
                         mesh.position = old_position;
                         mesh.rotation = old_rotation;
                         mesh.scale = old_scale;
@@ -1212,7 +1218,7 @@ impl WorldMachine {
 
                     let move_anim = MoveAnim::from_values(speed, strafe);
 
-                    mesh.render(renderer, Some(texture), Some(move_anim.weights()));
+                    mesh.render(renderer, Some(texture), Some(move_anim.weights()), shadow_pass);
 
                     mesh.position = old_position;
                     mesh.rotation = old_rotation;

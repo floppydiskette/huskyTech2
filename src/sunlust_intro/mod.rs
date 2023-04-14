@@ -157,7 +157,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         renderer.set_lights(vec![light_a, light_b]);
 
         // draw the mesh
-        mesh.render(renderer, Some(&texture), None);
+        mesh.render(renderer, Some(&texture), None, None);
         // draw the powered by text
         ui_poweredby.render_at(ui_master.clone(), renderer);
 
