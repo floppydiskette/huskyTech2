@@ -1104,8 +1104,8 @@ impl WorldMachine {
                             }
                         }
 
-                        if shadow_pass.is_some() {
-                            mesh.position += Vec3::new(1.0, -1.0, 1.0);
+                        if let Some(light) = shadow_pass {
+                            mesh.position += Vec3::new(0.5 * light as f32, -1.0, 0.5 * light as f32);
                         }
 
                         // add a bit of rotation to the transform to make things more interesting

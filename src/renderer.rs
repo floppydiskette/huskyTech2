@@ -399,7 +399,7 @@ impl ht_renderer {
 
                     // shadow back depth
                     BindTexture(TEXTURE_2D, shadow_buffer_texture);
-                    TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, R16F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_texture, 0);
@@ -810,7 +810,7 @@ impl ht_renderer {
 
             Enable(DEPTH_TEST);
             // render further objects on top
-            DepthFunc(GREATER);
+            DepthFunc(LESS);
         }
     }
 
@@ -899,15 +899,15 @@ impl ht_renderer {
             let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
             Uniform1i(shadow_buffer_depth_loc, 5);
             ActiveTexture(TEXTURE6);
-            ActiveTexture(TEXTURE6);
             BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_front as GLuint);
             let shadow_buffer_depth_c = CString::new("shadow_depth_front").unwrap();
             let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
             Uniform1i(shadow_buffer_depth_loc, 6);
+            ActiveTexture(TEXTURE7);
             BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_mask as GLuint);
-            let shadow_buffer_position_c = CString::new("shadow_mask").unwrap();
-            let shadow_buffer_position_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_position_c.as_ptr());
-            Uniform1i(shadow_buffer_position_loc, 6);
+            let shadow_buffer_depth_c = CString::new("shadow_mask").unwrap();
+            let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
+            Uniform1i(shadow_buffer_depth_loc, 7);
             // send camera position to the shader
             let camera_pos_c = CString::new("u_camera_pos").unwrap();
             let camera_pos_loc = GetUniformLocation(lighting_shader.program, camera_pos_c.as_ptr());

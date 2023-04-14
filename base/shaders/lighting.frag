@@ -111,11 +111,9 @@ void main() {
 
     float scene_depth = texture(info2, uv).r;
 
-    float shadow_back_depth = texture(shadow_depth_back, uv).r;
-    float shadow_front_depth = texture(shadow_depth_front, uv).r;
+    float in_shadow = 1.0 - texture(shadow_depth_front, uv).r;
 
-
-    vec3 final_colour = vec3(shadow_front_depth, 0.0, 0.0) + albedo;//(ambient + result) * albedo * vec3(pow(ssao(uv, frag_pos), 2.0)) + ;
+    vec3 final_colour = (ambient + (result * in_shadow)) * albedo * vec3(pow(ssao(uv, frag_pos), 2.0));
 
     if (unlit > 0.5) {
         FragColor = vec4(final_colour, 1.0);

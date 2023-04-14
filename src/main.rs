@@ -182,6 +182,14 @@ async fn main() {
             worldmachine.render(&mut renderer, None);
             renderer.clear_all_shadow_buffers();
             worldmachine.render(&mut renderer, Some(1));
+            worldmachine.render(&mut renderer, Some(2));
+            worldmachine.render(&mut renderer, Some(3));
+            worldmachine.render(&mut renderer, Some(4));
+            worldmachine.render(&mut renderer, Some(5));
+            worldmachine.render(&mut renderer, Some(6));
+            worldmachine.render(&mut renderer, Some(7));
+            worldmachine.render(&mut renderer, Some(8));
+            worldmachine.render(&mut renderer, Some(9));
 
             last_frame_time = std::time::Instant::now();
             renderer.swap_buffers();
