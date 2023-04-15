@@ -173,6 +173,7 @@ async fn main() {
             // calculate fps based on delta
             let fps = 1.0 / delta;
             *crate::ui::FPS.lock().unwrap() = fps;
+            last_frame_time = std::time::Instant::now();
 
             renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
             renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
@@ -181,17 +182,9 @@ async fn main() {
             worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer, None);
             renderer.clear_all_shadow_buffers();
-            worldmachine.render(&mut renderer, Some(1));
-            worldmachine.render(&mut renderer, Some(2));
-            worldmachine.render(&mut renderer, Some(3));
-            worldmachine.render(&mut renderer, Some(4));
-            worldmachine.render(&mut renderer, Some(5));
-            worldmachine.render(&mut renderer, Some(6));
-            worldmachine.render(&mut renderer, Some(7));
-            worldmachine.render(&mut renderer, Some(8));
-            worldmachine.render(&mut renderer, Some(9));
+            worldmachine.render(&mut renderer, Some(0));
+            //worldmachine.render(&mut renderer, Some(2));
 
-            last_frame_time = std::time::Instant::now();
             renderer.swap_buffers();
             renderer.backend.window.lock().unwrap().glfw.poll_events();
             keyboard::reset_keyboard_state();

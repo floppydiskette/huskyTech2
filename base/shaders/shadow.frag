@@ -1,20 +1,22 @@
 #version 330 core
 
-layout (location = 0) out float out_depth;
-layout (location = 1) out vec3 out_mask;
+layout (location = 0) out uvec3 out_mask;
 
 in vec2 uv;
 in mat3 TBN;
 in vec3 frag_pos;
+in vec3 normal;
 
 float near = 0.1;
 float far = 1000.0;
 
 uniform sampler2D scene_depth;
-uniform sampler2D backface_depth;
-uniform int light_num;
+uniform isampler2D backface_mask;
+uniform int light_num_plus_one;
 uniform vec3 u_camera_pos;
 uniform int pass;
+uniform mat4 u_model;
+uniform vec3 light_pos; // position of the current light
 
 // from learnopengl.com
 float LinearizeDepth(float depth)
@@ -34,6 +36,7 @@ bool is_polygon_facing_camera() {
 }
 
 void main() {
+    vec3 light_dir = (frag_pos - light_pos);
     // out_depth component 1 is the depth of polygons facing away from the camera
     // out_depth component 2 is the depth of polygons facing towards the camera
     // out_mask is light_num (1-254) converted to 0.0 - 1.0
@@ -48,18 +51,27 @@ void main() {
 
 
     if (pass == 1) {
-        if (depth >= scene_depth) {
-            out_depth = 1.0;
-        } else {
-            discard;
-        }
+        //if (depth >= scene_depth) {
+            out_mask = uvec3(1, 0, 0);
+        //} else {
+        //    discard;
+        //}
     } else if (pass == 2) {
-        float backface_shadow = texture(backface_depth, gl_FragCoord.xy / textureSize(backface_depth, 0)).r;
-        bool in_shadow = backface_shadow == 1.0 && depth <= scene_depth;
-        if (in_shadow) {
-            out_depth = 1.0;
-        } else {
-            discard;
-        }
+        int backface_shadow = texture(backface_mask, gl_FragCoord.xy / textureSize(backface_mask, 0)).r;
+        bool in_shadow = backface_shadow == 1 && depth <= scene_depth;
+        //if (in_shadow) {
+        //    if (light_num_plus_one <= 0) {
+        //        discard;
+        //    } else if (light_num_plus_one > 64) {
+        //        out_mask = uvec3(0, 0, 1 << (light_num_plus_one - 65));
+        //    } else if (light_num_plus_one > 32) {
+        //        out_mask = uvec3(0, 1 << (light_num_plus_one - 33), 0);
+        //    } else {
+        //        out_mask = uvec3(1 << (light_num_plus_one - 1), 0, 0);
+        //    }
+        //} else {
+        //    discard;
+        //}
+        out_mask = uvec3(1, 0, 0);
     }
 }

@@ -126,10 +126,9 @@ pub struct Framebuffers {
     pub gbuffer_info2: usize, // depth, etc
     pub gbuffer_rbuffer: usize,
 
-    pub shadow_buffer_back: usize,
-    pub shadow_buffer_front: usize,
-    pub shadow_buffer_tex_back: usize,
-    pub shadow_buffer_tex_front: usize,
+    pub shadow_buffer_scratch: usize,
+    pub shadow_buffer_mask: usize,
+    pub shadow_buffer_tex_scratch: usize,
     pub shadow_buffer_tex_mask: usize,
 
     pub samples: [Vec3; 256],
@@ -194,10 +193,9 @@ impl ht_renderer {
                         gbuffer_info: 0,
                         gbuffer_info2: 0,
                         gbuffer_rbuffer: 0,
-                        shadow_buffer_back: 0,
-                        shadow_buffer_front: 0,
-                        shadow_buffer_tex_back: 0,
-                        shadow_buffer_tex_front: 0,
+                        shadow_buffer_scratch: 0,
+                        shadow_buffer_mask: 0,
+                        shadow_buffer_tex_scratch: 0,
                         shadow_buffer_tex_mask: 0,
                         samples: [Vec3::new(0.0, 0.0, 0.0); 256],
                         noise_texture: 0,
@@ -388,21 +386,21 @@ impl ht_renderer {
                     RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT, render_width, render_height);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER, gbuffer_renderbuffer);
 
-                    // shadow buffers (back and front, front also contains RGB32I mask)
+                    // shadow buffers (scratch and mask, scratch is as small as we can get it, mask is RGB32UI)
                     let mut shadow_buffers = [0; 2];
                     GenFramebuffers(2, shadow_buffers.as_mut_ptr());
 
                     // shadow back
                     BindFramebuffer(FRAMEBUFFER, shadow_buffers[0]);
-                    let mut shadow_buffer_texture = 0;
-                    GenTextures(1, &mut shadow_buffer_texture);
+                    let mut shadow_buffer_tex_scratch = 0;
+                    GenTextures(1, &mut shadow_buffer_tex_scratch);
 
-                    // shadow back depth
-                    BindTexture(TEXTURE_2D, shadow_buffer_texture);
-                    TexImage2D(TEXTURE_2D, 0, R16F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
+                    // shadow scratch
+                    BindTexture(TEXTURE_2D, shadow_buffer_tex_scratch);
+                    TexImage2D(TEXTURE_2D, 0, R8I as i32, render_width, render_height, 0, RED_INTEGER, BYTE, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_texture, 0);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_tex_scratch, 0);
 
                     let attachments = [COLOR_ATTACHMENT0];
                     DrawBuffers(1, attachments.as_ptr());
@@ -411,36 +409,29 @@ impl ht_renderer {
                         panic!("framebuffer is not complete (shadow back)!");
                     }
 
-                    // shadow front
+                    // shadow mask
                     BindFramebuffer(FRAMEBUFFER, shadow_buffers[1]);
-                    let mut shadow_buffer_textures = [0; 2];
-                    GenTextures(2, shadow_buffer_textures.as_mut_ptr());
+                    let mut shadow_buffer_tex_mask = 0;
+                    GenTextures(1, &mut shadow_buffer_tex_mask);
 
-                    // shadow front depth
-                    BindTexture(TEXTURE_2D, shadow_buffer_textures[0]);
-                    TexImage2D(TEXTURE_2D, 0, R16F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
-                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
-                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_textures[0], 0);
-                    // shadow front mask
-                    BindTexture(TEXTURE_2D, shadow_buffer_textures[1]);
+
+                    BindTexture(TEXTURE_2D, shadow_buffer_tex_mask);
                     TexImage2D(TEXTURE_2D, 0, RGB32I as i32, render_width, render_height, 0, RGB_INTEGER, INT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT1, TEXTURE_2D, shadow_buffer_textures[1], 0);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_tex_mask, 0);
 
-                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
-                    DrawBuffers(2, attachments.as_ptr());
+                    let attachments = [COLOR_ATTACHMENT0];
+                    DrawBuffers(1, attachments.as_ptr());
 
                     if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
                         panic!("framebuffer is not complete (shadow front)!");
                     }
 
-                    framebuffers.shadow_buffer_back = shadow_buffers[0] as usize;
-                    framebuffers.shadow_buffer_front = shadow_buffers[1] as usize;
-                    framebuffers.shadow_buffer_tex_back = shadow_buffer_texture as usize;
-                    framebuffers.shadow_buffer_tex_front = shadow_buffer_textures[0] as usize;
-                    framebuffers.shadow_buffer_tex_mask = shadow_buffer_textures[1] as usize;
+                    framebuffers.shadow_buffer_scratch = shadow_buffers[0] as usize;
+                    framebuffers.shadow_buffer_mask = shadow_buffers[1] as usize;
+                    framebuffers.shadow_buffer_tex_scratch = shadow_buffer_tex_scratch as usize;
+                    framebuffers.shadow_buffer_tex_mask = shadow_buffer_tex_mask as usize;
 
 
                     Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
@@ -769,21 +760,23 @@ impl ht_renderer {
         set_shader_if_not_already(self, shadow_shader);
 
         unsafe {
-            // if pass is 1, set framebuffer to the back shadow framebuffer
-            // if pass is 2, set framebuffer to the front shadow framebuffer
+            // if pass is 1, set framebuffer to the scratch shadow framebuffer
+            // if pass is 2, set framebuffer to the mask shadow framebuffer
             if iteration == 1 {
-                BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_back as GLuint);
+                BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
             } else if iteration == 2 {
-                BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_front as GLuint);
+                BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_mask as GLuint);
             }
 
             if iteration == 1 {
-                Enable(CULL_FACE);
-                CullFace(FRONT);
-            } else if iteration == 2 {
-                Enable(CULL_FACE);
+                Disable(CULL_FACE);
                 CullFace(BACK);
+            } else if iteration == 2 {
+                Disable(CULL_FACE);
+                CullFace(FRONT);
             }
+
+            Disable(DEPTH_TEST);
 
             // disable gamma correction
             Disable(FRAMEBUFFER_SRGB);
@@ -793,24 +786,28 @@ impl ht_renderer {
                 ClearColor(0.0, 0.0, 0.0, 1.0);
                 Clear(COLOR_BUFFER_BIT);
             }
+
+            // if second iteration, use OR logical operation
+            if iteration == 2 {
+                Enable(COLOR_LOGIC_OP);
+                LogicOp(OR);
+            } else {
+                Disable(COLOR_LOGIC_OP);
+            }
         }
     }
 
     pub fn clear_all_shadow_buffers(&mut self) {
         unsafe {
-            // clear front shadow buffer
-            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_front as GLuint);
+            // clear scratch shadow buffer
+            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
             ClearColor(0.0, 0.0, 0.0, 1.0);
             Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
 
-            // clear back shadow buffer
-            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_back as GLuint);
+            // clear mask shadow buffer
+            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_mask as GLuint);
             ClearColor(0.0, 0.0, 0.0, 1.0);
             Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
-
-            Enable(DEPTH_TEST);
-            // render further objects on top
-            DepthFunc(LESS);
         }
     }
 
@@ -894,20 +891,10 @@ impl ht_renderer {
             Uniform1i(gbuffer_info2_loc, 4);
             // bind the shadow textures
             ActiveTexture(TEXTURE5);
-            BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_back as GLuint);
-            let shadow_buffer_depth_c = CString::new("shadow_depth_back").unwrap();
-            let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
-            Uniform1i(shadow_buffer_depth_loc, 5);
-            ActiveTexture(TEXTURE6);
-            BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_front as GLuint);
-            let shadow_buffer_depth_c = CString::new("shadow_depth_front").unwrap();
-            let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
-            Uniform1i(shadow_buffer_depth_loc, 6);
-            ActiveTexture(TEXTURE7);
             BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_mask as GLuint);
             let shadow_buffer_depth_c = CString::new("shadow_mask").unwrap();
             let shadow_buffer_depth_loc = GetUniformLocation(lighting_shader.program, shadow_buffer_depth_c.as_ptr());
-            Uniform1i(shadow_buffer_depth_loc, 7);
+            Uniform1i(shadow_buffer_depth_loc, 5);
             // send camera position to the shader
             let camera_pos_c = CString::new("u_camera_pos").unwrap();
             let camera_pos_loc = GetUniformLocation(lighting_shader.program, camera_pos_c.as_ptr());

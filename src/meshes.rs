@@ -777,18 +777,34 @@ impl Mesh {
                 let pass_loc = GetUniformLocation(shader.program, pass_c.as_ptr() as *const i8);
                 Uniform1i(pass_loc, pass as i32);
 
+                // send the light position to the shadow shader
+                let light_pos_c = CString::new("light_pos").unwrap();
+                let light_pos = GetUniformLocation(shader.program, light_pos_c.as_ptr());
+                let light = renderer.lights.get(light_num as usize);
+                if let Some(light) = light {
+                    let light_position = light.position;
+                    Uniform3f(light_pos, light_position.x, light_position.y, light_position.z);
+                }
+
                 if pass == 2 {
                     // send back buffer to front buffer shader
-                    let backface_depth_c = CString::new("backface_depth").unwrap();
+                    let backface_depth_c = CString::new("backface_mask").unwrap();
                     let backface_depth_loc = GetUniformLocation(shader.program, backface_depth_c.as_ptr() as *const i8);
-                    let texture = renderer.backend.framebuffers.shadow_buffer_tex_back as GLuint;
+                    let texture = renderer.backend.framebuffers.shadow_buffer_tex_scratch as GLuint;
                     ActiveTexture(TEXTURE6);
                     BindTexture(TEXTURE_2D, texture);
                     Uniform1i(backface_depth_loc, 6);
+                    // send light number to shader
+                    let light_num_c = CString::new("light_num_plus_one").unwrap();
+                    let light_num_loc = GetUniformLocation(shader.program, light_num_c.as_ptr() as *const i8);
+                    Uniform1i(light_num_loc, light_num as i32 + 1);
                 }
             }
 
-            DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
+            // REMOVE
+           // if (self.animations.is_none() && shadow_pass.is_some()) || shadow_pass.is_none() {
+                DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
+            //}
 
             let care_about_animation_c = CString::new("care_about_animation").unwrap();
             let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());

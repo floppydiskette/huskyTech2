@@ -1026,13 +1026,19 @@ impl WorldMachine {
             if let Some(mesh_renderer) = entity.get_component(COMPONENT_TYPE_MESH_RENDERER.clone()) {
                 if let Some(mesh) = mesh_renderer.get_parameter("mesh") {
                     // get the string value of the mesh
-                    let mesh_name = match mesh.value {
+                    let mut mesh_name = match mesh.value {
                         ParameterValue::String(ref s) => s.clone(),
                         _ => {
                             error!("render: mesh is not a string");
                             continue;
                         }
                     };
+                    if mesh_name == "Plane" && shadow_pass.is_some() {
+                        continue;
+                    }
+                    if mesh_name == "banana" {
+                        mesh_name = "player".to_string();
+                    }
                     // if so, render it
                     let shaders = renderer.shaders.clone();
                     let meshes = renderer.meshes.clone();
@@ -1104,15 +1110,16 @@ impl WorldMachine {
                             }
                         }
 
-                        if let Some(light) = shadow_pass {
-                            mesh.position += Vec3::new(0.5 * light as f32, -1.0, 0.5 * light as f32);
-                        }
-
                         // add a bit of rotation to the transform to make things more interesting
                         //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
 
+                        let mut anim_weights = None;
+                        if mesh_name == "player" {
+                            let move_anim = MoveAnim::from_values(0.0, 0.0);
+                            anim_weights = Some(move_anim.weights());
+                        }
 
-                        mesh.render(renderer, Some(texture), None, shadow_pass);
+                        mesh.render(renderer, Some(texture), anim_weights, shadow_pass);
                         mesh.position = old_position;
                         mesh.rotation = old_rotation;
                         mesh.scale = old_scale;
