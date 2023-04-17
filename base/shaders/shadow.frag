@@ -1,6 +1,6 @@
 #version 330 core
 
-layout (location = 0) out uvec3 out_mask;
+layout (location = 0) out vec3 out_depth;
 
 in vec2 uv;
 in mat3 TBN;
@@ -8,7 +8,7 @@ in vec3 frag_pos;
 in vec3 normal;
 
 float near = 0.1;
-float far = 1000.0;
+float far = 100.0;
 
 uniform sampler2D scene_depth;
 uniform isampler2D backface_mask;
@@ -25,16 +25,6 @@ float LinearizeDepth(float depth)
     return (2.0 * near * far) / (far + near - z * (far - near));
 }
 
-bool is_polygon_facing_camera() {
-    // the tbn should give us the normals in world space
-    // we can then compare the normal to the camera position
-    // if the normal is facing the camera, then the polygon is facing the camera
-    // if the normal is facing away from the camera, then the polygon is facing away from the camera
-    vec3 normal = normalize(TBN[2]);
-    vec3 camera_dir = normalize(vec3(0.0) - frag_pos);
-    return dot(normal, camera_dir) > 0.0;
-}
-
 void main() {
     vec3 light_dir = (frag_pos - light_pos);
     // out_depth component 1 is the depth of polygons facing away from the camera
@@ -47,31 +37,12 @@ void main() {
     // this prevents the shadow from being rendered in the air
 
     float scene_depth = texture(scene_depth, gl_FragCoord.xy / textureSize(scene_depth, 0)).r;
-    float depth = 1.0 - LinearizeDepth(gl_FragCoord.z) / far;
+    float depth = LinearizeDepth(gl_FragCoord.z) / far;
+    bool front_on_ground = scene_depth <= depth;
 
-
-    if (pass == 1) {
-        //if (depth >= scene_depth) {
-            out_mask = uvec3(1, 0, 0);
-        //} else {
-        //    discard;
-        //}
-    } else if (pass == 2) {
-        int backface_shadow = texture(backface_mask, gl_FragCoord.xy / textureSize(backface_mask, 0)).r;
-        bool in_shadow = backface_shadow == 1 && depth <= scene_depth;
-        //if (in_shadow) {
-        //    if (light_num_plus_one <= 0) {
-        //        discard;
-        //    } else if (light_num_plus_one > 64) {
-        //        out_mask = uvec3(0, 0, 1 << (light_num_plus_one - 65));
-        //    } else if (light_num_plus_one > 32) {
-        //        out_mask = uvec3(0, 1 << (light_num_plus_one - 33), 0);
-        //    } else {
-        //        out_mask = uvec3(1 << (light_num_plus_one - 1), 0, 0);
-        //    }
-        //} else {
-        //    discard;
-        //}
-        out_mask = uvec3(1, 0, 0);
-    }
+    //if (front_on_ground) {
+    out_depth = vec3(1.0);
+    //} else {
+    //    discard;
+    //}
 }

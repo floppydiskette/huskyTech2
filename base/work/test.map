@@ -34,9 +34,9 @@ entities:
       scale:
         name: scale
         value: !Vec3
-          x: 20.0
+          x: 1.0
           y: 1.0
-          z: 20.0
+          z: 1.0
     component_type:
       id: 1
       name: Transform
@@ -45,18 +45,18 @@ entities:
       position:
         name: position
         value: !Vec3
-          x: -21.0
+          x: -40.0
           y: -4.0
-          z: 21.0
+          z: 40.0
       size:
         name: size
         value: !Vec3
-          x: 2.105
+          x: 80.0
           y: 4.0
-          z: 2.105
+          z: 80.0
       visualise:
         name: visualise
-        value: !Bool false
+        value: !Bool true
     component_type:
       id: 5
       name: BoxCollider

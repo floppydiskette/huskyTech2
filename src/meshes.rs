@@ -619,20 +619,22 @@ impl Mesh {
         }
     }
 
-    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<u8>) {
+    pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, usize)>) {
         if let Some(shadow_pass) = shadow_pass {
-            renderer.setup_shadow_pass(1);
-            self.render_inner(renderer, texture, animations_weights.clone(), Some((1, shadow_pass)));
-            renderer.setup_shadow_pass(2);
-            self.render_inner(renderer, texture, animations_weights, Some((2, shadow_pass)));
+            renderer.setup_shadow_pass(shadow_pass.0);
+            self.render_inner(renderer, texture, animations_weights, Some(shadow_pass));
         } else {
             self.render_inner(renderer, texture, animations_weights, None);
         }
     }
 
-    fn render_inner(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, u8)>) {
+    fn render_inner(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, usize)>) {
         // load the shader
-        let gbuffer_shader = if shadow_pass.is_none() { *renderer.shaders.get("gbuffer_anim").unwrap() } else { *renderer.shaders.get("shadow").unwrap() };
+        let gbuffer_shader = if shadow_pass.is_none() { *renderer.shaders.get("gbuffer_anim").unwrap() } else if shadow_pass.unwrap().0 == 1 {
+            *renderer.shaders.get("shadow").unwrap()
+        } else {
+            *renderer.shaders.get("shadow_mask").unwrap()
+        };
         set_shader_if_not_already(renderer, gbuffer_shader);
         let mut shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
@@ -664,16 +666,6 @@ impl Mesh {
                     BindTexture(TEXTURE_2D, material.normal_texture);
                     Uniform1i(material_normal, 2);
                 }
-            }
-
-            if shadow_pass.is_some() {
-                // send the scene depth buffer to the shadow shader
-                let tex = renderer.backend.framebuffers.gbuffer_info2;
-                let depth_c = CString::new("scene_depth").unwrap();
-                let depth = GetUniformLocation(shader.program, depth_c.as_ptr());
-                ActiveTexture(TEXTURE3);
-                BindTexture(TEXTURE_2D, tex as GLuint);
-                Uniform1i(depth, 3);
             }
 
             if let Some(animations) = self.animations.as_mut() {
@@ -776,6 +768,10 @@ impl Mesh {
                 let pass_c = CString::new("pass").unwrap();
                 let pass_loc = GetUniformLocation(shader.program, pass_c.as_ptr() as *const i8);
                 Uniform1i(pass_loc, pass as i32);
+                // send iteration to shader
+                let pass_c = CString::new("facing_angle").unwrap();
+                let pass_loc = GetUniformLocation(shader.program, pass_c.as_ptr() as *const i8);
+                Uniform1f(pass_loc, *crate::ui::DEBUG_SHADOW_VOLUME_FACE_ANGLE.lock().unwrap());
 
                 // send the light position to the shadow shader
                 let light_pos_c = CString::new("light_pos").unwrap();
@@ -785,10 +781,17 @@ impl Mesh {
                     let light_position = light.position;
                     Uniform3f(light_pos, light_position.x, light_position.y, light_position.z);
                 }
+                // send the scene depth buffer to the shadow shader
+                let tex = renderer.backend.framebuffers.gbuffer_info2;
+                let depth_c = CString::new("scene_depth").unwrap();
+                let depth = GetUniformLocation(shader.program, depth_c.as_ptr());
+                ActiveTexture(TEXTURE3);
+                BindTexture(TEXTURE_2D, tex as GLuint);
+                Uniform1i(depth, 3);
 
                 if pass == 2 {
                     // send back buffer to front buffer shader
-                    let backface_depth_c = CString::new("backface_mask").unwrap();
+                    let backface_depth_c = CString::new("backface_depth").unwrap();
                     let backface_depth_loc = GetUniformLocation(shader.program, backface_depth_c.as_ptr() as *const i8);
                     let texture = renderer.backend.framebuffers.shadow_buffer_tex_scratch as GLuint;
                     ActiveTexture(TEXTURE6);

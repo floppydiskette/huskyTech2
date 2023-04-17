@@ -18,7 +18,7 @@ uniform float opacity = 1.0;
 uniform bool unlit = false;
 
 float near = 0.1;
-float far = 1000.0;
+float far = 100.0;
 
 // from learnopengl.com
 float LinearizeDepth(float depth)
@@ -29,7 +29,7 @@ float LinearizeDepth(float depth)
 
 void main() {
     float depth = gl_FragCoord.z;
-    depth = 1.0 - LinearizeDepth(depth) / far;
+    depth = LinearizeDepth(depth) / far;
 
     if (!unlit) {
         vec3 normal = texture(normalmap, uv).rgb * 2.0 - 1.0;

@@ -918,26 +918,24 @@ impl WorldMachine {
         updates
     }
 
-    pub fn render(&mut self, renderer: &mut ht_renderer, shadow_pass: Option<u8>) {
+    pub fn render(&mut self, renderer: &mut ht_renderer, shadow_pass: Option<(u8, usize)>) {
 
         // todo! actual good player rendering
         if let Some(player) = &mut self.player {
-            if shadow_pass.is_none() {
-                let position = player.player.get_position();
-                let rotation = player.player.get_rotation();
-                let meshes = &mut renderer.meshes;
-                let textures = renderer.textures.clone();
-                if let Some(mesh) = meshes.get_mut("player") {
-                    let texture = textures.get("default").unwrap();
-                    let mut mesh = mesh.clone();
-                    mesh.position = position + (rotation.forward() * -0.2);
-                    mesh.rotation = rotation;
-                    mesh.scale = Vec3::new(0.6, 0.6, 0.6);
+            let position = player.player.get_position();
+            let rotation = player.player.get_rotation();
+            let meshes = &mut renderer.meshes;
+            let textures = renderer.textures.clone();
+            if let Some(mesh) = meshes.get_mut("player") {
+                let texture = textures.get("default").unwrap();
+                let mut mesh = mesh.clone();
+                mesh.position = position + (rotation.forward() * -0.2);
+                mesh.rotation = rotation;
+                mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
-                    let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
+                let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
-                    mesh.render(renderer, Some(texture), Some(move_anim.weights()), shadow_pass);
-                }
+                mesh.render(renderer, Some(texture), Some(move_anim.weights()), shadow_pass);
             }
         }
 
@@ -1033,9 +1031,6 @@ impl WorldMachine {
                             continue;
                         }
                     };
-                    if mesh_name == "Plane" && shadow_pass.is_some() {
-                        continue;
-                    }
                     if mesh_name == "banana" {
                         mesh_name = "player".to_string();
                     }

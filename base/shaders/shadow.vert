@@ -19,6 +19,7 @@ uniform mat4 u_model;
 uniform mat4 u_normal_matrix;
 
 uniform vec3 light_pos; // position of the current light
+uniform float facing_angle;
 
 const int MAX_BONES = 100;
 const int MAX_BONER_INFLUENCE = 4; // (:
@@ -73,17 +74,21 @@ void main()
         frag_pos = vec3(u_model * total_position);
         TBN = calculate_normals(in_normal);
     }
-    vec3 light_dir = ((u_model * total_position) - (vec4(light_pos, 0.0))).xyz; // vector from world position to world light position
+    vec3 light_dir = normalize(light_pos - frag_pos); // vector from world position to world light position
     vec3 normal_w = normalize((mat3(u_model) * total_normal)); // normal vector in world space
 
     // are we facing the light?
-    if (dot(light_dir, normal_w) > 0.0) {
+    if (dot(normal_w, light_dir) > 0.0) {
         // facing towards the light, basically do as normal
-        gl_Position = u_projection * view_model * vec4(total_position.xyz, 1.0);
+        gl_Position = u_projection * u_view * vec4(frag_pos - (light_dir * 0.2), 1.0);
     } else {
         // facing away from the light, project the vertex away from the light
-        vec3 light_dir_norm = normalize(light_dir);
-        gl_Position = u_projection * view_model * (ipmr * vec4(light_dir_norm, 1.0));
+        float E = 10000.0; // how far to project the vertex
+        vec4 fin = u_projection * u_view * vec4(frag_pos - (light_dir * 100000.0), 1.0);
+        if (fin.z > fin.w) {
+            fin.z = fin.w;
+        }
+        gl_Position = fin;
     }
 
     uv = in_uv;

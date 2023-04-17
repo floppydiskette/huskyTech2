@@ -182,7 +182,8 @@ async fn main() {
             worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer, None);
             renderer.clear_all_shadow_buffers();
-            worldmachine.render(&mut renderer, Some(0));
+            worldmachine.render(&mut renderer, Some((1, 0)));
+            worldmachine.render(&mut renderer, Some((2, 0)));
             //worldmachine.render(&mut renderer, Some(2));
 
             renderer.swap_buffers();

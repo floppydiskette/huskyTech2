@@ -1,0 +1,58 @@
+#version 330 core
+layout (triangles) in;
+
+layout (triangle_strip, max_vertices = 18) out;
+
+uniform mat4 u_mvp;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+uniform mat4 u_model;
+uniform mat4 u_normal_matrix;
+
+uniform vec3 light_pos; // position of the current light
+
+void main()
+{
+    vec3 d[3];
+    vec3 n[3];
+    vec3 v[3] = vec3[3](
+        gl_in[0].gl_Position.xyz,
+        gl_in[1].gl_Position.xyz,
+        gl_in[2].gl_Position.xyz);
+
+    n[0] = cross(
+        v[1].xyz - v[0].xyz,
+        v[2].xyz - v[0].xyz);
+    n[1] = cross(
+        v[2].xyz - v[1].xyz,
+        v[0].xyz - v[1].xyz);
+    n[2] = cross(
+        v[0].xyz - v[2].xyz,
+        v[1].xyz - v[2].xyz);
+
+    d[0] = light_pos.xyz - v[0].xyz;
+    d[1] = light_pos.xyz - v[1].xyz;
+    d[2] = light_pos.xyz - v[2].xyz;
+
+    if (!(dot(n[0], d[0]) > 0 || dot(n[1], d[1]) > 0 || dot(n[2], d[2]) > 0)) {
+        return;
+    }
+
+    for (int i = 0; i < 3; i++) {
+        gl_Position = u_projection * u_view * vec4(v[i] - (d[i] * 0.01), 1.0);
+        EmitVertex();
+    }
+    EndPrimitive();
+
+    for (int i = 0; i < 3; i++) {
+        //gl_Position = u_projection * u_view * vec4(v[i] - (d[i] * 0.01), 1.0);
+        //EmitVertex();
+        vec4 fin = u_projection * u_view * vec4(v[i] - (d[i] * 10000.0), 1.0);
+        if (fin.z > fin.w) {
+            fin.z = fin.w;
+        }
+        gl_Position = fin;
+        EmitVertex();
+    }
+    EndPrimitive();
+}

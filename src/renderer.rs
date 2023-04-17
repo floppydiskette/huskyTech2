@@ -397,10 +397,17 @@ impl ht_renderer {
 
                     // shadow scratch
                     BindTexture(TEXTURE_2D, shadow_buffer_tex_scratch);
-                    TexImage2D(TEXTURE_2D, 0, R8I as i32, render_width, render_height, 0, RED_INTEGER, BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_tex_scratch, 0);
+
+                    // attach depth stencil
+                    let mut shadow_buffer_renderbuffer = 0;
+                    GenRenderbuffers(1, &mut shadow_buffer_renderbuffer);
+                    BindRenderbuffer(RENDERBUFFER, shadow_buffer_renderbuffer);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
+                    FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, shadow_buffer_renderbuffer);
 
                     let attachments = [COLOR_ATTACHMENT0];
                     DrawBuffers(1, attachments.as_ptr());
@@ -420,6 +427,13 @@ impl ht_renderer {
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_tex_mask, 0);
+
+                    // attach depth stencil
+                    let mut shadow_buffer_renderbuffer = 0;
+                    GenRenderbuffers(1, &mut shadow_buffer_renderbuffer);
+                    BindRenderbuffer(RENDERBUFFER, shadow_buffer_renderbuffer);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
+                    FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, shadow_buffer_renderbuffer);
 
                     let attachments = [COLOR_ATTACHMENT0];
                     DrawBuffers(1, attachments.as_ptr());
@@ -507,7 +521,8 @@ impl ht_renderer {
         // load gbuffer animation shader
         self.load_shader("gbuffer_anim").expect("failed to load gbuffer animation shader");
         // load shadow shader
-        self.load_shader("shadow").expect("failed to load gbuffer animation shader");
+        self.load_shader("shadow").expect("failed to load shadow shader");
+        self.load_shader("shadow_mask").expect("failed to load shadow mask shader");
         // load lighting shader
         self.load_shader("lighting").expect("failed to load lighting shader");
 
@@ -617,25 +632,41 @@ impl ht_renderer {
         // read the files
         let vert_source = load_string_from_file(format!("base/shaders/{}.vert", shader_name)).expect("failed to load vertex shader");
         let frag_source = load_string_from_file(format!("base/shaders/{}.frag", shader_name)).expect("failed to load fragment shader");
+        let geom_source = match load_string_from_file(format!("base/shaders/{}.geom", shader_name)) {
+            Ok(s) => Some(s),
+            Err(_) => None
+        };
 
         // convert strings to c strings
         let vert_source_c = CString::new(vert_source).unwrap();
         let frag_source_c = CString::new(frag_source).unwrap();
+        let geom_source_c = geom_source.map(|s| CString::new(s).unwrap());
 
         // create the shaders
         let vert_shader = unsafe { CreateShader(VERTEX_SHADER) };
         let frag_shader = unsafe { CreateShader(FRAGMENT_SHADER) };
+        let geom_shader = if geom_source_c.is_some() {
+            Some(unsafe { CreateShader(GEOMETRY_SHADER) })
+        } else {
+            None
+        };
 
         // set the source
         unsafe {
             ShaderSource(vert_shader, 1, &vert_source_c.as_ptr(), null_mut());
             ShaderSource(frag_shader, 1, &frag_source_c.as_ptr(), null_mut());
+            if let Some(geom_shader) = geom_shader {
+                ShaderSource(geom_shader, 1, &geom_source_c.unwrap().as_ptr(), null_mut());
+            }
         }
 
         // compile the shaders
         unsafe {
             CompileShader(vert_shader);
             CompileShader(frag_shader);
+            if let Some(geom_shader) = geom_shader {
+                CompileShader(geom_shader);
+            }
         }
 
         // check if the shaders compiled
@@ -661,6 +692,18 @@ impl ht_renderer {
                 GetShaderInfoLog(frag_shader, len, null_mut(), log_p);
                 return Err(format!("failed to compile fragment shader: {}", CString::from_raw(log_p).to_string_lossy()));
             }
+            if let Some(geom_shader) = geom_shader {
+                GetShaderiv(geom_shader, COMPILE_STATUS, &mut status);
+                if status == 0 {
+                    let mut len = 255;
+                    GetShaderiv(geom_shader, INFO_LOG_LENGTH, &mut len);
+                    let log = vec![0; len as usize + 1];
+                    let log_c = CString::from_vec_unchecked(log);
+                    let log_p = log_c.into_raw();
+                    GetShaderInfoLog(geom_shader, len, null_mut(), log_p);
+                    return Err(format!("failed to compile geometry shader: {}", CString::from_raw(log_p).to_string_lossy()));
+                }
+            }
         }
 
         // link the shaders
@@ -668,6 +711,9 @@ impl ht_renderer {
         unsafe {
             AttachShader(shader_program, vert_shader);
             AttachShader(shader_program, frag_shader);
+            if let Some(geom_shader) = geom_shader {
+                AttachShader(shader_program, geom_shader);
+            }
             LinkProgram(shader_program);
         }
 
@@ -687,6 +733,9 @@ impl ht_renderer {
         unsafe {
             DeleteShader(vert_shader);
             DeleteShader(frag_shader);
+            if let Some(geom_shader) = geom_shader {
+                DeleteShader(geom_shader);
+            }
         }
 
         // add shader to list
@@ -738,6 +787,8 @@ impl ht_renderer {
 
             // set framebuffer to the post processing framebuffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
+            Disable(COLOR_LOGIC_OP);
+            DepthMask(TRUE);
 
             Enable(CULL_FACE);
             CullFace(FRONT);
@@ -755,42 +806,53 @@ impl ht_renderer {
 
     // shadow pass
     pub fn setup_shadow_pass(&mut self, iteration: u8) {
-        let shadow_shader = *self.shaders.get("shadow").unwrap();
-
-        set_shader_if_not_already(self, shadow_shader);
-
         unsafe {
             // if pass is 1, set framebuffer to the scratch shadow framebuffer
             // if pass is 2, set framebuffer to the mask shadow framebuffer
             if iteration == 1 {
                 BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
+                let shadow_shader = *self.shaders.get("shadow").unwrap();
+
+                set_shader_if_not_already(self, shadow_shader);
             } else if iteration == 2 {
                 BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_mask as GLuint);
+                let shadow_shader = *self.shaders.get("shadow_mask").unwrap();
+
+                set_shader_if_not_already(self, shadow_shader);
             }
-
-            if iteration == 1 {
-                Disable(CULL_FACE);
-                CullFace(BACK);
-            } else if iteration == 2 {
-                Disable(CULL_FACE);
-                CullFace(FRONT);
-            }
-
-            Disable(DEPTH_TEST);
-
             // disable gamma correction
             Disable(FRAMEBUFFER_SRGB);
+            Disable(CULL_FACE);
 
             // clear if first iteration
             if iteration == 1 {
-                ClearColor(0.0, 0.0, 0.0, 1.0);
-                Clear(COLOR_BUFFER_BIT);
+                Enable(DEPTH_TEST);
+                Enable(DEPTH_CLAMP);
+                DepthFunc(LEQUAL);
+                Enable(STENCIL_TEST);
+                DepthMask(FALSE);
+                StencilFunc(ALWAYS, 0, 0xFF);
+                StencilOpSeparate(BACK, KEEP, INCR_WRAP, KEEP);
+                StencilOpSeparate(FRONT, KEEP, DECR_WRAP, KEEP);
             }
 
             // if second iteration, use OR logical operation
             if iteration == 2 {
+                Clear(STENCIL_BUFFER_BIT);
+
+                // blit depth and stencil buffer from scratch shadow buffer
+                BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
+                BindFramebuffer(DRAW_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_mask as GLuint);
+                BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32, self.render_size.y as i32, STENCIL_BUFFER_BIT, NEAREST);
+
+                Disable(DEPTH_CLAMP);
                 Enable(COLOR_LOGIC_OP);
                 LogicOp(OR);
+                Disable(DEPTH_TEST);
+                DepthFunc(EQUAL);
+                Enable(STENCIL_TEST);
+                StencilFunc(EQUAL, 0, 0xFF);
+                StencilOp(KEEP, KEEP, KEEP);
             } else {
                 Disable(COLOR_LOGIC_OP);
             }
@@ -802,12 +864,17 @@ impl ht_renderer {
             // clear scratch shadow buffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
             ClearColor(0.0, 0.0, 0.0, 1.0);
-            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
 
             // clear mask shadow buffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_mask as GLuint);
             ClearColor(0.0, 0.0, 0.0, 1.0);
-            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
+
+            // blit depth buffer from gbuffer
+            BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
+            BindFramebuffer(DRAW_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
+            BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32, self.render_size.y as i32, DEPTH_BUFFER_BIT, NEAREST);
         }
     }
 
@@ -834,6 +901,8 @@ impl ht_renderer {
             // set framebuffer to the post processing framebuffer
             BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.postbuffer as GLuint);
             Viewport(0, 0, self.render_size.x as i32, self.render_size.y as i32);
+            Disable(COLOR_LOGIC_OP);
+            Disable(STENCIL_TEST);
 
             // set the clear color to preferred color
             let colour = self.backend.clear_colour.load(Ordering::Relaxed);

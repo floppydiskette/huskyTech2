@@ -16,6 +16,7 @@ lazy_static!{
     pub static ref DEBUG_LOG: Arc<Mutex<OnScreenDebugLog>> = Arc::new(Mutex::new(OnScreenDebugLog {
         buffer: VecDeque::new(),
     }));
+    pub static ref DEBUG_SHADOW_VOLUME_FACE_ANGLE: Arc<Mutex<f32>> = Arc::new(Mutex::new(0.0));
 }
 
 pub struct OnScreenDebugLog {
@@ -65,6 +66,13 @@ pub fn render(renderer: &mut ht_renderer) {
             if SHOW_FPS.load(Ordering::Relaxed) {
                 render_fps(ui);
             }
+        });
+
+    let mut sv_face_angle = DEBUG_SHADOW_VOLUME_FACE_ANGLE.lock().unwrap();
+    egui::Window::new("Shadow Volume")
+        .resizable(false)
+        .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
+            ui.add(egui::Slider::new(&mut *sv_face_angle, -90.0..=90.0).text("Face Angle"));
         });
 
     let egui::FullOutput {
