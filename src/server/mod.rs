@@ -846,7 +846,8 @@ impl Server {
                 // do physics tick
                 let mut worldmachine = self.worldmachine.lock().await;
                 let last_physics_tick = worldmachine.last_physics_update;
-                let delta = last_physics_tick.elapsed().as_secs_f32();
+                let current_time = std::time::Instant::now();
+                let delta = (current_time - last_physics_tick).as_secs_f32();
                 if delta > 0.1 {
                     // do a player physics tick for each player
                     {
@@ -857,7 +858,7 @@ impl Server {
                         }
                     }
                     worldmachine.physics.as_mut().unwrap().tick(delta);
-                    worldmachine.last_physics_update = std::time::Instant::now();
+                    worldmachine.last_physics_update = current_time;
                 }
             }
         }

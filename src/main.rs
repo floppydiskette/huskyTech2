@@ -169,11 +169,11 @@ async fn main() {
         let mut last_frame_time = std::time::Instant::now();
         loop {
             let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
+            last_frame_time = Instant::now();
 
             // calculate fps based on delta
             let fps = 1.0 / delta;
             *crate::ui::FPS.lock().unwrap() = fps;
-            last_frame_time = std::time::Instant::now();
 
             renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
             renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());

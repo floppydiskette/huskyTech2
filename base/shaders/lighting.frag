@@ -106,20 +106,20 @@ void main() {
         // check b comp if greater than 64
         // check g comp if greater than 32
         // check r comp otherwise
-        bool in_shadow = false;
+        bool lit = true;
         if (shadow.b > 64) {
             int mask = 1 << (i - 64);
-            in_shadow = (shadow.b & mask) != 0;
+            lit = (shadow.b & mask) != 0;
         } else if (shadow.g > 32) {
             int mask = 1 << (i - 32);
-            in_shadow = (shadow.g & mask) != 0;
+            lit = (shadow.g & mask) != 0;
         } else
         if (shadow.r > 0) {
             int mask = 1 << i;
-            in_shadow = (shadow.r & mask) != 0;
+            lit = (shadow.r & mask) != 0;
         }
 
-        if (in_shadow) {
+        if (lit) {
             result += calculate_light(u_lights[i], albedo, spec, uv, normal, frag_pos, view_dir, ambient);
         }
     }
@@ -128,11 +128,11 @@ void main() {
     ivec4 shadow = texture(shadow_mask, uv);
     vec3 funny = vec3(shadow.r > 0 ? 1 : 0, 1, 1);
 
-    vec3 final_colour = (ambient + (result)) * albedo * vec3(pow(ssao(uv, frag_pos), 2.0));
+    vec3 final_colour = (ambient + (result)) * albedo * vec3(pow(ssao(uv, frag_pos), 1.0));
 
     if (unlit > 0.5) {
-        FragColor = vec4(final_colour, 1.0);
+        FragColor = vec4(final_colour, opacity);
     } else {
-        FragColor = vec4(final_colour, 1.0);
+        FragColor = vec4(final_colour, opacity);
     }
 }

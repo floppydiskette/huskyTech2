@@ -99,7 +99,7 @@ entities:
           z: 1.0
       intensity:
         name: intensity
-        value: !Float 1.0
+        value: !Float 0.6
       position:
         name: position
         value: !Vec3
@@ -162,7 +162,7 @@ entities:
           z: 0.0
       intensity:
         name: intensity
-        value: !Float 1.0
+        value: !Float 0.3
       position:
         name: position
         value: !Vec3
@@ -248,7 +248,7 @@ entities:
           z: 1.0
       intensity:
         name: intensity
-        value: !Float 1.0
+        value: !Float 0.5
       position:
         name: position
         value: !Vec3
@@ -426,5 +426,220 @@ entities:
       name: Transform
   children: []
   parent: null
+- name: skintest
+  uid: 12
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 21.0
+          y: -0.9
+          z: -10.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  children: []
+  parent: null
+- name: skintest
+  uid: 13
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 21.0
+          y: -0.9
+          z: -17.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  children: []
+  parent: null
+- name: skintest
+  uid: 14
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 14.0
+          y: -0.9
+          z: -17.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  children: []
+  parent: null
+- name: skintest
+  uid: 15
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 9.0
+          y: -0.9
+          z: -17.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  children: []
+  parent: null
+- name: skintest
+  uid: 16
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      shader:
+        name: shader
+        value: !String basic
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 2
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 4.0
+          y: -0.9
+          z: -17.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.8
+          y: 1.8
+          z: 1.8
+    component_type:
+      id: 1
+      name: Transform
+  children: []
+  parent: null
 systems: []
-eid_manager: 10
+eid_manager: 16

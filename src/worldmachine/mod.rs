@@ -321,14 +321,14 @@ impl WorldMachine {
         let mut lights = Vec::new();
         for entity in &self.world.entities {
             let components = entity.get_components();
-            let mut light_component = Option::None;
-            let mut transform_component = Option::None; // if we have a transform component, this will be added to the light's position
+            let mut light_component = None;
+            let mut transform_component = None; // if we have a transform component, this will be added to the light's position
             for component in components {
                 if component.get_type() == COMPONENT_TYPE_LIGHT.clone() {
-                    light_component = Option::Some(component);
+                    light_component = Some(component);
                 }
                 if component.get_type() == COMPONENT_TYPE_TRANSFORM.clone() {
-                    transform_component = Option::Some(component);
+                    transform_component = Some(component);
                 }
             }
             if let Some(light) = light_component {
@@ -913,7 +913,7 @@ impl WorldMachine {
         let current_time = Instant::now();
         let time_since_last_tick = current_time.duration_since(self.last_physics_update).as_secs_f32();
         physics_engine.tick(time_since_last_tick);
-        self.last_physics_update = Instant::now();
+        self.last_physics_update = current_time;
 
         updates
     }
@@ -925,9 +925,8 @@ impl WorldMachine {
             let position = player.player.get_position();
             let rotation = player.player.get_rotation();
             let meshes = &mut renderer.meshes;
-            let textures = renderer.textures.clone();
             if let Some(mesh) = meshes.get_mut("player") {
-                let texture = textures.get("default").unwrap();
+                let texture = renderer.textures.get("default").cloned().unwrap();
                 let mut mesh = mesh.clone();
                 mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -1.5, 0.0);
                 mesh.rotation = rotation;
@@ -935,7 +934,7 @@ impl WorldMachine {
 
                 let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
-                mesh.render(renderer, Some(texture), Some(move_anim.weights()), shadow_pass);
+                mesh.render(renderer, Some(&texture), Some(move_anim.weights()), shadow_pass);
             }
         }
 
@@ -1031,23 +1030,10 @@ impl WorldMachine {
                             continue;
                         }
                     };
-                    if mesh_name == "banana" {
-                        mesh_name = "player".to_string();
-                    }
                     // if so, render it
-                    let shaders = renderer.shaders.clone();
-                    let meshes = renderer.meshes.clone();
-                    let mesh = meshes.get(&*mesh_name).cloned();
+                    let mesh = renderer.meshes.get(&*mesh_name).cloned();
                     if let Some(mut mesh) = mesh {
-                        let shader = mesh_renderer.get_parameter("shader").unwrap();
                         let texture = mesh_renderer.get_parameter("texture").unwrap();
-                        let shader_name = match shader.value {
-                            ParameterValue::String(ref s) => s.clone(),
-                            _ => {
-                                error!("render: shader is not a string");
-                                continue;
-                            }
-                        };
                         let texture_name = match texture.value {
                             ParameterValue::String(ref s) => s.clone(),
                             _ => {
@@ -1055,15 +1041,11 @@ impl WorldMachine {
                                 continue;
                             }
                         };
-                        let shaders = renderer.shaders.clone();
-                        let textures = renderer.textures.clone();
-                        let shader = shaders.get(&*shader_name);
-                        let texture = textures.get(&*texture_name);
-                        if shader.is_none() || texture.is_none() {
-                            error!("shader or texture not found: {:?} {:?}", shader_name, texture_name);
+                        let texture = renderer.textures.get(&*texture_name).cloned();
+                        if texture.is_none() {
+                            error!("texture not found: {:?}", texture_name);
                             continue;
                         }
-                        let shader = shader.unwrap();
                         let texture = texture.unwrap();
 
                         let old_position = mesh.position;
@@ -1114,7 +1096,7 @@ impl WorldMachine {
                             anim_weights = Some(move_anim.weights());
                         }
 
-                        mesh.render(renderer, Some(texture), anim_weights, shadow_pass);
+                        mesh.render(renderer, Some(&texture), anim_weights, shadow_pass);
                         mesh.position = old_position;
                         mesh.rotation = old_rotation;
                         mesh.scale = old_scale;
@@ -1212,10 +1194,8 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let meshes = renderer.meshes.clone();
-                let textures = renderer.textures.clone();
-                if let Some(mesh) = meshes.get("player") {
-                    let texture = textures.get("default").unwrap();
+                if let Some(mesh) = renderer.meshes.get("player").cloned() {
+                    let texture = renderer.textures.get("default").cloned().unwrap();
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;
                     let old_rotation = mesh.rotation;
@@ -1225,7 +1205,7 @@ impl WorldMachine {
 
                     let move_anim = MoveAnim::from_values(speed, strafe);
 
-                    mesh.render(renderer, Some(texture), Some(move_anim.weights()), shadow_pass);
+                    mesh.render(renderer, Some(&texture), Some(move_anim.weights()), shadow_pass);
 
                     mesh.position = old_position;
                     mesh.rotation = old_rotation;

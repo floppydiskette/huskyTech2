@@ -28,8 +28,8 @@ pub struct Mesh {
     pub uvbo: GLuint,
     pub normal_vbo: GLuint,
     pub tangent_vbo: GLuint,
-    pub animations: Option<SkeletalAnimations>,
-    pub animation_delta: Option<Instant>,
+    pub animations: Arc<Mutex<Option<SkeletalAnimations>>>,
+    pub animation_delta: Arc<Mutex<Option<Instant>>>,
     atomic_ref_count: Arc<AtomicUsize>,
 }
 
@@ -319,8 +319,8 @@ impl Mesh {
             uvbo,
             num_vertices: indices_array.len(),
             num_indices: indices_array.len(),
-            animations,
-            animation_delta: Some(Instant::now()),
+            animations: Arc::new(Mutex::new(animations)),
+            animation_delta: Arc::new(Mutex::new(Some(Instant::now()))),
             normal_vbo,
             tangent_vbo,
             atomic_ref_count: Arc::new(AtomicUsize::new(1)),
@@ -599,8 +599,8 @@ impl Mesh {
             uvbo,
             num_vertices: indices_array.len(),
             num_indices: indices_array.len(),
-            animations,
-            animation_delta: Some(Instant::now()),
+            animations: Arc::new(Mutex::new(animations)),
+            animation_delta: Arc::new(Mutex::new(Some(Instant::now()))),
             normal_vbo,
             tangent_vbo,
             atomic_ref_count: Arc::new(AtomicUsize::new(1)),
@@ -668,38 +668,44 @@ impl Mesh {
                 }
             }
 
-            if let Some(animations) = self.animations.as_mut() {
+            if let Some(animations) = self.animations.lock().unwrap().as_mut() {
                 let current_time = Instant::now();
-                if shadow_pass.is_none() {
-                    let delta = current_time.duration_since(self.animation_delta.unwrap_or(current_time)).as_secs_f32();
-                    animations.advance_time(delta);
-                }
 
                 let mut animations_weights = animations_weights;
+                let mut using_autoanim = false;
                 if let Some(anim_weights) = animations_weights.as_mut() {
                     // if it isn't already there, add the "auto" animation (if it exists)
-                    if !anim_weights.iter().any(|(name, _)| name == "auto") {
-                        if let Some(auto_anim) = animations.animations.get("auto") {
-                            anim_weights.push(("auto".to_string(), 0.1));
-                        }
-                    }
+                    //if !anim_weights.iter().any(|(name, _)| name == "auto") {
+                    //    if let Some(auto_anim) = animations.animations.get("auto") {
+                    //        anim_weights.push(("auto".to_string(), 0.1));
+                    //        using_autoanim = true;
+                    //    }
+                    //}
                 } else {
                     // if there are no animations, add the "auto" animation (if it exists)
-                    if let Some(auto_anim) = animations.animations.get("auto") {
+                    if let Some(_auto_anim) = animations.animations.get("auto") {
                         animations_weights = Some(vec![("auto".to_string(), 0.1)]);
+                        using_autoanim = true;
                     }
+                }
+                if shadow_pass.is_none() || using_autoanim {
+                    let delta = current_time.duration_since(self.animation_delta.lock().unwrap().unwrap_or(current_time)).as_secs_f32();
+                    animations.advance_time(delta);
+                    self.animation_delta.lock().unwrap().replace(current_time);
                 }
 
                 if let Some(animations_weights) = animations_weights {
-                    let mut anims_weights = animations_weights.iter().map(
-                        |(name, weight)| {
-                            (Arc::new(animations.animations.get(name).unwrap().clone()), *weight)
-                        }
-                    ).collect::<Vec<(Arc<SkeletalAnimation>, f64)>>();
+                    // fill bone matrice uniform (this should already have been done if this is a shadow pass)
+                    if shadow_pass.is_none() || using_autoanim {
+                        let mut anims_weights = animations_weights.iter().map(
+                            |(name, weight)| {
+                                (Arc::new(animations.animations.get(name).unwrap().clone()), *weight)
+                            }
+                        ).collect::<Vec<(Arc<SkeletalAnimation>, f64)>>();
 
-                    // fill bone matrice uniform
-                    for bone in animations.root_bones.clone().iter() {
-                        animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &anims_weights);
+                        for bone in animations.root_bones.clone().iter() {
+                            animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &anims_weights);
+                        }
                     }
                     for (i, transform) in animations.get_joint_matrices().iter().enumerate() {
                         let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
@@ -709,8 +715,6 @@ impl Mesh {
                     let care_about_animation_c = CString::new("care_about_animation").unwrap();
                     let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
                     Uniform1i(care_about_animation_loc, 1);
-
-                    self.animation_delta = Some(current_time);
                 }
             } else {
                 let care_about_animation_c = CString::new("care_about_animation").unwrap();
