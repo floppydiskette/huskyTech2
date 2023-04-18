@@ -929,9 +929,9 @@ impl WorldMachine {
             if let Some(mesh) = meshes.get_mut("player") {
                 let texture = textures.get("default").unwrap();
                 let mut mesh = mesh.clone();
-                mesh.position = position + (rotation.forward() * -0.2);
+                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -1.5, 0.0);
                 mesh.rotation = rotation;
-                mesh.scale = Vec3::new(0.6, 0.6, 0.6);
+                mesh.scale = Vec3::new(1.0, 1.0, 1.0);
 
                 let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
@@ -1175,6 +1175,11 @@ impl WorldMachine {
             }
              */
             if let Some(player_component) = entity.get_component(COMPONENT_TYPE_PLAYER.clone()) {
+                if let Some(ignore) = self.ignore_this_entity {
+                    if ignore == entity.uid {
+                        continue;
+                    }
+                }
                 let position = player_component.get_parameter("position").unwrap();
                 let position = match position.value {
                     ParameterValue::Vec3(v) => v,
@@ -1214,9 +1219,9 @@ impl WorldMachine {
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;
                     let old_rotation = mesh.rotation;
-                    mesh.position = position;
+                    mesh.position = position + Vec3::new(0.0, -1.5, 0.0);
                     mesh.rotation = rotation;
-                    mesh.scale = Vec3::new(0.6, 0.6, 0.6);
+                    mesh.scale = Vec3::new(1.0, 1.0, 1.0);
 
                     let move_anim = MoveAnim::from_values(speed, strafe);
 

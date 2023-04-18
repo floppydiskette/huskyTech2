@@ -107,13 +107,13 @@ void main() {
         // check g comp if greater than 32
         // check r comp otherwise
         bool in_shadow = false;
-        //if (shadow.b > 64) {
-        //    int mask = 1 << (i + 1);
-        //    in_shadow = (shadow.b & mask) != 0;
-        //} else if (shadow.g > 32) {
-        //    int mask = 1 << (i + 1);
-        //    in_shadow = (shadow.g & mask) != 0;
-        //} else
+        if (shadow.b > 64) {
+            int mask = 1 << (i - 64);
+            in_shadow = (shadow.b & mask) != 0;
+        } else if (shadow.g > 32) {
+            int mask = 1 << (i - 32);
+            in_shadow = (shadow.g & mask) != 0;
+        } else
         if (shadow.r > 0) {
             int mask = 1 << i;
             in_shadow = (shadow.r & mask) != 0;

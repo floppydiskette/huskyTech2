@@ -182,8 +182,12 @@ async fn main() {
             worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer, None);
             renderer.clear_all_shadow_buffers();
-            worldmachine.render(&mut renderer, Some((1, 0)));
-            worldmachine.render(&mut renderer, Some((2, 0)));
+            let light_count = renderer.lights.len();
+            for i in 0..light_count {
+                worldmachine.render(&mut renderer, Some((1, i)));
+                worldmachine.render(&mut renderer, Some((2, i)));
+                renderer.next_light();
+            }
             //worldmachine.render(&mut renderer, Some(2));
 
             renderer.swap_buffers();

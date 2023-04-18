@@ -44,23 +44,13 @@ void main() {
     float range = 0.001;
     bool equal_enough = abs(scene_depth - depth) < range;
 
-    //if (in_shadow) {
-    //    if (light_num_plus_one <= 0) {
-    //        discard;
-    //    } else if (light_num_plus_one > 64) {
-    //        out_mask = uvec3(0, 0, 1 << (light_num_plus_one - 65));
-    //    } else if (light_num_plus_one > 32) {
-    //        out_mask = uvec3(0, 1 << (light_num_plus_one - 33), 0);
-    //    } else {
-    //        out_mask = uvec3(1 << (light_num_plus_one - 1), 0, 0);
-    //    }
-    //} else {
-    //    discard;
-    //}
-    //if (back_on_ground) {
-    //if (equal_enough) {
-        out_mask = uvec3(1, 0, 0);
-    //} else {
-    //    discard;
-    //}
+    if (light_num_plus_one <= 0) {
+        discard;
+    } else if (light_num_plus_one > 64) {
+        out_mask = uvec3(0, 0, 1 << (light_num_plus_one - 65));
+    } else if (light_num_plus_one > 32) {
+        out_mask = uvec3(0, 1 << (light_num_plus_one - 33), 0);
+    } else {
+        out_mask = uvec3(1 << (light_num_plus_one - 1), 0, 0);
+    }
 }

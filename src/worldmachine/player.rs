@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use gfx_maths::*;
 use serde::{Deserialize, Serialize};
 use crate::{helpers, ht_renderer, keyboard, mouse};
+use crate::camera::EYE_HEIGHT;
 use crate::helpers::lerp;
 use crate::keyboard::HTKey;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
@@ -353,7 +354,7 @@ impl Player {
             let mut new_movement = movement.1;
             new_movement.jumped = jump;
             updates.push(ClientUpdate::IDisplaced((movement.0, Some(movement.1)))); // using displaced as the returned value is a displacement vector for the physics engine
-            bob_mag = movement.0.magnitude() * 5.0;
+            bob_mag = movement.0.magnitude() * 3.0;
         }
 
         // for lerp
@@ -361,7 +362,7 @@ impl Player {
 
         // head bob
         if self.bob_on {
-            let initial_head = self.get_position() + Vec3::new(0.0, 1.68, 0.0);
+            let initial_head = self.get_position() + Vec3::new(0.0, EYE_HEIGHT, 0.0);
             let bob = if bob_mag != 0.0 { initial_head + Vec3::new(0.0, 0.1 * ((self.bob_t  * 17.0).sin() * bob_mag), 0.0) } else {
                 self.bob_t = 0.0;
                 helpers::lerp_vec3(initial_head, renderer.camera.get_position(), self.bob_t)

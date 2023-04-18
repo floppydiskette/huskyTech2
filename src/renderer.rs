@@ -859,6 +859,20 @@ impl ht_renderer {
         }
     }
 
+    pub fn next_light(&mut self) {
+        unsafe {
+            // clear scratch shadow buffer
+            BindFramebuffer(FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
+            ClearColor(0.0, 0.0, 0.0, 1.0);
+            Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
+
+            // blit depth buffer from gbuffer
+            BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
+            BindFramebuffer(DRAW_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
+            BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32, self.render_size.y as i32, DEPTH_BUFFER_BIT, NEAREST);
+        }
+    }
+
     pub fn clear_all_shadow_buffers(&mut self) {
         unsafe {
             // clear scratch shadow buffer
