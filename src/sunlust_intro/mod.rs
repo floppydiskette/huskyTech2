@@ -6,7 +6,7 @@ use std::ffi::CString;
 use std::process;
 use std::ptr::null;
 use std::sync::atomic::Ordering;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 use fyrox_sound::buffer::{DataSource, SoundBufferResource};
 use fyrox_sound::context::SoundContext;
 use fyrox_sound::futures::executor::block_on;
@@ -21,7 +21,6 @@ use crate::helpers::{gen_rainbow, set_shader_if_not_already};
 use crate::light::Light;
 use crate::renderer::{RGBA, ht_renderer};
 use crate::textures::Texture;
-use crate::uimesh::UiMesh;
 
 pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     renderer.backend.clear_colour.store(RGBA { r: 0, g: 0, b: 0, a: 255 }, Ordering::SeqCst);
@@ -31,15 +30,13 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
 
     let mut mesh = renderer.meshes.get("ht2").expect("failed to get ht2 mesh").clone();
     let mut texture = renderer.textures.get("ht2").expect("failed to get ht2-mesh texture").clone();
-
-    let ui_master = renderer.backend.ui_master.lock().unwrap().clone().unwrap().clone();
-    let basic_shader = renderer.shaders.get("gbuffer_anim").unwrap().clone();
     let rainbow_shader = renderer.shaders.get("rainbow").unwrap().clone();
-    let unlit_shader = renderer.shaders.get("unlit").unwrap().clone();
-    // load poweredby uimesh
-    let mut ui_poweredby = UiMesh::new_element_from_name("poweredby", &ui_master, renderer, basic_shader).expect("failed to load poweredby uimesh");
-    // load developedby uimesh
-    let mut ui_developedby = UiMesh::new_element_from_name("developedby", &ui_master, renderer, basic_shader).expect("failed to load developedby uimesh");
+
+    // load textures
+    let start_time = Instant::now();
+    renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
+    renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
+    crate::ui::init_sunlust(renderer);
 
     let mut light_a = Light {
         position: Vec3::new(0.5, 0.0, 1.6),
@@ -51,18 +48,6 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         color: Vec3::new(1.0, 1.0, 1.0),
         intensity: 1000.0
     };
-
-    let window_size = renderer.render_size.clone();
-
-    let poweredby_width = window_size.y / 2.0;
-    let poweredby_height = poweredby_width / 2.0;
-    let poweredby_x = 15.0;
-    let poweredby_y = window_size.y - poweredby_height - 15.0;
-    ui_poweredby.position = Vec2::new(poweredby_x, poweredby_y);
-    ui_poweredby.scale = Vec2::new(poweredby_width, poweredby_height);
-    ui_poweredby.opacity = 0.0;
-
-    ui_developedby.scale = window_size;
 
     let mut sunlust_sfx = SoundBufferResource::new_generic(block_on(DataSource::from_file("base/snd/sunlust.wav")).unwrap()).unwrap();
 
@@ -112,7 +97,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         // draw the mesh
         mesh.render_basic_lines(renderer, rainbow_shader.clone());
         // swap buffers
-        renderer.swap_buffers();
+        renderer.sunlust_swap_buffers();
 
         // poll events
         if renderer.manage_window() {
@@ -131,6 +116,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     let mut dutch = 0.0; // dutch angle or whatever this probably isn't the correct usage of that word
 
     let mut last_time = SystemTime::now();
+    let start_time = Instant::now();
     loop {
         // check how long it's been
         current_time = SystemTime::now();
@@ -140,6 +126,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         if time_since_start > normal_time {
             break;
         }
+        renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
+        renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
         let time_since_start =  time_since_start + rainbow_time;
         // get the point at the current time
         let point = normal_anim.get_point_at_time(time_since_start as f64);
@@ -158,24 +146,23 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
 
         // draw the mesh
         mesh.render(renderer, Some(&texture), None, None);
-        // draw the powered by text
-        ui_poweredby.render_at(ui_master.clone(), renderer);
 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
-        } else if ui_poweredby.opacity < 1.0 {
-            ui_poweredby.opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
+        } else if
+        crate::ui::SUNLUST_INFO.lock().unwrap().powered_by_opacity < 1.0 {
+            crate::ui::SUNLUST_INFO.lock().unwrap().powered_by_opacity += current_time.duration_since(last_time).unwrap().as_secs_f32() / 10.0;
         }
 
         // increase light intensity
         if intensity_downtimer < 100.0 {
             intensity_downtimer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
-            light_a.intensity = (-intensity_downtimer / 100.0) * 888.0;
-            light_b.intensity = (-intensity_downtimer / 100.0) * 888.0;
+            light_a.intensity = (-intensity_downtimer / 100.0) * 777.0;
+            light_b.intensity = (-intensity_downtimer / 100.0) * 777.0;
         } else if intensity_timer < 1000.0 {
             intensity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;
-            light_a.intensity = (intensity_timer / 1000.0) * 0.3;
-            light_b.intensity = (intensity_timer / 1000.0) * 0.3;
+            light_a.intensity = (intensity_timer / 1000.0) * 0.2;
+            light_b.intensity = (intensity_timer / 1000.0) * 0.2;
             light_a.color.y = (-intensity_timer / 1000.0) * 0.01;
             light_b.color.x = (-intensity_timer / 1000.0) * 0.01;
         }
@@ -184,7 +171,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         light_b.position = mesh.position + Vec3::new(0.5, 0.0, -1.2);
 
         // swap buffers
-        renderer.swap_buffers();
+        renderer.sunlust_swap_buffers();
 
         // poll events
         if renderer.manage_window() {
@@ -202,14 +189,16 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         if time_since_start > copyright_time {
             break;
         }
+        renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
+        renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
 
         unsafe {
             Viewport(0, 0, renderer.render_size.x as i32, renderer.render_size.y as i32);
         }
 
-        ui_developedby.render_at(ui_master.clone(), renderer);
+        crate::ui::SUNLUST_INFO.lock().unwrap().show_copyright = true;
         // swap buffers
-        renderer.swap_buffers();
+        renderer.sunlust_swap_buffers();
 
         // poll events
         if renderer.manage_window() {

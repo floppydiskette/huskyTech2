@@ -10,6 +10,9 @@ uniform sampler2D info;
 uniform sampler2D info2;
 uniform isampler2D shadow_mask;
 
+// it looks nicer without ao in the sunlust intro
+uniform bool disable_ao;
+
 uniform vec2 noise_scale;
 
 uniform vec3 kernels[256];
@@ -128,7 +131,10 @@ void main() {
     ivec4 shadow = texture(shadow_mask, uv);
     vec3 funny = vec3(shadow.r > 0 ? 1 : 0, 1, 1);
 
-    vec3 final_colour = (ambient + (result)) * albedo * vec3(pow(ssao(uv, frag_pos), 1.0));
+    vec3 final_colour = (ambient + (result)) * albedo;
+    if (!disable_ao) {
+        final_colour *= vec3(pow(ssao(uv, frag_pos), 1.0));
+    }
 
     if (unlit > 0.5) {
         FragColor = vec4(final_colour, opacity);

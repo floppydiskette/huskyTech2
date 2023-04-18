@@ -20,7 +20,6 @@ use crate::helpers::{load_string_from_file, set_shader_if_not_already};
 use crate::light::Light;
 use crate::meshes::{IntermidiaryMesh, Mesh};
 use crate::textures::{IntermidiaryTexture, Texture};
-use crate::uimesh::UiMesh;
 
 pub static MAX_LIGHTS: usize = 100;
 pub static SHADOW_SIZE: usize = 1024;
@@ -81,7 +80,6 @@ pub struct GLFWBackend {
     pub active_vbo: Option<GLuint>,
     pub current_shader: Option<usize>,
     pub shaders: Option<Vec<Shader>>,
-    pub ui_master: Arc<Mutex<Option<UiMesh>>>,
     pub framebuffers: Framebuffers,
     pub egui_context: Arc<Mutex<egui::Context>>,
     pub painter: Arc<Mutex<egui_glfw_gl::Painter>>,
@@ -174,6 +172,7 @@ impl ht_renderer {
                     window.set_sticky_keys(true);
                     window.set_cursor_pos_polling(true);
                     window.set_mouse_button_polling(true);
+                    window.set_size_polling(true);
                     window.set_size(window_width as i32, window_height as i32);
 
                     load(|s| window.get_proc_address(s) as *const _);
@@ -475,7 +474,6 @@ impl ht_renderer {
                         clear_colour: Arc::new(AtomicRGBA::new(0, 0, 0, 255)),
                         active_vbo: Option::None,
                         shaders: Option::None,
-                        ui_master: Arc::new(Mutex::new(None)),
                         framebuffers,
                         egui_context: Arc::new(Mutex::new(egui_ctx)),
                         painter: Arc::new(Mutex::new(painter)),
@@ -532,9 +530,6 @@ impl ht_renderer {
         let basic = self.load_shader("basic").expect("failed to load basic shader");
         // load unlit shader
         let unlit = self.load_shader("unlit").expect("failed to load unlit shader");
-        // load master uimesh
-        let ui_master = UiMesh::new_master(self, unlit).expect("failed to load master uimesh");
-        self.backend.ui_master = ui_master;
         // load default texture
         self.load_texture_if_not_already_loaded_synch("default").expect("failed to load default texture");
     }
@@ -759,11 +754,29 @@ impl ht_renderer {
     }
 
     pub fn swap_buffers(&mut self) {
-        self.setup_pass_two();
+        self.setup_pass_two(0);
         self.setup_pass_three();
         /* egui */
 
         crate::ui::render(self);
+
+        unsafe {
+            self.backend.window.lock().unwrap().swap_buffers();
+            let mut width = 0;
+            let mut height = 0;
+            (width, height) = self.backend.window.lock().unwrap().get_size();
+            self.window_size = Vec2::new(width as f32, height as f32);
+            self.backend.painter.lock().unwrap().set_size(width as u32, height as u32);
+        }
+        self.setup_pass_one();
+    }
+
+    pub fn sunlust_swap_buffers(&mut self) {
+        self.setup_pass_two(1);
+        self.setup_pass_three();
+        /* egui */
+
+        crate::ui::render_sunlust(self);
 
         unsafe {
             self.backend.window.lock().unwrap().swap_buffers();
@@ -894,7 +907,7 @@ impl ht_renderer {
     }
 
     // lighting pass
-    fn setup_pass_two(&mut self) {
+    fn setup_pass_two(&mut self, disable_ao: i32) {
 
         let lighting_shader = *self.shaders.get("lighting").unwrap();
 
@@ -992,6 +1005,11 @@ impl ht_renderer {
             let view_c = CString::new("u_view").unwrap();
             let view_loc = GetUniformLocation(lighting_shader.program, view_c.as_ptr());
             UniformMatrix4fv(view_loc, 1, FALSE, self.camera.get_view().as_ptr());
+
+            // todo: make this an option and stop hardcoding it
+            let disable_ao_c = CString::new("disable_ao").unwrap();
+            let disable_ao_loc = GetUniformLocation(lighting_shader.program, disable_ao_c.as_ptr());
+            Uniform1i(disable_ao_loc, disable_ao);
 
             // draw the quad
             BindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);

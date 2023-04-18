@@ -45,23 +45,6 @@ pub enum TextureError {
     InvalidImage,
 }
 
-pub struct UiTexture {
-    pub dimensions: (u32, u32),
-    pub diffuse_texture: GLuint,
-    atomic_ref_count: Arc<AtomicUsize>,
-}
-
-impl Clone for UiTexture {
-    fn clone(&self) -> Self {
-        self.atomic_ref_count.fetch_add(1, Ordering::SeqCst);
-        UiTexture {
-            dimensions: self.dimensions,
-            diffuse_texture: self.diffuse_texture,
-            atomic_ref_count: self.atomic_ref_count.clone(),
-        }
-    }
-}
-
 pub struct Image {
     pub dimensions: (u32, u32),
     pub data: Vec<u8>,
@@ -340,97 +323,7 @@ impl Texture {
     }
 }
 
-impl Drop for UiTexture {
-    fn drop(&mut self) {
-        if self.atomic_ref_count.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.unload();
-        }
-    }
-}
-
-impl UiTexture {
-    pub fn new_from_name(name: String) -> Result<UiTexture, String> {
-        let base_file_name = format!("base/textures/ui/{}", name); // substance painter file names
-        let diffuse_file_name = base_file_name + ".png";
-
-        // load the files
-        let diffuse_data = load_image(diffuse_file_name.as_str())?;
-
-        #[cfg(feature = "glfw")]
-        {
-            // load opengl textures
-            let mut textures: [GLuint; 1] = [0; 1];
-            unsafe {
-                GenTextures(1, textures.as_mut_ptr());
-            }
-            let diffuse_texture = textures[0];
-
-            // diffuse texture
-            unsafe {
-                BindTexture(TEXTURE_2D, diffuse_texture);
-                TexImage2D(TEXTURE_2D, 0, SRGB_ALPHA as i32, diffuse_data.dimensions.0 as i32, diffuse_data.dimensions.1 as i32, 0, RGBA, UNSIGNED_BYTE, diffuse_data.data.as_ptr() as *const GLvoid);
-
-                TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
-                TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
-                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
-                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
-                GenerateMipmap(TEXTURE_2D);
-            }
-
-            // todo: for now we're only using diffuse textures
-
-            // return
-            Ok(UiTexture {
-                dimensions: diffuse_data.dimensions,
-                diffuse_texture,
-                atomic_ref_count: Arc::new(AtomicUsize::new(1)),
-            })
-        }
-    }
-
-    pub fn new_from_rgba_bytes(bytes: &[u8], dimensions: (u32, u32)) -> Result<UiTexture, String> {
-        #[cfg(feature = "glfw")]
-        {
-            // load opengl textures
-            let mut textures: [GLuint; 1] = [0; 1];
-            unsafe {
-                GenTextures(1, textures.as_mut_ptr());
-            }
-            let diffuse_texture = textures[0];
-
-            // diffuse texture
-            unsafe {
-                BindTexture(TEXTURE_2D, diffuse_texture);
-
-                TexImage2D(TEXTURE_2D, 0, RGBA8 as i32, dimensions.0 as i32, dimensions.1 as i32, 0, RGBA8, UNSIGNED_BYTE, bytes.as_ptr() as *const GLvoid);
-
-                TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR as i32);
-                TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR as i32);
-                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
-                TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
-                GenerateMipmap(TEXTURE_2D);
-            }
-
-            // return
-            Ok(UiTexture {
-                dimensions,
-                diffuse_texture,
-                atomic_ref_count: Arc::new(AtomicUsize::new(1)),
-            })
-        }
-    }
-
-    pub fn unload(&mut self) {
-        #[cfg(feature = "glfw")]
-        {
-            unsafe {
-                DeleteTextures(1, &self.diffuse_texture);
-            }
-        }
-    }
-}
-
-fn load_image(file_name: &str) -> Result<Image, String> { // todo: use dds
+pub fn load_image(file_name: &str) -> Result<Image, String> { // todo: use dds
     let img_data = std::io::BufReader::new(std::fs::File::open(file_name).map_err(|e| format!("Failed to load image: {}", e))?);
     let img = image::io::Reader::new(img_data).with_guessed_format().map_err(|e| format!("Failed to load image: {}", e))?.decode().map_err(|e| format!("Failed to load image: {}", e))?;
     let rgba = img.into_rgba8();
