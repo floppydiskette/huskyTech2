@@ -22,7 +22,7 @@ use crate::meshes::{IntermidiaryMesh, Mesh};
 use crate::textures::{IntermidiaryTexture, Texture};
 
 pub static MAX_LIGHTS: usize = 100;
-pub static SHADOW_FRAC: i32 = 1;
+pub static SHADOW_FRAC: i32 = 1; // note: currently it does not seem that any performance is gained by increasing this value
 
 #[derive(Clone, Copy)]
 pub struct RGBA {
@@ -174,6 +174,7 @@ impl ht_renderer {
                     window.set_mouse_button_polling(true);
                     window.set_size_polling(true);
                     window.set_size(window_width as i32, window_height as i32);
+                    glfw.set_swap_interval(glfw::SwapInterval::Sync(0));
 
                     load(|s| window.get_proc_address(s) as *const _);
 
@@ -369,15 +370,15 @@ impl ht_renderer {
 
                     // shadow back
                     BindFramebuffer(FRAMEBUFFER, shadow_buffers[0]);
-                    let mut shadow_buffer_tex_scratch = 0;
-                    GenTextures(1, &mut shadow_buffer_tex_scratch);
+                    //let mut shadow_buffer_tex_scratch = 0;
+                    //GenTextures(1, &mut shadow_buffer_tex_scratch);
 
-                    // shadow scratch
-                    BindTexture(TEXTURE_2D, shadow_buffer_tex_scratch);
-                    TexImage2D(TEXTURE_2D, 0, R8I as i32, render_width, render_height, 0, RED_INTEGER, BYTE, std::ptr::null());
-                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
-                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_tex_scratch, 0);
+                    //// shadow scratch
+                    //BindTexture(TEXTURE_2D, shadow_buffer_tex_scratch);
+                    //TexImage2D(TEXTURE_2D, 0, R8I as i32, render_width / SHADOW_FRAC, render_height / SHADOW_FRAC, 0, RED_INTEGER, BYTE, std::ptr::null());
+                    //TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
+                    //TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
+                    //FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, shadow_buffer_tex_scratch, 0);
 
                     // attach depth stencil
                     let mut shadow_buffer_renderbuffer = 0;
@@ -409,7 +410,7 @@ impl ht_renderer {
                     let mut shadow_buffer_renderbuffer = 0;
                     GenRenderbuffers(1, &mut shadow_buffer_renderbuffer);
                     BindRenderbuffer(RENDERBUFFER, shadow_buffer_renderbuffer);
-                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width / SHADOW_FRAC, render_height / SHADOW_FRAC);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, shadow_buffer_renderbuffer);
 
                     let attachments = [COLOR_ATTACHMENT0];
@@ -421,11 +422,13 @@ impl ht_renderer {
 
                     framebuffers.shadow_buffer_scratch = shadow_buffers[0] as usize;
                     framebuffers.shadow_buffer_mask = shadow_buffers[1] as usize;
-                    framebuffers.shadow_buffer_tex_scratch = shadow_buffer_tex_scratch as usize;
+                    //framebuffers.shadow_buffer_tex_scratch = shadow_buffer_tex_scratch as usize;
                     framebuffers.shadow_buffer_tex_mask = shadow_buffer_tex_mask as usize;
 
 
                     Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
+
+
 
                     // print opengl errors
                     let mut error = GetError();

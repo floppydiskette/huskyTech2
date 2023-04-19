@@ -913,15 +913,26 @@ impl WorldMachine {
         updates
     }
 
+    pub fn next_frame(&mut self, renderer: &mut ht_renderer) {
+        for mesh in &mut renderer.meshes.values_mut() {
+            mesh.updated_animations_this_frame = false;
+            if let Some(shadow_mesh) = &mesh.shadow_mesh {
+                shadow_mesh.lock().unwrap().updated_animations_this_frame = false;
+            }
+        }
+    }
+
     pub fn render(&mut self, renderer: &mut ht_renderer, shadow_pass: Option<(u8, usize)>) {
         // todo! actual good player rendering
         if let Some(player) = &mut self.player {
             let position = player.player.get_position();
             let rotation = player.player.get_rotation();
-            let meshes = &mut renderer.meshes;
-            if let Some(mesh) = meshes.get_mut("player") {
+            if let Some(mut mesh) = renderer.meshes.get("player").cloned() {
+                renderer.meshes.get_mut("player").unwrap().updated_animations_this_frame = false;
+                if let Some(shadow_mesh) = &renderer.meshes.get_mut("player").unwrap().shadow_mesh {
+                    shadow_mesh.lock().unwrap().updated_animations_this_frame = false;
+                }
                 let texture = renderer.textures.get("default").cloned().unwrap();
-                let mut mesh = mesh.clone();
                 mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.2, 0.0);
                 mesh.rotation = rotation;
                 mesh.scale = Vec3::new(0.6, 0.6, 0.6);
@@ -1189,6 +1200,10 @@ impl WorldMachine {
                     }
                 };
                 if let Some(mesh) = renderer.meshes.get("player").cloned() {
+                    renderer.meshes.get_mut("player").unwrap().updated_animations_this_frame = false;
+                    if let Some(shadow_mesh) = &renderer.meshes.get_mut("player").unwrap().shadow_mesh {
+                        shadow_mesh.lock().unwrap().updated_animations_this_frame = false;
+                    }
                     let texture = renderer.textures.get("default").cloned().unwrap();
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;

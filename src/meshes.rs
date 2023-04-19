@@ -5,7 +5,7 @@ use std::ops::Index;
 use std::ptr::null;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use gfx_maths::*;
 use gl_matrix::vec3::{dot, multiply, normalize, subtract};
 use gl_matrix::vec4::add;
@@ -30,6 +30,8 @@ pub struct Mesh {
     pub tangent_vbo: GLuint,
     pub animations: Arc<Mutex<Option<SkeletalAnimations>>>,
     pub animation_delta: Arc<Mutex<Option<Instant>>>,
+    pub shadow_mesh: Option<Arc<Mutex<Mesh>>>,
+    pub updated_animations_this_frame: bool,
     atomic_ref_count: Arc<AtomicUsize>,
 }
 
@@ -42,6 +44,7 @@ pub struct IntermidiaryMesh {
     pub joints: Option<Vec<i32>>,
     pub weights: Option<Vec<f32>>,
     pub animations: Option<SkeletalAnimations>,
+    pub shadow_mesh: Option<Box<IntermidiaryMesh>>,
 }
 
 impl Clone for Mesh {
@@ -61,6 +64,8 @@ impl Clone for Mesh {
             tangent_vbo: self.tangent_vbo,
             animations: self.animations.clone(),
             animation_delta: self.animation_delta.clone(),
+            shadow_mesh: self.shadow_mesh.clone(),
+            updated_animations_this_frame: self.updated_animations_this_frame,
             atomic_ref_count: self.atomic_ref_count.clone(),
         }
     }
@@ -153,6 +158,17 @@ impl Drop for Mesh {
 
 impl Mesh {
     pub fn new(path: &str, mesh_name: &str, renderer: &mut ht_renderer) -> Result<Mesh, MeshError> {
+        // if a shadow mesh exists, load it first
+        let shadow_mesh = if !path.ends_with("-shadow.glb") {
+            if let Ok(shadow_mesh) = Mesh::new(format!("{}-shadow.glb", path).as_str(), mesh_name, renderer) {
+                Some(Arc::new(Mutex::new(shadow_mesh)))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // load from gltf
         let (document, buffers, images) = gltf::import(path).map_err(|_| MeshError::MeshNotFound)?;
 
@@ -232,7 +248,7 @@ impl Mesh {
         let mut vbo = 0 as GLuint;
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
-        let mut uvbo= 0 as GLuint;
+        let mut uvbo = 0 as GLuint;
         let mut normal_vbo = 0 as GLuint;
         let mut tangent_vbo = 0 as GLuint;
         let mut joint_bo = 0 as GLuint;
@@ -324,6 +340,8 @@ impl Mesh {
             normal_vbo,
             tangent_vbo,
             atomic_ref_count: Arc::new(AtomicUsize::new(1)),
+            shadow_mesh,
+            updated_animations_this_frame: false,
         })
     }
 
@@ -339,14 +357,28 @@ impl Mesh {
         let mesh_name_clone = mesh_name.to_string();
 
         thread::spawn(move || {
-            fn on_failure(failure: impl Debug) {
-                error!("failed to load mesh: {:?}", failure);
-            }
+            let finished_clone_clone = finished_clone.clone();
+            let on_failure = |failure: String| {
+                error!("failed to load mesh: {}", failure);
+                finished_clone_clone.store(true, Ordering::Relaxed);
+            };
+
+            // if a shadow mesh exists, load it first
+            let shadow_mesh = if !path_clone.ends_with("-shadow.glb") {
+                let (finished, mesh) = Mesh::new_from_name_asynch_begin(format!("{}-shadow.glb", path_clone).as_str(), &mesh_name_clone.clone());
+                while !finished.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                let mut mesh = mesh.lock().unwrap();
+                mesh.take()
+            } else {
+                None
+            };
 
             // load from gltf
             let res = gltf::import(path_clone).map_err(|_| MeshError::MeshNotFound);
             if let Err(e) = res {
-                on_failure(e);
+                on_failure(format!("{:?}", e));
                 return;
             }
             let (document, buffers, _images) = res.unwrap();
@@ -354,7 +386,7 @@ impl Mesh {
             // get the mesh
             let mesh = document.meshes().find(|m| m.name() == Some(&mesh_name_clone)).ok_or(MeshError::MeshNameNotFound);
             if let Err(e) = mesh {
-                on_failure(e);
+                on_failure(format!("{:?}", e));
                 return;
             }
             let mesh = mesh.unwrap();
@@ -366,7 +398,7 @@ impl Mesh {
             if let Some(skin) = skin {
                 let skeletal_stuff = SkeletalAnimations::load_skeleton_stuff(&skin, &mesh, document.animations(), &buffers);
                 if let Err(e) = skeletal_stuff {
-                    on_failure(e);
+                    on_failure(format!("{:?}", e));
                     return;
                 }
                 let skeletal_stuff = skeletal_stuff.unwrap();
@@ -386,7 +418,7 @@ impl Mesh {
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 let positions = reader.read_positions().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Vertices));
                 if let Err(e) = positions {
-                    on_failure(e);
+                    on_failure(format!("{:?}", e));
                     return;
                 }
                 let positions = positions.unwrap();
@@ -395,7 +427,7 @@ impl Mesh {
                 // get the indices
                 let indices = reader.read_indices().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Indices));
                 if let Err(e) = indices {
-                    on_failure(e);
+                    on_failure(format!("{:?}", e));
                     return;
                 }
                 let indices = indices.unwrap();
@@ -404,7 +436,7 @@ impl Mesh {
                 // get the texture coordinates
                 let tex_coords = reader.read_tex_coords(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::UvSource));
                 if let Err(e) = tex_coords {
-                    on_failure(e);
+                    on_failure(format!("{:?}", e));
                     return;
                 }
                 let tex_coords = tex_coords.unwrap();
@@ -414,7 +446,7 @@ impl Mesh {
                 // get the normals
                 let normals = reader.read_normals().ok_or(MeshError::MeshComponentNotFound(MeshComponent::Normals));
                 if let Err(e) = normals {
-                    on_failure(e);
+                    on_failure(format!("{:?}", e));
                     return;
                 }
                 let normals = normals.unwrap();
@@ -441,7 +473,7 @@ impl Mesh {
                 if let Some(animations) = animations.clone() {
                     let joints = reader.read_joints(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::Source));
                     if let Err(e) = joints {
-                        on_failure(e);
+                        on_failure(format!("{:?}", e));
                         return;
                     }
                     let joints = joints.unwrap();
@@ -450,7 +482,7 @@ impl Mesh {
 
                     let weights = reader.read_weights(0).ok_or(MeshError::MeshComponentNotFound(MeshComponent::Source));
                     if let Err(e) = weights {
-                        on_failure(e);
+                        on_failure(format!("{:?}", e));
                         return;
                     }
                     let weights = weights.unwrap();
@@ -480,6 +512,7 @@ impl Mesh {
                 joints: if animations.is_some() { Some(joint_array) } else { None },
                 weights: if animations.is_some() { Some(weight_array) } else { None },
                 animations,
+                shadow_mesh: shadow_mesh.map(|m| Box::new(m)),
             };
 
             mesh_clone.lock().unwrap().replace(mesh);
@@ -494,6 +527,13 @@ impl Mesh {
             return Err(MeshError::FunctionNotImplemented);
         }
         let mesh = mesh.unwrap();
+
+        let shadow_mesh = if let Some(shadow_mesh) = mesh.shadow_mesh {
+            Some(Arc::new(Mutex::new(Mesh::load_from_intermidiary(Some(*shadow_mesh), renderer)?)))
+        } else {
+            None
+        };
+
         let vertices_array = mesh.vertices;
         let indices_array = mesh.indices;
         let uvs_array = mesh.uvs;
@@ -509,7 +549,7 @@ impl Mesh {
         let mut vbo = 0 as GLuint;
         let mut vao = 0 as GLuint;
         let mut ebo = 0 as GLuint;
-        let mut uvbo= 0 as GLuint;
+        let mut uvbo = 0 as GLuint;
         let mut normal_vbo = 0 as GLuint;
         let mut tangent_vbo = 0 as GLuint;
         let mut joint_bo = 0 as GLuint;
@@ -604,6 +644,8 @@ impl Mesh {
             normal_vbo,
             tangent_vbo,
             atomic_ref_count: Arc::new(AtomicUsize::new(1)),
+            shadow_mesh,
+            updated_animations_this_frame: false,
         })
     }
 
@@ -622,13 +664,23 @@ impl Mesh {
     pub fn render(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, usize)>) {
         if let Some(shadow_pass) = shadow_pass {
             renderer.setup_shadow_pass(shadow_pass.0);
-            self.render_inner(renderer, texture, animations_weights, Some(shadow_pass));
+            self.render_inner(renderer, texture, animations_weights, Some(shadow_pass), false);
         } else {
-            self.render_inner(renderer, texture, animations_weights, None);
+            self.render_inner(renderer, texture, animations_weights, None, false);
         }
     }
 
-    fn render_inner(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, usize)>) {
+    fn render_inner(&mut self, renderer: &mut ht_renderer, texture: Option<&Texture>, animations_weights: Option<Vec<(String, f64)>>, shadow_pass: Option<(u8, usize)>, is_shadow_mesh: bool) {
+        if shadow_pass.is_some() {
+            if let Some(shadow_mesh) = &self.shadow_mesh {
+                let mut shadow_mesh = shadow_mesh.lock().unwrap();
+                shadow_mesh.position = self.position;
+                shadow_mesh.rotation = self.rotation;
+                shadow_mesh.scale = self.scale;
+                shadow_mesh.render_inner(renderer, texture, animations_weights, shadow_pass, true);
+                return;
+            }
+        }
         // load the shader
         let gbuffer_shader = if shadow_pass.is_none() { *renderer.shaders.get("gbuffer_anim").unwrap() } else if shadow_pass.unwrap().0 == 1 {
             *renderer.shaders.get("shadow").unwrap()
@@ -638,7 +690,6 @@ impl Mesh {
         set_shader_if_not_already(renderer, gbuffer_shader);
         let mut shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
         unsafe {
-
             EnableVertexAttribArray(0);
             BindVertexArray(self.vao);
             if let Some(texture) = texture {
@@ -648,12 +699,12 @@ impl Mesh {
                     shader = renderer.backend.shaders.as_mut().unwrap()[gbuffer_shader].clone();
                     // send the material struct to the shader
                     let material = texture.material;
-                    let diffuse_c = CString::new("diffuse").unwrap();
-                    let material_diffuse = GetUniformLocation(shader.program, diffuse_c.as_ptr());
-                    let roughness_c = CString::new("specular").unwrap();
-                    let material_roughness = GetUniformLocation(shader.program, roughness_c.as_ptr());
-                    let normal_c = CString::new("normalmap").unwrap();
-                    let material_normal = GetUniformLocation(shader.program, normal_c.as_ptr());
+                    static diffuse_c: &'static str = "diffuse\0";
+                    let material_diffuse = GetUniformLocation(shader.program, diffuse_c.as_ptr() as *const i8);
+                    static roughness_c: &'static str = "specular\0";
+                    let material_roughness = GetUniformLocation(shader.program, roughness_c.as_ptr() as *const i8);
+                    static normal_c: &'static str = "normalmap\0";
+                    let material_normal = GetUniformLocation(shader.program, normal_c.as_ptr() as *const i8);
 
                     // load textures
                     ActiveTexture(TEXTURE0);
@@ -688,7 +739,7 @@ impl Mesh {
                         using_autoanim = true;
                     }
                 }
-                if shadow_pass.is_none() || using_autoanim {
+                if !self.updated_animations_this_frame {
                     let delta = current_time.duration_since(self.animation_delta.lock().unwrap().unwrap_or(current_time)).as_secs_f32();
                     animations.advance_time(delta);
                     self.animation_delta.lock().unwrap().replace(current_time);
@@ -696,7 +747,7 @@ impl Mesh {
 
                 if let Some(animations_weights) = animations_weights {
                     // fill bone matrice uniform (this should already have been done if this is a shadow pass)
-                    if shadow_pass.is_none() || !using_autoanim {
+                    if !self.updated_animations_this_frame {
                         let mut anims_weights = animations_weights.iter().map(
                             |(name, weight)| {
                                 (Arc::new(animations.animations.get(name).unwrap().clone()), *weight)
@@ -706,19 +757,20 @@ impl Mesh {
                         for bone in animations.root_bones.clone().iter() {
                             animations.apply_poses_i_stole_this_from_reddit_user_a_carotis_interna(*bone, Mat4::identity(), &anims_weights);
                         }
+                        self.updated_animations_this_frame = true;
                     }
                     for (i, transform) in animations.get_joint_matrices().iter().enumerate() {
                         let bone_transforms_c = CString::new(format!("joint_matrix[{}]", i)).unwrap();
                         let bone_transforms_loc = GetUniformLocation(shader.program, bone_transforms_c.as_ptr());
                         UniformMatrix4fv(bone_transforms_loc as i32, 1, FALSE, transform.as_ptr());
                     }
-                    let care_about_animation_c = CString::new("care_about_animation").unwrap();
-                    let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+                    static care_about_animation_c: &'static str = "care_about_animation\0";
+                    let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr() as *const _);
                     Uniform1i(care_about_animation_loc, 1);
                 }
             } else {
-                let care_about_animation_c = CString::new("care_about_animation").unwrap();
-                let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+                static care_about_animation_c:&'static str = "care_about_animation\0";
+                let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr() as *const _);
                 Uniform1i(care_about_animation_loc, 0);
             }
 
@@ -732,36 +784,28 @@ impl Mesh {
             // calculate the mvp matrix
             let mvp = camera_projection * camera_view * model_matrix;
 
-            // calculate the normal matrix
-            let normal_matrix = calculate_normal_matrix(model_matrix, camera_view);
-
             // send the mvp matrix to the shader
-            let mvp_c = CString::new("u_mvp").unwrap();
-            let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr());
+            static mvp_c: &'static str = "u_mvp\0";
+            let mvp_loc = GetUniformLocation(shader.program, mvp_c.as_ptr() as *const _);
             UniformMatrix4fv(mvp_loc, 1, FALSE as GLboolean, mvp.as_ptr());
 
             // send the view and projection matrices to the shader
-            let view_c = CString::new("u_view").unwrap();
-            let view_loc = GetUniformLocation(shader.program, view_c.as_ptr());
+            static view_c: &'static str = "u_view\0";
+            let view_loc = GetUniformLocation(shader.program, view_c.as_ptr() as *const _);
             UniformMatrix4fv(view_loc, 1, FALSE as GLboolean, camera_view.as_ptr());
 
-            let projection_c = CString::new("u_projection").unwrap();
-            let projection_loc = GetUniformLocation(shader.program, projection_c.as_ptr());
+            static projection_c: &'static str = "u_projection\0";
+            let projection_loc = GetUniformLocation(shader.program, projection_c.as_ptr() as *const _);
             UniformMatrix4fv(projection_loc, 1, FALSE as GLboolean, camera_projection.as_ptr());
 
             // send the model matrix to the shader
-            let model_c = CString::new("u_model").unwrap();
-            let model_loc = GetUniformLocation(shader.program, model_c.as_ptr());
+            static model_c: &'static str = "u_model\0";
+            let model_loc = GetUniformLocation(shader.program, model_c.as_ptr() as *const _);
             UniformMatrix4fv(model_loc, 1, FALSE as GLboolean, model_matrix.as_ptr());
 
-            // send the normal matrix to the shader
-            let normal_c = CString::new("u_normal_matrix").unwrap();
-            let normal_loc = GetUniformLocation(shader.program, normal_c.as_ptr());
-            UniformMatrix3fv(normal_loc, 1, FALSE as GLboolean, normal_matrix.as_ptr());
-
             // send the camera position to the shader
-            let camera_pos_c = CString::new("u_camera_pos").unwrap();
-            let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr());
+            static camera_pos_c: &'static str = "u_camera_pos\0";
+            let camera_pos_loc = GetUniformLocation(shader.program, camera_pos_c.as_ptr() as *const _);
             Uniform3f(camera_pos_loc,
                       renderer.camera.get_position().x,
                       renderer.camera.get_position().y,
@@ -769,17 +813,13 @@ impl Mesh {
 
             if let Some((pass, light_num)) = shadow_pass {
                 // send iteration to shader
-                let pass_c = CString::new("pass").unwrap();
+                static pass_c: &'static str = "pass\0";
                 let pass_loc = GetUniformLocation(shader.program, pass_c.as_ptr() as *const i8);
                 Uniform1i(pass_loc, pass as i32);
-                // send iteration to shader
-                let pass_c = CString::new("facing_angle").unwrap();
-                let pass_loc = GetUniformLocation(shader.program, pass_c.as_ptr() as *const i8);
-                Uniform1f(pass_loc, *crate::ui::DEBUG_SHADOW_VOLUME_FACE_ANGLE.lock().unwrap());
 
                 // send the light position to the shadow shader
-                let light_pos_c = CString::new("light_pos").unwrap();
-                let light_pos = GetUniformLocation(shader.program, light_pos_c.as_ptr());
+                static light_pos_c: &'static str = "light_pos\0";
+                let light_pos = GetUniformLocation(shader.program, light_pos_c.as_ptr() as *const i8);
                 let light = renderer.lights.get(light_num as usize);
                 if let Some(light) = light {
                     let light_position = light.position;
@@ -787,34 +827,34 @@ impl Mesh {
                 }
                 // send the scene depth buffer to the shadow shader
                 let tex = renderer.backend.framebuffers.gbuffer_info2;
-                let depth_c = CString::new("scene_depth").unwrap();
-                let depth = GetUniformLocation(shader.program, depth_c.as_ptr());
+                static depth_c: &'static str = "scene_depth\0";
+                let depth = GetUniformLocation(shader.program, depth_c.as_ptr() as *const i8);
                 ActiveTexture(TEXTURE3);
                 BindTexture(TEXTURE_2D, tex as GLuint);
                 Uniform1i(depth, 3);
 
                 if pass == 2 {
                     // send back buffer to front buffer shader
-                    let backface_depth_c = CString::new("backface_depth").unwrap();
+                    static backface_depth_c: &'static str = "backface_depth\0";
                     let backface_depth_loc = GetUniformLocation(shader.program, backface_depth_c.as_ptr() as *const i8);
                     let texture = renderer.backend.framebuffers.shadow_buffer_tex_scratch as GLuint;
                     ActiveTexture(TEXTURE6);
                     BindTexture(TEXTURE_2D, texture);
                     Uniform1i(backface_depth_loc, 6);
                     // send light number to shader
-                    let light_num_c = CString::new("light_num_plus_one").unwrap();
+                    static light_num_c: &'static str = "light_num_plus_one\0";
                     let light_num_loc = GetUniformLocation(shader.program, light_num_c.as_ptr() as *const i8);
                     Uniform1i(light_num_loc, light_num as i32 + 1);
                 }
             }
 
             // REMOVE
-           // if (self.animations.is_none() && shadow_pass.is_some()) || shadow_pass.is_none() {
-                DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
+            // if (self.animations.is_none() && shadow_pass.is_some()) || shadow_pass.is_none() {
+            DrawElements(TRIANGLES, self.num_indices as GLsizei, UNSIGNED_INT, null());
             //}
 
-            let care_about_animation_c = CString::new("care_about_animation").unwrap();
-            let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr());
+            static care_about_animation_c: &'static str = "care_about_animation\0";
+            let care_about_animation_loc = GetUniformLocation(shader.program, care_about_animation_c.as_ptr() as *const _);
             Uniform1i(care_about_animation_loc, 0);
 
             // print opengl errors
@@ -831,7 +871,6 @@ impl Mesh {
         set_shader_if_not_already(renderer, shader_index);
         let shader = renderer.backend.shaders.as_mut().unwrap()[shader_index].clone();
         unsafe {
-
             EnableVertexAttribArray(0);
             BindVertexArray(self.vao);
 

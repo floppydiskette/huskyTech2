@@ -18,13 +18,6 @@ uniform int pass;
 uniform mat4 u_model;
 uniform vec3 light_pos; // position of the current light
 
-// from learnopengl.com
-float LinearizeDepth(float depth)
-{
-    float z = depth * 2.0 - 1.0; // back to NDC
-    return (2.0 * near * far) / (far + near - z * (far - near));
-}
-
 void main() {
     vec3 light_dir = (frag_pos - light_pos);
     // out_depth component 1 is the depth of polygons facing away from the camera
@@ -35,14 +28,6 @@ void main() {
     // only render if the scene depth is less than or equal to the depth of polygons facing towards the camera
     // and greater than the depth of polygons facing away from the camera
     // this prevents the shadow from being rendered in the air
-
-    float scene_depth = texture(scene_depth, gl_FragCoord.xy / textureSize(scene_depth, 0)).r;
-    float depth = LinearizeDepth(gl_FragCoord.z) / far;
-
-    float backface_shadow = texture(backface_depth, gl_FragCoord.xy / textureSize(backface_depth, 0)).r;
-
-    float range = 0.1;
-    bool equal_enough = abs(scene_depth - depth) < range;
 
     if (light_num_plus_one <= 0) {
         discard;

@@ -177,6 +177,7 @@ async fn main() {
 
             renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
             renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
+            worldmachine.next_frame(&mut renderer);
             let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta).await; // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
 
@@ -192,7 +193,6 @@ async fn main() {
                 worldmachine.render(&mut renderer, Some((2, i)));
                 renderer.next_light();
             }
-            //worldmachine.render(&mut renderer, Some(2));
 
             renderer.swap_buffers();
             renderer.backend.window.lock().unwrap().glfw.poll_events();

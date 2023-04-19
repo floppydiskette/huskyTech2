@@ -252,7 +252,6 @@ impl Server {
                     tries = 0;
                     loop {
                         let received_packet = connection.attempt_receive_steady_and_deserialise().await;
-                        debug!("received packet (waiting for consumption): {:?}", received_packet);
                         if let Err(e) = received_packet {
                             warn!("failed to receive packet from lan connection: {:?}", e);
                             return false;

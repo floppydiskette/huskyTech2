@@ -25,31 +25,9 @@ const int MAX_BONER_INFLUENCE = 4; // (:
 uniform mat4 joint_matrix[MAX_BONES];
 uniform bool care_about_animation;
 
-mat3 calculate_normals(vec3 in_normals) {
-    mat3 normal_matrix = mat3(u_model);
-    vec3 N = normalize(normal_matrix * in_normals);
-    vec3 T = normalize(normal_matrix * in_tangent.xyz);
-    vec3 B = cross(N, T);
-    return mat3(T, B, N);
-}
-
 void main()
 {
-    float f = 1.0 / tan(radians(0.5 * 90));
-    mat4 ipm = mat4(
-        f  ,  0.0,   0.0,  0.0,
-        0.0,  f  ,   0.0,  0.0,
-        0.0,  0.0,  -1.0, -0.1,
-        0.0,  0.0,  -1.0,  0.0
-    );
-    mat4 ipmr = mat4(
-        f  ,  0.0,  0.0,  0.0,
-        0.0,  f  ,  0.0,  0.0,
-        0.0,  0.0,  0.0, 0.1,
-        0.0,  0.0, -1.0,  0.0
-    );
 
-    mat4 view_model = u_view * u_model;
     vec4 total_position = vec4(0.0f);
     vec3 total_normal = vec3(0.0f);
 
@@ -66,15 +44,11 @@ void main()
             total_normal += local_normal * a_weight[i];
         }
         frag_pos = vec3(u_model * total_position);
-        TBN = calculate_normals(total_normal);
     } else {
         total_position = vec4(in_pos, 1.0);
         total_normal = in_normal;
         frag_pos = vec3(u_model * total_position);
-        TBN = calculate_normals(in_normal);
     }
-    vec3 light_dir = normalize(light_pos - frag_pos); // vector from world position to world light position
-    vec3 normal_w = normalize((mat3(u_model) * total_normal)); // normal vector in world space
 
     // facing towards the light, basically do as normal
     gl_Position = u_projection * u_view * vec4(frag_pos, 1.0);

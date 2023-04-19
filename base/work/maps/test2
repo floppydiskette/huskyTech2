@@ -905,9 +905,9 @@ entities:
       position:
         name: position
         value: !Vec3
-          x: 0.0
+          x: -9.5
           y: 0.0
-          z: 0.0
+          z: -5.0
       rotation:
         name: rotation
         value: !Quaternion
@@ -929,18 +929,18 @@ entities:
       colour:
         name: colour
         value: !Vec3
-          x: 1.5
-          y: 0.0
-          z: -0.0
+          x: 1.0
+          y: 1.0
+          z: 1.0
       intensity:
         name: intensity
-        value: !Float 0.5
+        value: !Float 0.2
       position:
         name: position
         value: !Vec3
-          x: -0.2
-          y: 6.0
-          z: 14.0
+          x: 21.5
+          y: -1.5
+          z: 10.3
     component_type:
       id: 4
       name: Light
@@ -995,6 +995,202 @@ entities:
       name: Light
   children: []
   parent: null
+- name: light
+  uid: 26
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.5
+          y: 0.0
+          z: -0.0
+      intensity:
+        name: intensity
+        value: !Float 0.5
+      position:
+        name: position
+        value: !Vec3
+          x: -0.2
+          y: 6.0
+          z: 14.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: light
+  uid: 27
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: -8.2
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.5
+          y: 3.2
+          z: -0.0
+      intensity:
+        name: intensity
+        value: !Float 0.1
+      position:
+        name: position
+        value: !Vec3
+          x: -0.2
+          y: 6.0
+          z: 14.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: light
+  uid: 28
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -9.5
+          y: 0.0
+          z: -8.2
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 0.0
+          y: 3.2
+          z: 3.1
+      intensity:
+        name: intensity
+        value: !Float 0.2
+      position:
+        name: position
+        value: !Vec3
+          x: -0.2
+          y: 6.0
+          z: 14.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: light
+  uid: 29
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -9.5
+          y: 0.0
+          z: -5.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      intensity:
+        name: intensity
+        value: !Float 0.2
+      position:
+        name: position
+        value: !Vec3
+          x: -0.2
+          y: -1.5
+          z: 14.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
 systems: []
-eid_manager: 25
+eid_manager: 29
 current_map: test
