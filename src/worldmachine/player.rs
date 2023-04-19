@@ -202,7 +202,7 @@ impl Player {
         }
     }
 
-    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool) -> Option<(Vec3, MovementInfo)> {
+    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool, frame_delta: f32) -> Option<(Vec3, MovementInfo)> {
         let mut movement = Vec3::new(0.0, 0.0, 0.0);
         let camera = &mut renderer.camera;
         let camera_rotation = camera.get_rotation();
@@ -246,64 +246,62 @@ impl Player {
         }
         self.speed = 0.0;
         self.strafe = 0.0;
-        if self.wasd[0] {
-            self.speed = lerp(0.0, 1.0, 1.0) as f64;
-            movement += camera_forward;
-        }
-        if self.wasd[1] {
-            self.strafe = lerp(0.0, -1.0, 1.0) as f64;
-            movement += camera_right;
-        }
-        if self.wasd[2] {
-            self.speed = lerp(0.0, -1.0, 1.0) as f64;
-            movement -= camera_forward;
-        }
-        if self.wasd[3] {
-            self.strafe = lerp(0.0, 1.0, 1.0) as f64;
-            movement -= camera_right;
-        }
-        if self.sprinting {
-            info.sprinting = false;
-            speed = DEFAULT_SPRINTSPEED;
-        } else {
-            info.sprinting = false;
-        }
-        info.speed = self.speed as f32;
-        info.strafe = self.strafe as f32;
-        movement = helpers::clamp_magnitude(movement, 1.0);
+        if self.has_camera_control && self.locked_mouse {
+            if self.wasd[0] {
+                self.speed = lerp(0.0, 1.0, 1.0) as f64;
+                movement += camera_forward;
+            }
+            if self.wasd[1] {
+                self.strafe = lerp(0.0, -1.0, 1.0) as f64;
+                movement += camera_right;
+            }
+            if self.wasd[2] {
+                self.speed = lerp(0.0, -1.0, 1.0) as f64;
+                movement -= camera_forward;
+            }
+            if self.wasd[3] {
+                self.strafe = lerp(0.0, 1.0, 1.0) as f64;
+                movement -= camera_right;
+            }
+            if self.sprinting {
+                info.sprinting = false;
+                speed = DEFAULT_SPRINTSPEED;
+            } else {
+                info.sprinting = false;
+            }
+            info.speed = self.speed as f32;
+            info.strafe = self.strafe as f32;
+            movement = helpers::clamp_magnitude(movement, 1.0);
 
-        if self.sprinting && movement.magnitude() > 0.0 {
-            camera.set_fov(lerp(camera.get_fov(), DEFAULT_FOV + 10.0, 0.1));
-        } else {
-            camera.set_fov(lerp(camera.get_fov(), DEFAULT_FOV, 0.1));
-        }
+            if self.sprinting && movement.magnitude() > 0.0 {
+                camera.set_fov(lerp(camera.get_fov(), DEFAULT_FOV + 10.0, 0.1));
+            } else {
+                camera.set_fov(lerp(camera.get_fov(), DEFAULT_FOV, 0.1));
+            }
 
-        movement *= speed;
+            movement *= speed;
+        }
 
         movement.y = 0.0;
         let now = std::time::Instant::now();
         let delta_time = now.duration_since(self.last_move_call).as_secs_f32();
         self.last_move_call = now;
-        let dt_movement = movement * delta_time;
-        if self.has_camera_control && self.locked_mouse {
-            self.physics_controller.as_mut().unwrap().move_by(dt_movement, jump, false, false, delta_time);
-            // uncomment next three lines for FLIGHT
-            //let mut position = self.physics_controller.as_ref().unwrap().get_position();
-            //position.y += 5.0;
-            //self.physics_controller.as_mut().unwrap().set_position(position);
+        let dt_movement = movement * frame_delta;
+        let final_movement = self.physics_controller.as_mut().unwrap().move_by(dt_movement, jump, false, false, delta_time, frame_delta);
+        // uncomment next three lines for FLIGHT
+        //let mut position = self.physics_controller.as_ref().unwrap().get_position();
+        //position.y += 5.0;
+        //self.physics_controller.as_mut().unwrap().set_position(position);
 
-            *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
+        *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
 
-            //camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
-            if movement != Vec3::new(0.0, 0.0, 0.0) {
-                self.was_moving = true;
-                Some((movement, info))
-            } else if self.was_moving {
-                self.was_moving = false;
-                Some((movement, info))
-            } else {
-                None
-            }
+        //camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
+        if final_movement != Vec3::new(0.0, 0.0, 0.0) {
+            self.was_moving = true;
+            Some((final_movement, info))
+        } else if self.was_moving {
+            self.was_moving = false;
+            Some((final_movement, info))
         } else {
             None
         }
@@ -325,7 +323,7 @@ impl Player {
 
         let jump = self.handle_jump(renderer, delta_time);
         let look = self.handle_mouse_movement(renderer, delta_time);
-        let movement = self.handle_keyboard_movement(renderer, jump);
+        let movement = self.handle_keyboard_movement(renderer, jump, delta_time);
 
         // FOR DEBUGGING, REMOVE LATER
         if keyboard::check_key_released(HTKey::Comma) {
@@ -360,7 +358,9 @@ impl Player {
             let mut new_movement = movement.1;
             new_movement.jumped = jump;
             updates.push(ClientUpdate::IDisplaced((movement.0, Some(movement.1)))); // using displaced as the returned value is a displacement vector for the physics engine
-            bob_mag = movement.0.magnitude() * 0.1;
+            let mut movement = movement.0;
+            movement.y = 0.0;
+            bob_mag = movement.magnitude() * 0.1;
         }
 
         // for lerp

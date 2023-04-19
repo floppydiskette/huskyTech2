@@ -16,7 +16,7 @@ lazy_static!{
 }
 
 pub const GRAVITY: f32 = -9.81;
-pub const PLAYER_GRAVITY: f32 = -0.31;
+pub const PLAYER_GRAVITY: f32 = -0.36;
 pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
 pub const PLAYER_JUMP_VELOCITY: f32 = 14.3;
 
@@ -301,7 +301,7 @@ unsafe impl Sync for PhysicsCharacterController {
 }
 
 impl PhysicsCharacterController {
-    pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32) {
+    pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
         let mut displacement = PxVec3 {
             x: displacement.x,
             y: displacement.y,
@@ -326,7 +326,7 @@ impl PhysicsCharacterController {
             }
         }
 
-        displacement.y = unsafe { *self.y_velocity.get() * delta_time };
+        displacement.y = unsafe { *self.y_velocity.get() * frame_delta };
 
         unsafe {
             let flags = PxController_move_mut(self.controller,
@@ -336,6 +336,8 @@ impl PhysicsCharacterController {
                                               &PxControllerFilters_new(null_mut(), null_mut(), null_mut()), null_mut());
             *self.flags.lock().unwrap() = CollisionFlags::from_bits(flags.bits());
         }
+
+        Vec3::new(displacement.x / frame_delta, displacement.y / frame_delta, displacement.z / frame_delta)
     }
 
     pub fn is_on_ground(&self) -> bool {

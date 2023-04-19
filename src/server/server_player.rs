@@ -105,7 +105,7 @@ impl ServerPlayer {
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
         displacement_vector *= delta;
-        self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta);
+        let final_movement = self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta, delta);
         self.last_move_call = current_time;
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
@@ -138,12 +138,13 @@ impl ServerPlayer {
         }
     }
 
-    pub async fn gravity_tick(&mut self, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) {
-        let delta = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
+    pub async fn gravity_tick(&mut self, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine, frame_delta: f32) {
+        let now = std::time::Instant::now();
+        let delta = now.duration_since(self.last_move_call).as_secs_f32();
         let previous_position = self.physics_controller.as_mut().unwrap().get_position();
-        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), false, true, false, delta);
+        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), false, true, false, delta, frame_delta);
         let new_position = self.physics_controller.as_mut().unwrap().get_position();
-        self.last_move_call = std::time::Instant::now();
+        self.last_move_call = now;
         if previous_position != new_position {
             self.set_position(new_position, entity_id, worldmachine).await;
         }

@@ -951,7 +951,7 @@ impl Server {
                         let players = worldmachine.players.clone().unwrap();
                         let mut players = players.lock().await;
                         for (_uuid, player) in players.iter_mut() {
-                            player.player.gravity_tick(player.entity_id, &mut worldmachine).await;
+                            player.player.gravity_tick(player.entity_id, &mut worldmachine, delta).await;
                         }
                     }
                     if let Some(delta) = worldmachine.physics.as_mut().unwrap().tick(delta + compensation_delta) {
