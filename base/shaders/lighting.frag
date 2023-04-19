@@ -20,6 +20,7 @@ const int kernel_count = 16;
 
 uniform mat4 u_projection;
 uniform mat4 u_view;
+uniform int use_shadows;
 
 // point light
 struct Light {
@@ -110,15 +111,19 @@ void main() {
         // check g comp if greater than 32
         // check r comp otherwise
         bool lit = true;
-        if (i >= 64) {
-            int mask = 1 << (i - 64);
-            lit = (shadow.b & mask) == 0;
-        } else if (i >= 32) {
-            int mask = 1 << (i - 32);
-            lit = (shadow.g & mask) == 0;
-        } else if (i >= 0) {
-            int mask = 1 << i;
-            lit = (shadow.r & mask) == 0;
+        if (use_shadows == 1) {
+            if (i >= 64) {
+                int mask = 1 << (i - 64);
+                lit = (shadow.b & mask) == 0;
+            } else if (i >= 32) {
+                int mask = 1 << (i - 32);
+                lit = (shadow.g & mask) == 0;
+            } else if (i >= 0) {
+                int mask = 1 << i;
+                lit = (shadow.r & mask) == 0;
+            }
+        } else {
+            lit = false;
         }
 
         if (!lit) {

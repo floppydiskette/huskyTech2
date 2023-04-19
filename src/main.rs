@@ -149,6 +149,15 @@ async fn main() {
 
         renderer.load_mesh_if_not_already_loaded("player");
         if !skip_intro { sunlust_intro::animate(&mut renderer, &scontext) }
+        unsafe {
+            // todo: put this somewhere else!
+            let lighting_shader = *renderer.shaders.get("lighting").unwrap();
+            helpers::set_shader_if_not_already(&mut renderer, lighting_shader);
+            let lighting_shader = renderer.backend.shaders.as_ref().unwrap().get(lighting_shader).unwrap();
+            static use_shadows_c: &'static str = "use_shadows\0";
+            let use_shadows_loc = GetUniformLocation(lighting_shader.program, use_shadows_c.as_ptr() as *const GLchar);
+            Uniform1i(use_shadows_loc, 1);
+        }
         renderer.backend.clear_colour.store(RGBA { r: 0, g: 75, b: 75, a: 255 }, Ordering::SeqCst);
         crate::ui::SHOW_UI.store(true, Ordering::SeqCst);
 

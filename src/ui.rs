@@ -17,7 +17,6 @@ lazy_static!{
     pub static ref DEBUG_LOG: Arc<Mutex<OnScreenDebugLog>> = Arc::new(Mutex::new(OnScreenDebugLog {
         buffer: VecDeque::new(),
     }));
-    pub static ref DEBUG_SHADOW_VOLUME_FACE_ANGLE: Arc<Mutex<f32>> = Arc::new(Mutex::new(0.0));
 
     pub static ref SUNLUST_INFO: Arc<Mutex<SunlustInfo>> = Arc::new(Mutex::new(SunlustInfo {
         powered_by_opacity: 0.0,
@@ -65,6 +64,7 @@ pub fn render(renderer: &mut ht_renderer) {
     SidePanel::left("left_debug")
         .frame(Frame::none())
         .show_separator_line(false)
+        .resizable(false)
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             // left align
             if SHOW_DEBUG_LOG.load(Ordering::Relaxed) {
@@ -75,6 +75,7 @@ pub fn render(renderer: &mut ht_renderer) {
     SidePanel::right("right_debug")
         .frame(Frame::none())
         .show_separator_line(false)
+        .resizable(false)
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             // right align
             if SHOW_DEBUG_LOCATION.load(Ordering::Relaxed) {
@@ -83,13 +84,6 @@ pub fn render(renderer: &mut ht_renderer) {
             if SHOW_FPS.load(Ordering::Relaxed) {
                 render_fps(ui);
             }
-        });
-
-    let mut sv_face_angle = DEBUG_SHADOW_VOLUME_FACE_ANGLE.lock().unwrap();
-    egui::Window::new("Shadow Volume")
-        .resizable(false)
-        .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
-            ui.add(egui::Slider::new(&mut *sv_face_angle, -90.0..=90.0).text("Face Angle"));
         });
 
     let egui::FullOutput {
@@ -112,6 +106,7 @@ pub fn init_sunlust(renderer: &mut ht_renderer) {
     SidePanel::left("loading_ctx")
         .frame(Frame::none())
         .show_separator_line(false)
+        .resizable(false)
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             let mut sunlust_info = SUNLUST_INFO.lock().unwrap();
             let powered_by_data = crate::textures::load_image("base/textures/ui/poweredby.png").expect("failed to load base/textures/ui/poweredby.png!");

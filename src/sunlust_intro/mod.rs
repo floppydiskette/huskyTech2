@@ -32,6 +32,15 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     let mut texture = renderer.textures.get("ht2").expect("failed to get ht2-mesh texture").clone();
     let rainbow_shader = renderer.shaders.get("rainbow").unwrap().clone();
 
+    unsafe {
+        let lighting_shader = *renderer.shaders.get("lighting").unwrap();
+        set_shader_if_not_already(renderer, lighting_shader);
+        let lighting_shader = renderer.backend.shaders.as_ref().unwrap().get(lighting_shader).unwrap();
+        static use_shadows_c: &'static str = "use_shadows\0";
+        let use_shadows_loc = GetUniformLocation(lighting_shader.program, use_shadows_c.as_ptr() as *const GLchar);
+        Uniform1i(use_shadows_loc, 0);
+    }
+
     // load textures
     let start_time = Instant::now();
     renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
@@ -65,6 +74,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
     let rainbow_time = 1032.0; // in milliseconds
     let rainbow_anim = Animation::new(Vec3::new(0.0, 0.0, -10.0), Vec3::new(0.0, 0.25, 2.0), rainbow_time);
 
+    let mut last_time = SystemTime::now();
     loop {
         // check how long it's been
         current_time = SystemTime::now();
@@ -73,6 +83,10 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         // has it been long enough?
         if time_since_start > rainbow_time {
             break;
+        }
+
+        if current_time.duration_since(last_time).unwrap().as_secs_f32() <= 0.01 {
+            continue;
         }
 
         // set colour of mesh
@@ -103,6 +117,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         if renderer.manage_window() {
             process::exit(0);
         }
+
+        last_time = current_time;
     }
 
     let normal_time = 10000.0 - rainbow_time; // in milliseconds
@@ -126,6 +142,10 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         if time_since_start > normal_time {
             break;
         }
+
+        if current_time.duration_since(last_time).unwrap().as_secs_f32() <= 0.01 {
+            continue;
+        }
         renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
         renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
         let time_since_start =  time_since_start + rainbow_time;
@@ -135,7 +155,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         mesh.position = point;
         // set the rotation of the mesh
         mesh.rotation = Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, 0.0, dutch));
-        dutch += 0.01;
+        dutch += 0.01 * current_time.duration_since(last_time).unwrap().as_secs_f32();
 
         unsafe {
             Viewport(0, 0, renderer.render_size.x as i32, renderer.render_size.y as i32);
@@ -187,6 +207,7 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         last_time = current_time;
     }
     let copyright_time = 2000.0 + normal_time; // in milliseconds
+    let mut last_time = SystemTime::now();
 
     loop {
         // check how long it's been
@@ -195,6 +216,10 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         let time_since_start = time_since_start.as_millis() as f32;
         if time_since_start > copyright_time {
             break;
+        }
+
+        if current_time.duration_since(last_time).unwrap().as_secs_f32() <= 0.01 {
+            continue;
         }
         renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
         renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
@@ -211,6 +236,8 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         if renderer.manage_window() {
             process::exit(0);
         }
+
+        last_time = current_time;
     }
 
     sss.state().remove_source(source_handle);
