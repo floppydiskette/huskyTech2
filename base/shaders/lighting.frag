@@ -7,8 +7,8 @@ uniform sampler2D position;
 uniform sampler2D normal;
 uniform sampler2D albedospec;
 uniform sampler2D info;
-uniform sampler2D info2;
 uniform isampler2D shadow_mask;
+uniform sampler2D scene_depth;
 
 // it looks nicer without ao in the sunlust intro
 uniform bool disable_ao;
@@ -27,6 +27,7 @@ struct Light {
     vec3 position;
     vec3 colour;
     float intensity;
+    float radius;
 };
 
 #define MAX_LIGHTS 100
@@ -51,7 +52,11 @@ vec3 calculate_light(Light light, vec3 albedo, float specu, vec2 uv, vec3 normal
     float shininess = specu * 4.0;
     float spec = pow(max(dot(normal, halfway_dir), 0.0), shininess);
 
-    return light.intensity * (diff * light.colour + spec * light.colour);
+    float distance = length(light.position - frag_pos);
+    float attenuation = 1.0 - clamp(distance / light.radius, 0.0, 1.0);
+
+    //return light.intensity * (diff * light.colour + spec * light.colour);
+    return light.intensity * attenuation * (diff * light.colour + spec * light.colour);
 }
 
 float rand(vec2 co){
@@ -110,7 +115,7 @@ void main() {
         // check b comp if greater than 64
         // check g comp if greater than 32
         // check r comp otherwise
-        bool lit = true;
+        bool lit = false;
         if (use_shadows == 1) {
             if (i >= 64) {
                 int mask = 1 << (i - 64);
@@ -127,7 +132,7 @@ void main() {
         }
 
         if (!lit) {
-            result += calculate_light(u_lights[i], albedo, spec, uv, normal, frag_pos, view_dir, ambient);
+            result += clamp(calculate_light(u_lights[i], albedo, spec, uv, normal, frag_pos, view_dir, ambient), 0.0, 1.0);
         }
     }
 

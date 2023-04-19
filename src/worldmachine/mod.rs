@@ -375,6 +375,7 @@ impl WorldMachine {
                     position,
                     color,
                     intensity: intensity as f32,
+                    radius: 40.0,
                 });
             }
         }
@@ -1160,6 +1161,16 @@ impl WorldMachine {
                             continue;
                         }
                     };
+
+                    // todo: add "shadow casting" parameter to mesh renderer and stop hardcoding this
+                    if mesh_name == "Plane" {
+                        if let Some((pass, _)) = shadow_pass {
+                            if pass == 1 {
+                                continue;
+                            }
+                        }
+                    }
+
                     // if so, render it
                     let mesh = renderer.meshes.get(&*mesh_name).cloned();
                     if let Some(mut mesh) = mesh {

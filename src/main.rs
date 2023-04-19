@@ -197,7 +197,15 @@ async fn main() {
 
         let mut last_frame_time = std::time::Instant::now();
         let mut compensation_delta = 0.0;
+        let mut lag_timer = Instant::now();
         loop {
+
+            if lag_timer.elapsed().as_secs_f64() > 0.01 {
+                lag_timer = Instant::now();
+            } else {
+                continue;
+            }
+
             let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
             last_frame_time = Instant::now();
 

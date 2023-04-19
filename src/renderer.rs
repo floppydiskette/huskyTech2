@@ -23,7 +23,7 @@ use crate::textures::{IntermidiaryTexture, Texture};
 use crate::worldmachine::WorldMachine;
 
 pub static MAX_LIGHTS: usize = 100;
-pub static SHADOW_FRAC: i32 = 1; // note: currently it does not seem that any performance is gained by increasing this value
+pub static SHADOW_FRAC: i32 = 2; // note: currently it does not seem that any performance is gained by increasing this value
 
 #[derive(Clone, Copy)]
 pub struct RGBA {
@@ -109,10 +109,6 @@ pub struct Framebuffers {
 
     pub postbuffer: usize,
     pub postbuffer_texture: usize,
-    pub postbuffer_rbuffer: usize,
-
-    pub depthbuffer: usize,
-    pub depthbuffer_texture: usize,
 
     pub screenquad_vao: usize,
 
@@ -122,7 +118,7 @@ pub struct Framebuffers {
     pub gbuffer_normal: usize,
     pub gbuffer_albedo: usize, // or colour, call it what you want
     pub gbuffer_info: usize, // specular, lighting, etc
-    pub gbuffer_info2: usize, // depth, etc
+    pub gbuffer_depth: usize,
     pub gbuffer_rbuffer: usize,
 
     pub shadow_buffer_scratch: usize,
@@ -131,7 +127,6 @@ pub struct Framebuffers {
     pub shadow_buffer_tex_mask: usize,
 
     pub samples: [Vec3; 256],
-    pub noise_texture: usize,
 
 }
 
@@ -183,23 +178,19 @@ impl ht_renderer {
                         original: 0,
                         postbuffer: 0,
                         postbuffer_texture: 0,
-                        postbuffer_rbuffer: 0,
-                        depthbuffer: 0,
-                        depthbuffer_texture: 0,
                         screenquad_vao: 0,
                         gbuffer: 0,
                         gbuffer_position: 0,
                         gbuffer_normal: 0,
                         gbuffer_albedo: 0,
                         gbuffer_info: 0,
-                        gbuffer_info2: 0,
+                        gbuffer_depth: 0,
                         gbuffer_rbuffer: 0,
                         shadow_buffer_scratch: 0,
                         shadow_buffer_mask: 0,
                         shadow_buffer_tex_scratch: 0,
                         shadow_buffer_tex_mask: 0,
                         samples: [Vec3::new(0.0, 0.0, 0.0); 256],
-                        noise_texture: 0,
                     };
 
                     Viewport(0, 0, render_width as i32, render_height as i32);
@@ -236,12 +227,6 @@ impl ht_renderer {
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, posttexture, 0);
-                    // create a renderbuffer object for depth and stencil attachment (we won't be sampling these)
-                    let mut renderbuffer = 0;
-                    GenRenderbuffers(1, &mut renderbuffer);
-                    BindRenderbuffer(RENDERBUFFER, renderbuffer);
-                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
-                    FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, renderbuffer);
 
                     // check if framebuffer is complete
                     if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
@@ -249,7 +234,6 @@ impl ht_renderer {
                     }
                     framebuffers.postbuffer = postbuffer as usize;
                     framebuffers.postbuffer_texture = posttexture as usize;
-                    framebuffers.postbuffer_rbuffer = renderbuffer as usize;
 
                     // create a simple quad that fills the screen
                     let mut screenquad_vao = 0;
@@ -289,23 +273,6 @@ impl ht_renderer {
                         framebuffers.samples[i] = sample * scale;
                     }
 
-                    // generate noise texture
-                    let mut noise = Vec::new();
-                    for _ in 0..16 {
-                        noise.push(rng.gen_range(-1.0..1.0));
-                        noise.push(rng.gen_range(-1.0..1.0));
-                        noise.push(0.0);
-                    }
-                    let mut noise_texture = 0;
-                    GenTextures(1, &mut noise_texture);
-                    BindTexture(TEXTURE_2D, noise_texture);
-                    TexImage2D(TEXTURE_2D, 0, RGB16F as i32, 4, 4, 0, RGB, FLOAT, noise.as_ptr() as *const c_void);
-                    TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
-                    TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT as i32);
-                    TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT as i32);
-                    framebuffers.noise_texture = noise_texture as usize;
-
                     // create the gbuffer
                     let mut gbuffer = 0;
                     GenFramebuffers(1, &mut gbuffer);
@@ -339,13 +306,20 @@ impl ht_renderer {
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT3, TEXTURE_2D, gbuffer_textures[3], 0);
                     // depth
                     BindTexture(TEXTURE_2D, gbuffer_textures[4]);
-                    TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT4, TEXTURE_2D, gbuffer_textures[4], 0);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT3, TEXTURE_2D, gbuffer_textures[4], 0);
 
-                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, COLOR_ATTACHMENT2, COLOR_ATTACHMENT3, COLOR_ATTACHMENT4];
-                    DrawBuffers(5, attachments.as_ptr());
+                    // renderbuffer for gbuffer
+                    let mut gbuffer_renderbuffer = 0;
+                    GenRenderbuffers(1, &mut gbuffer_renderbuffer);
+                    BindRenderbuffer(RENDERBUFFER, gbuffer_renderbuffer);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
+                    FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, gbuffer_renderbuffer);
+
+                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, COLOR_ATTACHMENT2, COLOR_ATTACHMENT3];
+                    DrawBuffers(4, attachments.as_ptr());
 
                     if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
                         panic!("framebuffer is not complete (gbuffer)!");
@@ -356,14 +330,7 @@ impl ht_renderer {
                     framebuffers.gbuffer_normal = gbuffer_textures[1] as usize;
                     framebuffers.gbuffer_albedo = gbuffer_textures[2] as usize;
                     framebuffers.gbuffer_info = gbuffer_textures[3] as usize;
-                    framebuffers.gbuffer_info2 = gbuffer_textures[4] as usize;
-
-                    // renderbuffer for gbuffer
-                    let mut gbuffer_renderbuffer = 0;
-                    GenRenderbuffers(1, &mut gbuffer_renderbuffer);
-                    BindRenderbuffer(RENDERBUFFER, gbuffer_renderbuffer);
-                    RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT, render_width, render_height);
-                    FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER, gbuffer_renderbuffer);
+                    framebuffers.gbuffer_depth = gbuffer_textures[4] as usize;
 
                     // shadow buffers (scratch and mask, scratch is as small as we can get it, mask is RGB32UI)
                     let mut shadow_buffers = [0; 2];
@@ -385,7 +352,7 @@ impl ht_renderer {
                     let mut shadow_buffer_renderbuffer = 0;
                     GenRenderbuffers(1, &mut shadow_buffer_renderbuffer);
                     BindRenderbuffer(RENDERBUFFER, shadow_buffer_renderbuffer);
-                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
+                    RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width / SHADOW_FRAC, render_height / SHADOW_FRAC);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, shadow_buffer_renderbuffer);
 
                     let attachments = [COLOR_ATTACHMENT0];
@@ -821,7 +788,7 @@ impl ht_renderer {
 
             // clear if first iteration
             if iteration == 1 {
-                Viewport(0, 0, self.render_size.x as i32, self.render_size.y as i32);
+                Viewport(0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC);
                 Enable(DEPTH_TEST);
                 Enable(DEPTH_CLAMP);
                 DepthFunc(LEQUAL);
@@ -842,7 +809,7 @@ impl ht_renderer {
                 // blit depth and stencil buffer from scratch shadow buffer
                 BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
                 BindFramebuffer(DRAW_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_mask as GLuint);
-                BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC, STENCIL_BUFFER_BIT, NEAREST);
+                BlitFramebuffer(0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC, 0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC, STENCIL_BUFFER_BIT, NEAREST);
 
                 Disable(DEPTH_CLAMP);
                 Enable(COLOR_LOGIC_OP);
@@ -866,7 +833,7 @@ impl ht_renderer {
             // blit depth buffer from gbuffer
             BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
             BindFramebuffer(DRAW_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
-            BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32, self.render_size.y as i32, DEPTH_BUFFER_BIT, NEAREST);
+            BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC, DEPTH_BUFFER_BIT, NEAREST);
         }
     }
 
@@ -885,7 +852,7 @@ impl ht_renderer {
             // blit depth buffer from gbuffer
             BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.gbuffer as GLuint);
             BindFramebuffer(DRAW_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
-            BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32, self.render_size.y as i32, DEPTH_BUFFER_BIT, NEAREST);
+            BlitFramebuffer(0, 0, self.render_size.x as i32, self.render_size.y as i32, 0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC, DEPTH_BUFFER_BIT, NEAREST);
         }
     }
 
@@ -937,10 +904,13 @@ impl ht_renderer {
                 let light_color = GetUniformLocation(lighting_shader.program, light_colour_c.as_ptr());
                 let light_intensity_c = CString::new(format!("u_lights[{}].intensity", i)).unwrap();
                 let light_intensity = GetUniformLocation(lighting_shader.program, light_intensity_c.as_ptr());
+                let light_radius_c = CString::new(format!("u_lights[{}].radius", i)).unwrap();
+                let light_radius = GetUniformLocation(lighting_shader.program, light_radius_c.as_ptr());
 
                 Uniform3f(light_pos, light.position.x, light.position.y, light.position.z);
                 Uniform3f(light_color, light.color.x, light.color.y, light.color.z);
                 Uniform1f(light_intensity, light.intensity);
+                Uniform1f(light_radius, light.radius);
             }
 
             // bind the gbuffer textures
@@ -965,10 +935,10 @@ impl ht_renderer {
             let gbuffer_info_loc = GetUniformLocation(lighting_shader.program, gbuffer_info_c.as_ptr());
             Uniform1i(gbuffer_info_loc, 3);
             ActiveTexture(TEXTURE4);
-            BindTexture(TEXTURE_2D, self.backend.framebuffers.gbuffer_info2 as GLuint);
-            let gbuffer_info2_c = CString::new("info2").unwrap();
-            let gbuffer_info2_loc = GetUniformLocation(lighting_shader.program, gbuffer_info2_c.as_ptr());
-            Uniform1i(gbuffer_info2_loc, 4);
+            BindTexture(TEXTURE_2D, self.backend.framebuffers.gbuffer_depth as GLuint);
+            let scene_depth_c = CString::new("scene_depth").unwrap();
+            let scene_depth_loc = GetUniformLocation(lighting_shader.program, scene_depth_c.as_ptr());
+            Uniform1i(scene_depth_loc, 4);
             // bind the shadow textures
             ActiveTexture(TEXTURE5);
             BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_mask as GLuint);
@@ -1021,8 +991,8 @@ impl ht_renderer {
             BindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);
             Disable(DEPTH_TEST);
 
-            // enable gamma correction
-            Enable(FRAMEBUFFER_SRGB);
+            // gamma correction was already done in the lighting pass, don't enable again
+            Disable(FRAMEBUFFER_SRGB);
 
             // make sure that gl doesn't cull the back face of the quad
             Disable(CULL_FACE);

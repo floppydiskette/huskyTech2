@@ -826,12 +826,12 @@ impl Mesh {
                     Uniform3f(light_pos, light_position.x, light_position.y, light_position.z);
                 }
                 // send the scene depth buffer to the shadow shader
-                let tex = renderer.backend.framebuffers.gbuffer_info2;
-                static depth_c: &'static str = "scene_depth\0";
-                let depth = GetUniformLocation(shader.program, depth_c.as_ptr() as *const i8);
-                ActiveTexture(TEXTURE3);
-                BindTexture(TEXTURE_2D, tex as GLuint);
-                Uniform1i(depth, 3);
+                //let tex = renderer.backend.framebuffers.gbuffer_info2;
+                //static depth_c: &'static str = "scene_depth\0";
+                //let depth = GetUniformLocation(shader.program, depth_c.as_ptr() as *const i8);
+                //ActiveTexture(TEXTURE3);
+                //BindTexture(TEXTURE_2D, tex as GLuint);
+                //Uniform1i(depth, 3);
 
                 if pass == 2 {
                     // send back buffer to front buffer shader

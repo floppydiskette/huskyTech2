@@ -7,6 +7,7 @@ pub struct Light {
     pub position: Vec3,
     pub color: Vec3,
     pub intensity: f32,
+    pub radius: f32,
 }
 
 impl Light {
@@ -31,6 +32,7 @@ impl Light {
                 position,
                 color,
                 intensity,
+                radius: 10.0,
             })
         } else {
             None
