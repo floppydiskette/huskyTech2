@@ -16,3 +16,6 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# don't commit glfw lib files
+glfw*

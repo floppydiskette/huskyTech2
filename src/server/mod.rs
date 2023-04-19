@@ -1,6 +1,7 @@
 use halfbrown::HashMap;
 use std::collections::{VecDeque};
 use std::sync::Arc;
+use async_recursion::async_recursion;
 use gfx_maths::*;
 use tokio::sync::{mpsc, Mutex, watch};
 use tokio::time::{Instant, Duration};
@@ -56,7 +57,14 @@ pub struct FastPacketData {
 }
 
 unsafe impl Send for FastPacketData {}
+
 unsafe impl Sync for FastPacketData {}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NameRejectionReason {
+    IllegalWord,
+    Taken,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SteadyPacket {
@@ -69,6 +77,9 @@ pub enum SteadyPacket {
     InitialisePlayer(ConnectionUUID, EntityId, String, Vec3, Quaternion, Vec3),
     // uuid, (entity id so we know to ignore updates from that entity), name, position, rotation, scale
     Message(String),
+    ChatMessage(ConnectionUUID, String),
+    SetName(ConnectionUUID, String),
+    NameRejected(NameRejectionReason),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -139,10 +150,10 @@ impl Server {
         let listener = LanListener::new(hostname, tcp_port, udp_port).await;
 
         let the_self = Self {
-                connections: Connections::Lan(listener.clone(), Arc::new(Mutex::new(Vec::new()))),
-                connections_incoming: Arc::new(Mutex::new(VecDeque::new())),
-                worldmachine: Arc::new(Mutex::new(worldmachine)),
-            };
+            connections: Connections::Lan(listener.clone(), Arc::new(Mutex::new(Vec::new()))),
+            connections_incoming: Arc::new(Mutex::new(VecDeque::new())),
+            worldmachine: Arc::new(Mutex::new(worldmachine)),
+        };
         let the_clone = the_self.clone();
         let listener_clone = listener;
         tokio::spawn(async move {
@@ -391,7 +402,7 @@ impl Server {
         // relock worldmachine
         let mut worldmachine = self.worldmachine.lock().await;
         worldmachine.world.entities.push(player_entity.clone());
-        let res =  self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(
+        let res = self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(
             player.uuid.clone(),
             entity_uuid,
             player.name.clone(),
@@ -420,6 +431,7 @@ impl Server {
         }
     }
 
+    #[async_recursion]
     async fn handle_steady_packets(&self, connection: Connection) -> bool {
         match connection.clone() {
             Connection::Local(local_connection) => {
@@ -445,6 +457,39 @@ impl Server {
                             SteadyPacket::Message(_) => {}
                             SteadyPacket::FinaliseMapLoad => {}
                             SteadyPacket::RemoveEntity(_) => {}
+                            SteadyPacket::ChatMessage(_who_sent, message) => {
+                                // mirror to all other clients
+                                let who_sent = local_connection.uuid.clone();
+                                let packet = SteadyPacket::ChatMessage(who_sent, message);
+                                match &self.connections {
+                                    Connections::Local(local_connections) => {
+                                        let cons = local_connections.lock().await.clone();
+                                        for connection in cons.iter() {
+                                            self.send_steady_packet(&Connection::Local(connection.clone()), packet.clone()).await;
+                                        }
+                                    }
+                                    Connections::Lan(_, _) => {
+                                        unimplemented!()
+                                    }
+                                }
+                            }
+                            SteadyPacket::SetName(_who_sent, new_name) => {
+                                // mirror to all other clients
+                                let who_sent = local_connection.uuid.clone();
+                                let packet = SteadyPacket::SetName(who_sent, new_name);
+                                match &self.connections {
+                                    Connections::Local(local_connections) => {
+                                        let cons = local_connections.lock().await.clone();
+                                        for connection in cons.iter() {
+                                            self.send_steady_packet(&Connection::Local(connection.clone()), packet.clone()).await;
+                                        }
+                                    }
+                                    Connections::Lan(_, _) => {
+                                        unimplemented!()
+                                    }
+                                }
+                            }
+                            SteadyPacket::NameRejected(_) => {}
                         }
                     }
                 }
@@ -461,20 +506,75 @@ impl Server {
                         SteadyPacket::KeepAlive => {
                             // do nothing
                         }
-                        SteadyPacket::InitialiseEntity(_uid, _entity) => {
-                            // client shouldn't be sending this
-                            debug!("client sent initialise packet");
-                        }
                         SteadyPacket::Consume(_) => {
                             // oops, requeue the packet
                             connection.steady_receive_queue.lock().await.0.push(packet_og.unwrap());
                         }
+                        SteadyPacket::ChatMessage(_who_sent, message) => {
+                            // mirror to all other clients
+                            let who_sent = connection.uuid.clone();
+                            let packet = SteadyPacket::ChatMessage(who_sent, message);
+                            match &self.connections {
+                                Connections::Lan(listener, connections) => {
+                                    let cons = connections.lock().await.clone();
+                                    for a_connection in cons.iter() {
+                                        self.send_steady_packet(&Connection::Lan(listener.clone(), a_connection.clone()), packet.clone()).await;
+                                    }
+                                }
+                                Connections::Local(_) => {
+                                    unimplemented!()
+                                }
+                            }
+                        }
+                        SteadyPacket::SetName(_who_sent, new_name) => {
+                            match &self.connections {
+                                Connections::Lan(listener, connections) => {
+                                    // check if name is taken
+                                    let mut name_taken = false;
+                                    let mut wm = self.worldmachine.lock().await;
+                                    let players = wm.players.as_mut().unwrap().lock().await;
+                                    for player in players.values() {
+                                        if player.player.name == new_name {
+                                            name_taken = true;
+                                            break;
+                                        }
+                                    }
+                                    drop(players);
+                                    drop(wm);
+                                    if name_taken {
+                                        self.send_steady_packet(&Connection::Lan(listener.clone(), connection.clone()), SteadyPacket::NameRejected(NameRejectionReason::Taken)).await;
+                                    } else {
+                                        // set name
+                                        let mut wm = self.worldmachine.lock().await;
+                                        let mut players = wm.players.as_mut().unwrap().lock().await;
+                                        let player = players.get_mut(&connection.uuid).unwrap();
+                                        player.player.name = new_name.clone();
+                                        drop(players);
+                                        drop(wm);
+
+                                        // send to all other clients
+                                        let packet = SteadyPacket::SetName(connection.uuid.clone(), new_name);
+                                        let cons = connections.lock().await.clone();
+                                        for a_connection in cons {
+                                            self.send_steady_packet(&Connection::Lan(listener.clone(), a_connection.clone()), packet.clone()).await;
+                                        }
+                                    }
+                                }
+                                Connections::Local(_) => {
+                                    unimplemented!()
+                                }
+                            }
+                        }
+
                         // client shouldn't be sending these
+
+                        SteadyPacket::InitialiseEntity(_, _) => {}
                         SteadyPacket::SelfTest => {}
                         SteadyPacket::InitialisePlayer(_, _, _, _, _, _) => {}
                         SteadyPacket::Message(_) => {}
                         SteadyPacket::FinaliseMapLoad => {}
                         SteadyPacket::RemoveEntity(_) => {}
+                        SteadyPacket::NameRejected(_) => {}
                     }
                 }
             }
@@ -490,8 +590,7 @@ impl Server {
             let mut players = players.as_mut().unwrap().lock().await;
             let player = players.get_mut(&uuid).unwrap();
             let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, movement_info.unwrap_or_default(), player.entity_id, &mut worldmachine).await;
-            if success {
-            } else {
+            if success {} else {
                 let connection = connection.clone();
                 self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, &mut worldmachine).await)).await
             }
@@ -572,8 +671,7 @@ impl Server {
                         }
 
                         /// deprecated
-                        FastPacket::PlayerJump(uuid) => {
-                        }
+                        FastPacket::PlayerJump(uuid) => {}
 
                         // client shouldn't be sending these
                         FastPacket::ChangePosition(_, _) => {}
@@ -828,7 +926,6 @@ impl Server {
     pub async fn run(&mut self) {
         let mut compensation_delta = 0.0;
         loop {
-
             self.listen_for_lan_connections().await;
 
 

@@ -20,6 +20,7 @@ use crate::helpers::{load_string_from_file, set_shader_if_not_already};
 use crate::light::Light;
 use crate::meshes::{IntermidiaryMesh, Mesh};
 use crate::textures::{IntermidiaryTexture, Texture};
+use crate::worldmachine::WorldMachine;
 
 pub static MAX_LIGHTS: usize = 100;
 pub static SHADOW_FRAC: i32 = 1; // note: currently it does not seem that any performance is gained by increasing this value
@@ -169,7 +170,7 @@ impl ht_renderer {
 
                     window.make_current();
                     window.set_key_polling(true);
-                    window.set_sticky_keys(true);
+                    window.set_char_polling(true);
                     window.set_cursor_pos_polling(true);
                     window.set_mouse_button_polling(true);
                     window.set_size_polling(true);
@@ -734,12 +735,12 @@ impl ht_renderer {
         self.lights = lights;
     }
 
-    pub fn swap_buffers(&mut self) {
+    pub async fn swap_buffers(&mut self, wm: &mut WorldMachine) {
         self.setup_pass_two(0);
         self.setup_pass_three();
         /* egui */
 
-        crate::ui::render(self);
+        crate::ui::render(self, wm).await;
 
         unsafe {
             self.backend.window.lock().unwrap().swap_buffers();

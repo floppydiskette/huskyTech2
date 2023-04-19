@@ -18,8 +18,9 @@ use crate::audio::AudioBackend;
 use crate::common_anim::move_anim::{Features, MoveAnim};
 use crate::helpers::{add_quaternion, from_q64, multiply_quaternion, rotate_vector_by_quaternion, to_q64};
 use crate::physics::{Materials, PhysicsSystem};
-use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, SteadyPacket, SteadyPacketData};
+use crate::server::{ConnectionClientside, ConnectionUUID, FastPacket, FastPacketData, NameRejectionReason, SteadyPacket, SteadyPacketData};
 use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
+use crate::ui_defs::chat;
 use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYPE_JUKEBOX, COMPONENT_TYPE_LIGHT, COMPONENT_TYPE_MESH_RENDERER, COMPONENT_TYPE_PLAYER, COMPONENT_TYPE_TERRAIN, COMPONENT_TYPE_TRANSFORM, COMPONENT_TYPE_TRIGGER, Light, MeshRenderer, Terrain, Transform};
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::MapLoadError::FolderNotFound;
@@ -107,7 +108,7 @@ pub struct WorldMachine {
     client_update_queue: Arc<Mutex<VecDeque<ClientUpdate>>>,
     player: Option<PlayerContainer>,
     ignore_this_entity: Option<EntityId>, // should be the player entity that other players will see, we don't want it's updates to be received because we already know them
-    pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>,
+    pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>, // not used clientside
 }
 
 impl Default for WorldMachine {
@@ -476,6 +477,26 @@ impl WorldMachine {
         }
     }
 
+    async fn send_steady_message(&mut self, message: SteadyPacketData) {
+        if let Some(connection) = &mut self.server_connection {
+            match connection {
+                ConnectionClientside::Local(connection) => {
+                    let mut connection = connection.lock().await;
+                    let attempt = connection.steady_update_sender.send(message);
+                    if attempt.is_err() {
+                        error!("send_steady_message: failed to send message");
+                    }
+                }
+                ConnectionClientside::Lan(connection) => {
+                    let attempt = connection.send_steady_and_serialise(message).await;
+                    if attempt.is_err() {
+                        error!("send_steady_message: failed to send message");
+                    }
+                }
+            }
+        }
+    }
+
     async fn consume_steady_message(&mut self, message: SteadyPacketData) {
         if let Some(connection) = &mut self.server_connection {
             match connection {
@@ -523,6 +544,20 @@ impl WorldMachine {
         }
     }
 
+    pub async fn set_name(&mut self, name: String) {
+        self.send_steady_message(SteadyPacketData {
+            packet: Some(SteadyPacket::SetName(String::new(), name)),
+            uuid: Some(server::generate_uuid()),
+        }).await;
+    }
+
+    pub async fn send_chat_message(&mut self, message: String) {
+        self.send_steady_message(SteadyPacketData {
+            packet: Some(SteadyPacket::ChatMessage(String::new(), message)),
+            uuid: Some(server::generate_uuid()),
+        }).await;
+    }
+
     async fn handle_steady_message(&mut self, packet: SteadyPacket) {
         match packet {
             SteadyPacket::Consume(_) => {}
@@ -533,6 +568,11 @@ impl WorldMachine {
                         return;
                     }
                 }
+
+                if let Some(_player) = entity_data.get_component(COMPONENT_TYPE_PLAYER.clone()) {
+                    chat::write_chat("engine".to_string(), "a new player has joined!".to_string());
+                }
+
                 // check if we already have this entity
                 if self.get_entity(entity_id).is_none() {
                     let mut entity = unsafe {
@@ -559,7 +599,8 @@ impl WorldMachine {
             }
             SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
                 let mut player = Player::default();
-                player.init(self.physics.clone().unwrap(), uuid, name, position, rotation, scale);
+                player.init(self.physics.clone().unwrap(), uuid, name.clone(), position, rotation, scale);
+                chat::CHAT_BUFFER.lock().unwrap().my_name = name;
                 self.ignore_this_entity = Some(id);
                 self.player = Some(PlayerContainer {
                     player,
@@ -580,6 +621,90 @@ impl WorldMachine {
                     self.world.entities.remove(entity_index);
                     debug!("remove entity message received");
                     debug!("world entities: {:?}", self.world.entities);
+                }
+            }
+            SteadyPacket::ChatMessage(who_sent, message) => {
+                let mut dont_show = false;
+                if let Some(player) = &self.player {
+                    if player.player.uuid == who_sent {
+                        dont_show = true;
+                    }
+                }
+                if !dont_show {
+                    let players = self.world.entities.iter().filter(|e| e.has_component(COMPONENT_TYPE_PLAYER.clone())).collect::<Vec<&Entity>>();
+                    let name = {
+                        let mut namebuf = None;
+                        for player in players {
+                            if let Some(player_component) = player.get_component(COMPONENT_TYPE_PLAYER.clone()) {
+                                let uuid = player_component.get_parameter("uuid").unwrap();
+                                let uuid = match &uuid.value {
+                                    ParameterValue::String(uuid) => uuid,
+                                    _ => panic!("uuid is not a string")
+                                };
+                                let name = player_component.get_parameter("name").unwrap();
+                                let name = match &name.value {
+                                    ParameterValue::String(name) => name,
+                                    _ => panic!("name is not a string")
+                                };
+
+                                if uuid == &who_sent {
+                                    namebuf = Some(name.clone());
+                                }
+                            }
+                        }
+                        namebuf
+                    };
+                    if let Some(name) = name {
+                        chat::write_chat(name, message);
+                    } else {
+                        chat::write_chat(who_sent, message);
+                    }
+                }
+            }
+            SteadyPacket::SetName(who_sent, new_name) => {
+                let players = self.world.entities.iter().filter(|e| e.has_component(COMPONENT_TYPE_PLAYER.clone())).collect::<Vec<&Entity>>();
+                let name = {
+                    let mut namebuf = None;
+                    for player in players {
+                        if let Some(player_component) = player.get_component(COMPONENT_TYPE_PLAYER.clone()) {
+                            let uuid = player_component.get_parameter("uuid").unwrap();
+                            let uuid = match &uuid.value {
+                                ParameterValue::String(uuid) => uuid,
+                                _ => panic!("uuid is not a string")
+                            };
+                            let name = player_component.get_parameter("name").unwrap();
+                            let name = match &name.value {
+                                ParameterValue::String(name) => name,
+                                _ => panic!("name is not a string")
+                            };
+
+                            if uuid == &who_sent {
+                                namebuf = Some(name.clone());
+                            }
+                        }
+                    }
+                    namebuf
+                };
+                if let Some(name) = name {
+                    chat::write_chat("server".to_string(), format!("{} is now known as {}", name, new_name));
+                } else {
+                    chat::write_chat("server".to_string(), format!("{} is now known as {}", who_sent, new_name));
+                }
+                if let Some(players) = &self.players {
+                    let mut players = players.lock().await;
+                    if let Some(player) = players.get_mut(&who_sent) {
+                        player.player.name = new_name;
+                    }
+                }
+            }
+            SteadyPacket::NameRejected(reason) => {
+                match reason {
+                    NameRejectionReason::IllegalWord => {
+                        chat::write_chat("server".to_string(), "whoa there! we don't use that kind of language here!".to_string());
+                    }
+                    NameRejectionReason::Taken => {
+                        chat::write_chat("server".to_string(), "your name was rejected because it is already taken".to_string());
+                    }
                 }
             }
         }

@@ -4,9 +4,10 @@ version = "0.0.1"
 edition = "2021"
 
 [features]
-default = [ "graphical" ]
+default = [ "graphical", "linux_graphical" ]
 headless = [ ]
 graphical = [ "glfw", "egui_glfw_gl", "glad-gl", "fyrox-sound" ]
+linux_graphical = [ "graphical", "glfw/default" ]
 
 [dependencies]
 gltf = { version = "1.0", features = ["names", "utils"] }
@@ -17,9 +18,9 @@ uuid = { version = "1.1.2", features = ["v4"] }
 egui_glfw_gl = { git = "https://github.com/floppydiskette/egui_glfw_gl", optional = true }
 fyrox-sound = { version = "0.30.0", optional = true }
 halfbrown = "0.1.15"
-glfw = { version = "0.51.0", optional = true }
+glfw = { version = "0.51.0", optional = true, default-features = false }
 async-recursion = "1.0.0"
-physx-sys = { git = "https://github.com/EmbarkStudios/physx-rs" } # todo: update once "Fix unnecessary recompiles" is added to a release
+physx-sys = { version = "0.11.0" } # todo: update once "Fix unnecessary recompiles" is added to a release
 rmp-serde = "1.1.0"
 kira = "0.7.3"
 image = "0.24.3"
@@ -29,3 +30,6 @@ gl_matrix = "0.0"
 lazy_static = "1.4.0"
 glad-gl = { path = "./glad-gl", optional = true }
 rand = "0.8.5"
+
+[profile.release.package.physx-sys]
+debug = false

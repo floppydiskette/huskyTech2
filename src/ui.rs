@@ -3,9 +3,11 @@ use std::ops::Mul;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use egui_glfw_gl::egui;
-use egui_glfw_gl::egui::{CentralPanel, Frame, Rgba, SidePanel, TopBottomPanel, Ui};
+use egui_glfw_gl::egui::{CentralPanel, Frame, Rgba, SidePanel, Style, TopBottomPanel, Ui};
 use gfx_maths::Vec3;
 use crate::renderer::ht_renderer;
+use crate::ui_defs::chat;
+use crate::worldmachine::WorldMachine;
 
 lazy_static!{
     pub static ref SHOW_UI: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -56,21 +58,31 @@ pub fn debug_log(message: impl ToString) {
     DEBUG_LOG.lock().unwrap().log(message.to_string());
 }
 
-pub fn render(renderer: &mut ht_renderer) {
+pub async fn render(renderer: &mut ht_renderer, wm: &mut WorldMachine) {
     if !SHOW_UI.load(Ordering::Relaxed) {
         return;
     }
 
-    SidePanel::left("left_debug")
-        .frame(Frame::none())
-        .show_separator_line(false)
+    let (mut set_name, mut send_message) = (None, None);
+
+    egui::Window::new("chat")
+        .title_bar(false)
         .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::Vec2::new(30.0, -100.0))
+        .fixed_size(egui::Vec2::new(400.0, 400.0))
+        .frame(Frame::dark_canvas(&Style::default()))
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
-            // left align
-            if SHOW_DEBUG_LOG.load(Ordering::Relaxed) {
-                render_debug_log(ui);
-            }
+            let (name, message) = chat::chat(ui, wm);
+            set_name = name;
+            send_message = message;
         });
+    if let Some(name) = set_name {
+        wm.set_name(name).await;
+    }
+    if let Some(message) = send_message {
+        wm.send_chat_message(message).await;
+    }
 
     SidePanel::right("right_debug")
         .frame(Frame::none())

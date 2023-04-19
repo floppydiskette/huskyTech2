@@ -284,7 +284,7 @@ impl Player {
         let now = std::time::Instant::now();
         let delta_time = now.duration_since(self.last_move_call).as_secs_f32();
         let dt_movement = movement * delta_time;
-        //if delta_time > 0.0 {
+        if self.has_camera_control && self.locked_mouse {
             self.physics_controller.as_mut().unwrap().move_by(dt_movement, jump, false, false, delta_time);
             // uncomment next three lines for FLIGHT
             //let mut position = self.physics_controller.as_ref().unwrap().get_position();
@@ -304,9 +304,9 @@ impl Player {
             } else {
                 None
             }
-        //} else {
-        //    None
-        //}
+        } else {
+            None
+        }
     }
 
     fn handle_jump(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> bool {

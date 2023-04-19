@@ -23,6 +23,7 @@ use crate::keyboard::{HTKey, Keyboard};
 use crate::renderer::{ht_renderer, RGBA};
 use crate::server::ConnectionClientside;
 use crate::server::lan::ClientLanConnection;
+use crate::ui_defs::chat;
 use crate::worldmachine::player::DEFAULT_FOV;
 
 pub trait Thingy {
@@ -56,6 +57,7 @@ pub mod ui;
 pub mod audio;
 pub mod common_anim;
 pub mod maps;
+pub mod ui_defs;
 
 #[tokio::main]
 #[allow(unused_must_use)]
@@ -93,7 +95,7 @@ async fn main() {
         let mut physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
-        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("test".to_string()), physics, 25566, 25567, "0.0.0.0").await;
+        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("test".to_string()), physics, 25568, 25569, "0.0.0.0").await;
         let mut server_clone = server.clone();
         info!("initialised server");
         server_clone.run().await;
@@ -125,7 +127,7 @@ async fn main() {
         info!("initialised worldmachine");
 
         if let Some(ip) = connect_to_lan_server {
-            let server_connection = ClientLanConnection::connect(ip.as_str(), 25566, 25567).await.expect("failed to connect to server");
+            let server_connection = ClientLanConnection::connect(ip.as_str(), 25568, 25569).await.expect("failed to connect to server");
             worldmachine.connect_to_server(ConnectionClientside::Lan(server_connection.clone()));
             let the_clone = server_connection.clone();
             tokio::spawn(async move {
@@ -173,7 +175,25 @@ async fn main() {
             }
         }
 
-        ui::debug_log("haiii! :3 :3 :3");
+        chat::write_chat("engine".to_string(), "welcome to the huskyTech2 demo! press the comma key to unlock your mouse and send messages, or the period key to lock your mouse again (:".to_string());
+        chat::write_chat("engine".to_string(), format!("there are {} players online", if let Some(players) = &worldmachine.players {
+            players.lock().await.len()
+        } else {
+            0
+        }));
+        chat::write_chat("engine".to_string(), (if let Some(players) = &worldmachine.players {
+            let players = players.lock().await;
+            let mut names = String::new();
+            for player in players.iter() {
+                names.push_str(&player.1.player.name);
+                names.push_str(", ");
+            }
+            names.pop();
+            names.pop();
+            format!("players online: {}", names)
+        } else {
+            "".to_string()
+        }).to_string());
 
         let mut last_frame_time = std::time::Instant::now();
         let mut compensation_delta = 0.0;
@@ -208,7 +228,7 @@ async fn main() {
                 renderer.next_light();
             }
 
-            renderer.swap_buffers();
+            renderer.swap_buffers(&mut worldmachine).await;
             renderer.backend.window.lock().unwrap().glfw.poll_events();
             keyboard::reset_keyboard_state();
             mouse::reset_mouse_state();
