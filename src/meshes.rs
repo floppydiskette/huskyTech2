@@ -696,7 +696,7 @@ impl Mesh {
 
                 if let Some(animations_weights) = animations_weights {
                     // fill bone matrice uniform (this should already have been done if this is a shadow pass)
-                    if shadow_pass.is_none() || using_autoanim {
+                    if shadow_pass.is_none() || !using_autoanim {
                         let mut anims_weights = animations_weights.iter().map(
                             |(name, weight)| {
                                 (Arc::new(animations.animations.get(name).unwrap().clone()), *weight)

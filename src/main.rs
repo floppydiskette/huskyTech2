@@ -93,7 +93,7 @@ async fn main() {
         let mut physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
-        let mut server = server::Server::new_host_lan_server("test", physics, 25566, 25567, "0.0.0.0").await;
+        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("test".to_string()), physics, 25566, 25567, "0.0.0.0").await;
         let mut server_clone = server.clone();
         info!("initialised server");
         server_clone.run().await;
@@ -136,7 +136,7 @@ async fn main() {
                 the_clone.tcp_listener_thread().await;
             });
         } else {
-            let mut server = server::Server::new("test", physics.clone());
+            let mut server = server::Server::new(&level_to_load.unwrap_or("test".to_string()), physics.clone());
             let mut server_clone = server.clone();
             tokio::spawn(async move {
                 server_clone.run().await;
@@ -179,6 +179,10 @@ async fn main() {
             renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
             let mut updates = worldmachine.client_tick(&mut renderer, physics.clone(), delta).await; // physics ticks are also simulated here clientside
             worldmachine.tick_connection(&mut updates).await;
+
+            // simulate a physics tick
+            physics.tick(delta);
+
             worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer, None);
             renderer.clear_all_shadow_buffers();

@@ -39,6 +39,7 @@ pub struct World {
     pub entities: Vec<Entity>,
     pub systems: Vec<System>,
     eid_manager: EntityId,
+    current_map: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -86,6 +87,7 @@ impl Clone for World {
             entities,
             systems,
             eid_manager: 0,
+            current_map: self.current_map.clone(),
         }
     }
 }
@@ -105,7 +107,6 @@ pub struct WorldMachine {
     client_update_queue: Arc<Mutex<VecDeque<ClientUpdate>>>,
     player: Option<PlayerContainer>,
     ignore_this_entity: Option<EntityId>, // should be the player entity that other players will see, we don't want it's updates to be received because we already know them
-    current_map: String,
     pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>,
 }
 
@@ -115,6 +116,7 @@ impl Default for WorldMachine {
             entities: Vec::new(),
             systems: Vec::new(),
             eid_manager: 0,
+            current_map: "".to_string(),
         };
         Self {
             world,
@@ -130,7 +132,6 @@ impl Default for WorldMachine {
             client_update_queue: Arc::new(Mutex::new(VecDeque::new())),
             player: None,
             ignore_this_entity: None,
-            current_map: "".to_string(),
             players: None,
         }
     }
@@ -191,7 +192,7 @@ impl WorldMachine {
             self.world.entities.push(entity_new);
         }
 
-        self.current_map = map_name.to_string();
+        self.world.current_map = map_name.to_string();
 
         // initialise entities
         self.initialise_entities();
@@ -223,7 +224,7 @@ impl WorldMachine {
                     ParameterValue::Vec3(position) => position,
                     _ => panic!("position is not a vec3"),
                 };
-                let scale = box_collider.get_parameter("size").unwrap().borrow().clone();
+                let scale = box_collider.get_parameter("scale").unwrap().borrow().clone();
                 let mut scale = match scale.value {
                     ParameterValue::Vec3(scale) => scale,
                     _ => panic!("scale is not a vec3"),
@@ -332,7 +333,7 @@ impl WorldMachine {
                 }
             }
             if let Some(light) = light_component {
-                let mut light = light.clone();
+                let light = light.clone();
                 let position = light.get_parameter("position").unwrap();
                 let mut position = match position.value {
                     ParameterValue::Vec3(v) => v,
@@ -909,17 +910,10 @@ impl WorldMachine {
             }
         }
 
-        // simulate a physics tick
-        let current_time = Instant::now();
-        let time_since_last_tick = current_time.duration_since(self.last_physics_update).as_secs_f32();
-        physics_engine.tick(time_since_last_tick);
-        self.last_physics_update = current_time;
-
         updates
     }
 
     pub fn render(&mut self, renderer: &mut ht_renderer, shadow_pass: Option<(u8, usize)>) {
-
         // todo! actual good player rendering
         if let Some(player) = &mut self.player {
             let position = player.player.get_position();
@@ -928,9 +922,9 @@ impl WorldMachine {
             if let Some(mesh) = meshes.get_mut("player") {
                 let texture = renderer.textures.get("default").cloned().unwrap();
                 let mut mesh = mesh.clone();
-                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -1.5, 0.0);
+                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.2, 0.0);
                 mesh.rotation = rotation;
-                mesh.scale = Vec3::new(1.0, 1.0, 1.0);
+                mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
                 let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
@@ -939,7 +933,7 @@ impl WorldMachine {
         }
 
         let lights = self.send_lights_to_renderer();
-        if lights.is_some() {
+        if let Some(..) = lights {
             renderer.set_lights(lights.unwrap());
         }
         let mut indices_to_remove = Vec::new();
@@ -1083,7 +1077,7 @@ impl WorldMachine {
                                         continue;
                                     }
                                 };
-                                mesh.scale += scale;
+                                mesh.scale *= scale;
                             }
                         }
 
@@ -1199,9 +1193,9 @@ impl WorldMachine {
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;
                     let old_rotation = mesh.rotation;
-                    mesh.position = position + Vec3::new(0.0, -1.5, 0.0);
+                    mesh.position = position + Vec3::new(0.0, -0.2, 0.0);
                     mesh.rotation = rotation;
-                    mesh.scale = Vec3::new(1.0, 1.0, 1.0);
+                    mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
                     let move_anim = MoveAnim::from_values(speed, strafe);
 

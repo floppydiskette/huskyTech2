@@ -64,6 +64,7 @@ pub fn render(renderer: &mut ht_renderer) {
 
     SidePanel::left("left_debug")
         .frame(Frame::none())
+        .show_separator_line(false)
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             // left align
             if SHOW_DEBUG_LOG.load(Ordering::Relaxed) {
@@ -73,6 +74,7 @@ pub fn render(renderer: &mut ht_renderer) {
 
     SidePanel::right("right_debug")
         .frame(Frame::none())
+        .show_separator_line(false)
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             // right align
             if SHOW_DEBUG_LOCATION.load(Ordering::Relaxed) {
@@ -109,6 +111,7 @@ pub fn render(renderer: &mut ht_renderer) {
 pub fn init_sunlust(renderer: &mut ht_renderer) {
     SidePanel::left("loading_ctx")
         .frame(Frame::none())
+        .show_separator_line(false)
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             let mut sunlust_info = SUNLUST_INFO.lock().unwrap();
             let powered_by_data = crate::textures::load_image("base/textures/ui/poweredby.png").expect("failed to load base/textures/ui/poweredby.png!");
@@ -145,6 +148,7 @@ pub fn render_sunlust(renderer: &mut ht_renderer) {
     if !sunlust_info.show_copyright {
         TopBottomPanel::bottom("powered_by")
             .frame(Frame::none())
+            .show_separator_line(false)
             .resizable(false)
             .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
                 if let Some(poweredby) = &sunlust_info.powered_by {
@@ -157,6 +161,7 @@ pub fn render_sunlust(renderer: &mut ht_renderer) {
     } else {
         TopBottomPanel::bottom("copyright")
             .frame(Frame::none())
+            .show_separator_line(false)
             .resizable(false)
             .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
                 if let Some(copyright) = &sunlust_info.copyright {

@@ -8,7 +8,7 @@ in vec3 frag_pos;
 in vec3 normal;
 
 float near = 0.1;
-float far = 100.0;
+float far = 10000.0;
 
 uniform sampler2D scene_depth;
 uniform sampler2D backface_depth;
@@ -41,7 +41,7 @@ void main() {
 
     float backface_shadow = texture(backface_depth, gl_FragCoord.xy / textureSize(backface_depth, 0)).r;
 
-    float range = 0.001;
+    float range = 0.1;
     bool equal_enough = abs(scene_depth - depth) < range;
 
     if (light_num_plus_one <= 0) {

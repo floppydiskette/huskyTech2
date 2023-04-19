@@ -139,7 +139,6 @@ impl PhysicsSystem {
     }
 
     pub fn tick(&self, delta_time: f32) {
-        assert!(delta_time > 0.0);
         unsafe { PxScene_simulate_mut(self.scene, delta_time, null_mut(), null_mut(), 0, true) };
         let mut error = 0u32;
         unsafe { PxScene_fetchResults_mut(self.scene, true, &mut error) };

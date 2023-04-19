@@ -18,7 +18,7 @@ uniform float opacity = 1.0;
 uniform bool unlit = false;
 
 float near = 0.1;
-float far = 100.0;
+float far = 10000.0;
 
 // from learnopengl.com
 float LinearizeDepth(float depth)

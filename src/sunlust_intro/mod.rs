@@ -146,6 +146,13 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
 
         // draw the mesh
         mesh.render(renderer, Some(&texture), None, None);
+        renderer.clear_all_shadow_buffers();
+        mesh.render(renderer, Some(&texture), None, Some((1, 0)));
+        mesh.render(renderer, Some(&texture), None, Some((2, 0)));
+        renderer.next_light();
+        mesh.render(renderer, Some(&texture), None, Some((1, 1)));
+        mesh.render(renderer, Some(&texture), None, Some((2, 1)));
+        renderer.next_light();
 
         if opacity_timer < opacity_delay {
             opacity_timer += current_time.duration_since(last_time).expect("failed to get time since last frame").as_millis() as f32;

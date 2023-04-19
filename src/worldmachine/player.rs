@@ -202,7 +202,7 @@ impl Player {
         }
     }
 
-    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool, delta_time: f32) -> Option<(Vec3, MovementInfo)> {
+    fn handle_keyboard_movement(&mut self, renderer: &mut ht_renderer, jump: bool) -> Option<(Vec3, MovementInfo)> {
         let mut movement = Vec3::new(0.0, 0.0, 0.0);
         let camera = &mut renderer.camera;
         let camera_rotation = camera.get_rotation();
@@ -281,7 +281,8 @@ impl Player {
         movement *= speed;
 
         movement.y = 0.0;
-        //let delta_time = std::time::Instant::now().duration_since(self.last_move_call).as_secs_f32();
+        let now = std::time::Instant::now();
+        let delta_time = now.duration_since(self.last_move_call).as_secs_f32();
         self.physics_controller.as_mut().unwrap().move_by(movement, jump, false,false, delta_time);
         // uncomment next three lines for FLIGHT
         //let mut position = self.physics_controller.as_ref().unwrap().get_position();
@@ -290,7 +291,7 @@ impl Player {
 
         *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
 
-        self.last_move_call = std::time::Instant::now();
+        self.last_move_call = now;
         //camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
         if movement != Vec3::new(0.0, 0.0, 0.0) {
             self.was_moving = true;
@@ -319,7 +320,7 @@ impl Player {
 
         let jump = self.handle_jump(renderer, delta_time);
         let look = self.handle_mouse_movement(renderer, delta_time);
-        let movement = self.handle_keyboard_movement(renderer, jump, delta_time);
+        let movement = self.handle_keyboard_movement(renderer, jump);
 
         // FOR DEBUGGING, REMOVE LATER
         if keyboard::check_key_released(HTKey::Comma) {

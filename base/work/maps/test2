@@ -1,0 +1,1000 @@
+entities:
+- name: ht2
+  uid: 1
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: -1.2
+          z: 5.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String ht2
+      texture:
+        name: texture
+        value: !String default
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: floor
+  uid: 2
+  components:
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String Plane
+      texture:
+        name: texture
+        value: !String rock4k
+    component_type:
+      id: 3
+      name: MeshRenderer
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: -1.8
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -40.0
+          y: -3.0
+          z: 40.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 80.0
+          y: 1.0
+          z: 80.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: light
+  uid: 3
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 1.5
+      intensity:
+        name: intensity
+        value: !Float 0.5
+      position:
+        name: position
+        value: !Vec3
+          x: 12.2
+          y: 1.2
+          z: 17.7
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: wall_collider
+  uid: 4
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -21.5
+          y: -3.5
+          z: 20.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 20.0
+          z: 80.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: wall_collider
+  uid: 5
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -20.0
+          y: -3.5
+          z: 21.5
+      scale:
+        name: scale
+        value: !Vec3
+          x: 80.0
+          y: 20.0
+          z: 1.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: wall_collider
+  uid: 6
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -20.0
+          y: -3.5
+          z: -20.5
+      scale:
+        name: scale
+        value: !Vec3
+          x: 80.0
+          y: 20.0
+          z: 1.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: wall_collider
+  uid: 7
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 20.5
+          y: -3.5
+          z: 20.1
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 20.0
+          z: 80.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: puro
+  uid: 8
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 12.5
+          y: -1.8
+          z: 15.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 9
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -6.5
+          y: -1.8
+          z: 8.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 10
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -2.2
+          y: -1.8
+          z: 8.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 11
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 2.2
+          y: -1.8
+          z: 8.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 12
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 6.2
+          y: -1.8
+          z: 8.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 13
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 10.8
+          y: -1.8
+          z: 8.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 14
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 10.8
+          y: -1.8
+          z: 11.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 15
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 7.0
+          y: -1.8
+          z: 11.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 16
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 2.5
+          y: -1.8
+          z: 11.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 17
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -2.7
+          y: -1.8
+          z: 11.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 18
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -7.5
+          y: -1.8
+          z: 11.6
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 19
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -7.5
+          y: -1.8
+          z: 15.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 20
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -2.5
+          y: -1.8
+          z: 15.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 21
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 3.1
+          y: -1.8
+          z: 15.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 4.3711392e-8
+          y: 1.0
+          z: 4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: puro
+  uid: 22
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 7.7
+          y: -1.8
+          z: 15.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: -4.3711392e-8
+          y: 1.0
+          z: -4.3711392e-8
+          w: -4.3711385e-8
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      mesh:
+        name: mesh
+        value: !String puro
+      texture:
+        name: texture
+        value: !String puro
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: light
+  uid: 23
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 0.7
+          y: 1.0
+          z: 0.6
+      intensity:
+        name: intensity
+        value: !Float 0.5
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 28.7
+          z: -6.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: light
+  uid: 24
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.5
+          y: 0.0
+          z: -0.0
+      intensity:
+        name: intensity
+        value: !Float 0.5
+      position:
+        name: position
+        value: !Vec3
+          x: -0.2
+          y: 6.0
+          z: 14.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: light
+  uid: 25
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: Light
+    parameters:
+      colour:
+        name: colour
+        value: !Vec3
+          x: 0.0
+          y: 0.3
+          z: 0.0
+      intensity:
+        name: intensity
+        value: !Float 0.5
+      position:
+        name: position
+        value: !Vec3
+          x: -5.8
+          y: 6.0
+          z: 17.3
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+systems: []
+eid_manager: 25
+current_map: test

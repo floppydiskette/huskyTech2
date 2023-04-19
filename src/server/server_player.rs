@@ -9,7 +9,7 @@ use crate::worldmachine::player::MovementInfo;
 
 pub const DEFAULT_MOVESPEED: f32 = 0.15;
 pub const DEFAULT_SPRINTSPEED: f32 = 0.4;
-pub const DEFAULT_RADIUS: f32 = 0.5;
+pub const DEFAULT_RADIUS: f32 = 1.3;
 pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
 

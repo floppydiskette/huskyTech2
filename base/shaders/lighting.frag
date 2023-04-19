@@ -110,26 +110,31 @@ void main() {
         // check g comp if greater than 32
         // check r comp otherwise
         bool lit = true;
-        if (shadow.b > 64) {
+        if (i >= 64) {
             int mask = 1 << (i - 64);
-            lit = (shadow.b & mask) != 0;
-        } else if (shadow.g > 32) {
+            lit = (shadow.b & mask) == 0;
+        } else if (i >= 32) {
             int mask = 1 << (i - 32);
-            lit = (shadow.g & mask) != 0;
-        } else
-        if (shadow.r > 0) {
+            lit = (shadow.g & mask) == 0;
+        } else if (i >= 0) {
             int mask = 1 << i;
-            lit = (shadow.r & mask) != 0;
+            lit = (shadow.r & mask) == 0;
         }
 
-        if (lit) {
+        if (!lit) {
             result += calculate_light(u_lights[i], albedo, spec, uv, normal, frag_pos, view_dir, ambient);
         }
     }
 
     vec2 uv_seed = uv;
     ivec4 shadow = texture(shadow_mask, uv);
-    vec3 funny = vec3(shadow.r > 0 ? 1 : 0, 1, 1);
+    int maska = 1 << 0;
+    int maskb = 1 << 1;
+    int maskc = 1 << 2;
+    bool a = (shadow.r & maska) == 0;
+    bool b = (shadow.r & maskb) == 0;
+    bool c = (shadow.r & maskc) == 0;
+    vec3 funny = vec3(a ? 1.0 : 0.0, b ? 1.0 : 0.0, c ? 1.0 : 0.0);
 
     vec3 final_colour = (ambient + (result)) * albedo;
     if (!disable_ao) {
