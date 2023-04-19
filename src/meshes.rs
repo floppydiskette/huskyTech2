@@ -358,10 +358,6 @@ impl Mesh {
 
         thread::spawn(move || {
             let finished_clone_clone = finished_clone.clone();
-            let on_failure = |failure: String| {
-                error!("failed to load mesh: {}", failure);
-                finished_clone_clone.store(true, Ordering::Relaxed);
-            };
 
             // if a shadow mesh exists, load it first
             let shadow_mesh = if !path_clone.ends_with("-shadow.glb") {
@@ -373,6 +369,15 @@ impl Mesh {
                 mesh.take()
             } else {
                 None
+            };
+
+            let on_failure = |failure: String| {
+                if shadow_mesh.is_none() {
+                    error!("failed to load mesh: {}", failure);
+                } else {
+                    info!("no shadow mesh found for mesh: {}", failure);
+                }
+                finished_clone_clone.store(true, Ordering::Relaxed);
             };
 
             // load from gltf
