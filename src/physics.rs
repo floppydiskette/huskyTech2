@@ -16,7 +16,7 @@ lazy_static!{
 }
 
 pub const GRAVITY: f32 = -9.81;
-pub const PLAYER_GRAVITY: f32 = -0.51;
+pub const PLAYER_GRAVITY: f32 = -0.31;
 pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
 pub const PLAYER_JUMP_VELOCITY: f32 = 14.3;
 
@@ -310,10 +310,10 @@ impl PhysicsCharacterController {
 
         if jump && self.is_on_ground() {
             unsafe {
-                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY * delta_time;
+                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
             }
         } else if !self.is_on_ground() {
-            let gravity = PLAYER_GRAVITY * delta_time;
+            let gravity = PLAYER_GRAVITY;
             let mut velocity = unsafe { *self.y_velocity.get() };
             velocity += gravity;
             velocity = velocity.max(PLAYER_TERMINAL_VELOCITY);
@@ -326,7 +326,7 @@ impl PhysicsCharacterController {
             }
         }
 
-        displacement.y = unsafe { *self.y_velocity.get() };
+        displacement.y = unsafe { *self.y_velocity.get() * delta_time };
 
         unsafe {
             let flags = PxController_move_mut(self.controller,
