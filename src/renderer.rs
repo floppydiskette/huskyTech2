@@ -223,7 +223,7 @@ impl ht_renderer {
                     let mut posttexture = 0;
                     GenTextures(1, &mut posttexture);
                     BindTexture(TEXTURE_2D, posttexture);
-                    TexImage2D(TEXTURE_2D, 0, SRGB as i32, render_width, render_height, 0, RGB, UNSIGNED_BYTE, std::ptr::null());
+                    TexImage2D(TEXTURE_2D, 0, RGB32F as i32, render_width, render_height, 0, RGB, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
                     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, posttexture, 0);
@@ -887,7 +887,6 @@ impl ht_renderer {
             ClearColor(colour.r as f32 / 255.0, colour.g as f32 / 255.0, colour.b as f32 / 255.0, 1.0);
             Clear(COLOR_BUFFER_BIT);
 
-            // disable srgb
             Enable(FRAMEBUFFER_SRGB);
 
             // send the lights to the shader
@@ -991,7 +990,6 @@ impl ht_renderer {
             BindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);
             Disable(DEPTH_TEST);
 
-            // gamma correction was already done in the lighting pass, don't enable again
             Disable(FRAMEBUFFER_SRGB);
 
             // make sure that gl doesn't cull the back face of the quad

@@ -56,7 +56,7 @@ vec3 calculate_light(Light light, vec3 albedo, float specu, vec2 uv, vec3 normal
     float attenuation = 1.0 - clamp(distance / light.radius, 0.0, 1.0);
 
     //return light.intensity * (diff * light.colour + spec * light.colour);
-    return light.intensity * attenuation * (diff * light.colour + spec * light.colour);
+    return (light.intensity / 2.0) * attenuation * (diff * light.colour + spec * light.colour);
 }
 
 float rand(vec2 co){
