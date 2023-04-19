@@ -826,6 +826,7 @@ impl Server {
     // if there are, initialise them
     // if not, run the worldmachine
     pub async fn run(&mut self) {
+        let mut compensation_delta = 0.0;
         loop {
 
             self.listen_for_lan_connections().await;
@@ -856,8 +857,12 @@ impl Server {
                             player.player.gravity_tick(player.entity_id, &mut worldmachine).await;
                         }
                     }
-                    worldmachine.physics.as_mut().unwrap().tick(delta);
-                    worldmachine.last_physics_update = current_time;
+                    if let Some(delta) = worldmachine.physics.as_mut().unwrap().tick(delta + compensation_delta) {
+                        compensation_delta += delta;
+                    } else {
+                        compensation_delta = 0.0;
+                        worldmachine.last_physics_update = current_time;
+                    }
                 }
             }
         }

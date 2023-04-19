@@ -16,9 +16,9 @@ lazy_static!{
 }
 
 pub const GRAVITY: f32 = -9.81;
-pub const PLAYER_GRAVITY: f32 = -1.51;
+pub const PLAYER_GRAVITY: f32 = -0.51;
 pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
-pub const PLAYER_JUMP_VELOCITY: f32 = 0.3;
+pub const PLAYER_JUMP_VELOCITY: f32 = 14.3;
 
 #[derive(Clone)]
 pub struct PhysicsSystem {
@@ -138,11 +138,15 @@ impl PhysicsSystem {
         Self { foundation: self.foundation, physics: self.physics, dispatcher: self.dispatcher, scene, controller_manager, physics_materials: self.physics_materials.clone() }
     }
 
-    pub fn tick(&self, delta_time: f32) {
+    pub fn tick(&self, delta_time: f32) -> Option<f32> {
+        if delta_time <= 0.01 { // physics doesn't like small time steps
+            return Some(delta_time);
+        }
         unsafe { PxScene_simulate_mut(self.scene, delta_time, null_mut(), null_mut(), 0, true) };
         let mut error = 0u32;
         unsafe { PxScene_fetchResults_mut(self.scene, true, &mut error) };
         assert_eq!(error, 0, "physx error: {}", error);
+        None
     }
 
     pub fn create_character_controller(&self, radius: f32, height: f32, step_offset: f32, material: Materials) -> Option<PhysicsCharacterController> {
@@ -306,7 +310,7 @@ impl PhysicsCharacterController {
 
         if jump && self.is_on_ground() {
             unsafe {
-                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
+                *self.y_velocity.get() = PLAYER_JUMP_VELOCITY * delta_time;
             }
         } else if !self.is_on_ground() {
             let gravity = PLAYER_GRAVITY * delta_time;

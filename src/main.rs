@@ -176,6 +176,7 @@ async fn main() {
         ui::debug_log("haiii! :3 :3 :3");
 
         let mut last_frame_time = std::time::Instant::now();
+        let mut compensation_delta = 0.0;
         loop {
             let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;
             last_frame_time = Instant::now();
@@ -191,7 +192,11 @@ async fn main() {
             worldmachine.tick_connection(&mut updates).await;
 
             // simulate a physics tick
-            physics.tick(delta);
+            if let Some(delta) = physics.tick(delta + compensation_delta) {
+                compensation_delta += delta;
+            } else {
+                compensation_delta = 0.0;
+            }
 
             worldmachine.handle_audio(&renderer, &audio, &scontext);
             worldmachine.render(&mut renderer, None);

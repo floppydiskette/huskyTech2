@@ -7,8 +7,8 @@ use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::ParameterValue;
 use crate::worldmachine::player::MovementInfo;
 
-pub const DEFAULT_MOVESPEED: f32 = 0.15;
-pub const DEFAULT_SPRINTSPEED: f32 = 0.4;
+pub const DEFAULT_MOVESPEED: f32 = 8.15;
+pub const DEFAULT_SPRINTSPEED: f32 = 14.4;
 pub const DEFAULT_RADIUS: f32 = 1.3;
 pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
@@ -104,6 +104,7 @@ impl ServerPlayer {
 
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
+        displacement_vector *= delta;
         self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta);
         self.last_move_call = current_time;
         let current_time = std::time::Instant::now();

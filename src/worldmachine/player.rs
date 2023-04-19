@@ -283,25 +283,30 @@ impl Player {
         movement.y = 0.0;
         let now = std::time::Instant::now();
         let delta_time = now.duration_since(self.last_move_call).as_secs_f32();
-        self.physics_controller.as_mut().unwrap().move_by(movement, jump, false,false, delta_time);
-        // uncomment next three lines for FLIGHT
-        //let mut position = self.physics_controller.as_ref().unwrap().get_position();
-        //position.y += 5.0;
-        //self.physics_controller.as_mut().unwrap().set_position(position);
+        let dt_movement = movement * delta_time;
+        //if delta_time > 0.0 {
+            self.physics_controller.as_mut().unwrap().move_by(dt_movement, jump, false, false, delta_time);
+            // uncomment next three lines for FLIGHT
+            //let mut position = self.physics_controller.as_ref().unwrap().get_position();
+            //position.y += 5.0;
+            //self.physics_controller.as_mut().unwrap().set_position(position);
 
-        *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
+            *crate::ui::DEBUG_LOCATION.lock().unwrap() = self.physics_controller.as_ref().unwrap().get_position();
 
-        self.last_move_call = now;
-        //camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
-        if movement != Vec3::new(0.0, 0.0, 0.0) {
-            self.was_moving = true;
-            Some((movement, info))
-        } else if self.was_moving {
-            self.was_moving = false;
-            Some((movement, info))
-        } else {
-            None
-        }
+            self.last_move_call = now;
+            //camera.set_position_from_player_position(self.physics_controller.as_ref().unwrap().get_position());
+            if movement != Vec3::new(0.0, 0.0, 0.0) {
+                self.was_moving = true;
+                Some((movement, info))
+            } else if self.was_moving {
+                self.was_moving = false;
+                Some((movement, info))
+            } else {
+                None
+            }
+        //} else {
+        //    None
+        //}
     }
 
     fn handle_jump(&mut self, renderer: &mut ht_renderer, delta_time: f32) -> bool {
@@ -355,7 +360,7 @@ impl Player {
             let mut new_movement = movement.1;
             new_movement.jumped = jump;
             updates.push(ClientUpdate::IDisplaced((movement.0, Some(movement.1)))); // using displaced as the returned value is a displacement vector for the physics engine
-            bob_mag = movement.0.magnitude() * 3.0;
+            bob_mag = movement.0.magnitude() * 0.1;
         }
 
         // for lerp
