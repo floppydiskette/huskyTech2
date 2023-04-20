@@ -3,7 +3,7 @@ use gfx_maths::Vec2;
 use glfw::{Action, MouseButton, WindowEvent};
 use crate::ht_renderer;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MouseButtonState {
     Pressed,
     Released,

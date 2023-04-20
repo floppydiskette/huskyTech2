@@ -8,6 +8,7 @@ use crate::{helpers, ht_renderer, keyboard, mouse};
 use crate::camera::EYE_HEIGHT;
 use crate::helpers::lerp;
 use crate::keyboard::HTKey;
+use crate::mouse::MouseButtonState;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
 use crate::server::ConnectionUUID;
 use crate::server::server_player::{DEFAULT_HEIGHT, DEFAULT_MOVESPEED, DEFAULT_RADIUS, DEFAULT_SPRINTSPEED, DEFAULT_STEPHEIGHT};
@@ -349,6 +350,10 @@ impl Player {
         }
         if let Some(look) = look {
             updates.push(ClientUpdate::ILooked(look));
+        }
+
+        if mouse::get_mouse_button_state(0) == MouseButtonState::Pressed {
+            updates.push(ClientUpdate::IThrewSnowball);
         }
 
         // how much do we bob?

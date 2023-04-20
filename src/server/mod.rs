@@ -14,6 +14,7 @@ use crate::server::server_player::{ServerPlayer, ServerPlayerContainer};
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::ecs::{ComponentType, Entity, ParameterValue};
 use crate::worldmachine::player::{MovementInfo, PlayerComponent};
+use crate::worldmachine::snowballs::Snowball;
 
 pub mod connections;
 pub mod server_player;
@@ -80,6 +81,7 @@ pub enum SteadyPacket {
     ChatMessage(ConnectionUUID, String),
     SetName(ConnectionUUID, String),
     NameRejected(NameRejectionReason),
+    ThrowSnowball(String, Vec3, Vec3) // uuid, position, initial velocity
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -461,6 +463,7 @@ impl Server {
                                 // mirror to all other clients
                                 let who_sent = local_connection.uuid.clone();
                                 let packet = SteadyPacket::ChatMessage(who_sent, message);
+                                drop(local_connection);
                                 match &self.connections {
                                     Connections::Local(local_connections) => {
                                         let cons = local_connections.lock().await.clone();
@@ -477,6 +480,7 @@ impl Server {
                                 // mirror to all other clients
                                 let who_sent = local_connection.uuid.clone();
                                 let packet = SteadyPacket::SetName(who_sent, new_name);
+                                drop(local_connection);
                                 match &self.connections {
                                     Connections::Local(local_connections) => {
                                         let cons = local_connections.lock().await.clone();
@@ -488,6 +492,37 @@ impl Server {
                                         unimplemented!()
                                     }
                                 }
+                            }
+                            SteadyPacket::ThrowSnowball(_uuid, _positon, _initial_velocity) => {
+                                // as server is authoritative, calculate the snowball's position and velocity ourselves
+                                // position will be the player's position
+                                // velocity will be the player's velocity + the player's forward vector * 10
+                                let mut worldmachine = self.worldmachine.lock().await;
+                                let mut players = worldmachine.players.as_mut().unwrap().lock().await;
+                                let player = players.get_mut(&local_connection.uuid).unwrap();
+                                let position = player.player.get_position(None, None).await;
+                                let rotation = player.player.get_head_rotation(None, None).await;
+                                let velocity = rotation.forward() * 10.0;
+                                drop(players);
+
+                                let snowball = Snowball::new(position, velocity, worldmachine.physics.as_ref().unwrap());
+                                // send to all clients (including the one that sent it)
+                                let packet = SteadyPacket::ThrowSnowball(snowball.uuid.clone(), position, velocity);
+
+                                worldmachine.snowballs.push(snowball);
+                                drop(local_connection);
+                                match &self.connections {
+                                    Connections::Local(local_connections) => {
+                                        let cons = local_connections.lock().await.clone();
+                                        for connection in cons.iter() {
+                                            self.send_steady_packet(&Connection::Local(connection.clone()), packet.clone()).await;
+                                        }
+                                    }
+                                    Connections::Lan(_, _) => {
+                                        unimplemented!()
+                                    }
+                                }
+
                             }
                             SteadyPacket::NameRejected(_) => {}
                         }
@@ -565,6 +600,36 @@ impl Server {
                                 }
                             }
                         }
+                        SteadyPacket::ThrowSnowball(_uuid, _positon, _initial_velocity) => {
+                            // as server is authoritative, calculate the snowball's position and velocity ourselves
+                            // position will be the player's position
+                            // velocity will be the player's velocity + the player's forward vector * 10
+                            let mut worldmachine = self.worldmachine.lock().await;
+                            let mut players = worldmachine.players.as_mut().unwrap().lock().await;
+                            let player = players.get_mut(&connection.uuid).unwrap();
+                            let mut position = player.player.get_position(None, None).await;
+                            let rotation = player.player.get_rotation(None, None).await;
+                            position = position + (-rotation.right() * 1.2);
+                            let velocity = -rotation.right() * 10.0;
+                            drop(players);
+
+                            let snowball = Snowball::new(position, velocity, worldmachine.physics.as_ref().unwrap());
+                            // send to all clients (including the one that sent it)
+                            let packet = SteadyPacket::ThrowSnowball(snowball.uuid.clone(), position, velocity);
+
+                            worldmachine.snowballs.push(snowball);
+                            match &self.connections {
+                                Connections::Lan(listener, connections) => {
+                                    let cons = connections.lock().await.clone();
+                                    for a_connection in cons.iter() {
+                                        self.send_steady_packet(&Connection::Lan(listener.clone(), a_connection.clone()), packet.clone()).await;
+                                    }
+                                }
+                                Connections::Local(_) => {
+                                    unimplemented!()
+                                }
+                            }
+                        }
 
                         // client shouldn't be sending these
 
@@ -592,7 +657,7 @@ impl Server {
             let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, movement_info.unwrap_or_default(), player.entity_id, &mut worldmachine).await;
             if success {} else {
                 let connection = connection.clone();
-                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, &mut worldmachine).await)).await
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
             }
         }
     }
@@ -604,10 +669,10 @@ impl Server {
             let mut players = worldmachine.players.clone();
             let mut players = players.as_mut().unwrap().lock().await;
             let player = players.get_mut(&uuid).unwrap();
-            let server_position = player.player.get_position(player.entity_id, &mut worldmachine).await;
+            let server_position = player.player.get_position(player.entity_id, Some(&mut worldmachine)).await;
             let success = server_position == position;
             if success {} else {
-                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, &mut worldmachine).await)).await
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
             }
         }
     }

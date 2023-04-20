@@ -481,6 +481,9 @@ impl ht_renderer {
         let unlit = self.load_shader("unlit").expect("failed to load unlit shader");
         // load default texture
         self.load_texture_if_not_already_loaded_synch("default").expect("failed to load default texture");
+        // load snowball stuff
+        self.load_texture_if_not_already_loaded_synch("snowball").expect("failed to load snowball texture");
+        self.load_mesh_if_not_already_loaded_synch("snowball").expect("failed to load snowball mesh");
     }
 
     pub fn load_texture_if_not_already_loaded(&mut self, name: &str) -> Result<bool, crate::textures::TextureError> {

@@ -25,6 +25,7 @@ use crate::worldmachine::components::{COMPONENT_TYPE_BOX_COLLIDER, COMPONENT_TYP
 use crate::worldmachine::ecs::*;
 use crate::worldmachine::MapLoadError::FolderNotFound;
 use crate::worldmachine::player::{MovementInfo, Player, PlayerContainer};
+use crate::worldmachine::snowballs::Snowball;
 
 pub mod ecs;
 pub mod components;
@@ -32,6 +33,7 @@ pub mod entities;
 pub mod helpers;
 pub mod player;
 pub mod playermodel;
+pub mod snowballs;
 
 pub type EntityId = u64;
 
@@ -67,6 +69,7 @@ pub enum ClientUpdate {
     // external
     IMoved(Vec3, Option<Vec3>, Quaternion, Quaternion, Option<MovementInfo>), // position, displacement vector, rotation, head rotation, extra movement info
     IJumped,
+    IThrewSnowball,
 }
 
 #[derive(Clone, Debug)]
@@ -95,6 +98,7 @@ impl Clone for World {
 
 pub struct WorldMachine {
     pub world: World,
+    pub snowballs: Vec<Snowball>,
     pub physics: Option<PhysicsSystem>,
     pub last_physics_update: std::time::Instant,
     pub game_data_path: String,
@@ -121,6 +125,7 @@ impl Default for WorldMachine {
         };
         Self {
             world,
+            snowballs: vec![],
             physics: None,
             last_physics_update: std::time::Instant::now(),
             game_data_path: String::from(""),
@@ -559,6 +564,13 @@ impl WorldMachine {
         }).await;
     }
 
+    pub async fn throw_snowball(&mut self) {
+        self.send_steady_message(SteadyPacketData {
+            packet: Some(SteadyPacket::ThrowSnowball(String::new(), Vec3::default(), Vec3::default())),
+            uuid: Some(server::generate_uuid()),
+        }).await;
+    }
+
     async fn handle_steady_message(&mut self, packet: SteadyPacket) {
         match packet {
             SteadyPacket::Consume(_) => {}
@@ -703,6 +715,20 @@ impl WorldMachine {
                     NameRejectionReason::Taken => {
                         chat::write_chat("server".to_string(), "your name was rejected because it is already taken".to_string());
                     }
+                }
+            }
+            SteadyPacket::ThrowSnowball(uuid, position, initial_velocity) => {
+                // do we already have this snowball?
+                let mut already_have = false;
+                for snowball in &self.snowballs {
+                    if snowball.uuid == uuid {
+                        already_have = true;
+                        break;
+                    }
+                }
+                if !already_have {
+                    let snowball = Snowball::new_with_uuid(uuid, position, initial_velocity, self.physics.as_ref().unwrap());
+                    self.snowballs.push(snowball);
                 }
             }
         }
@@ -967,6 +993,9 @@ impl WorldMachine {
                         packet: Some(packet),
                     }).await;
                 }
+                ClientUpdate::IThrewSnowball => {
+                    self.throw_snowball().await;
+                }
             }
         }
     }
@@ -1033,6 +1062,18 @@ impl WorldMachine {
             }
         }
 
+        let mut snowballs_to_remove = Vec::new();
+        for (i, snowball) in self.snowballs.iter_mut().enumerate() {
+            snowball.time_to_live -= delta_time;
+            if snowball.time_to_live <= 0.0 {
+                snowballs_to_remove.push(i);
+            }
+        }
+
+        for (i, snowball) in snowballs_to_remove.iter().enumerate() {
+            self.snowballs.remove(*snowball - i);
+        }
+
         updates
     }
 
@@ -1056,13 +1097,29 @@ impl WorldMachine {
                     shadow_mesh.lock().unwrap().updated_animations_this_frame = false;
                 }
                 let texture = renderer.textures.get("default").cloned().unwrap();
-                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.2, 0.0);
+                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.5, 0.0);
                 mesh.rotation = rotation;
                 mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 
                 let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
                 mesh.render(renderer, Some(&texture), Some(move_anim.weights()), shadow_pass);
+            }
+        }
+
+        for snowball in &mut self.snowballs {
+            let position = snowball.get_position();
+            if let Some(mut mesh) = renderer.meshes.get("snowball").cloned() {
+                renderer.meshes.get_mut("snowball").unwrap().updated_animations_this_frame = false;
+                if let Some(shadow_mesh) = &renderer.meshes.get_mut("snowball").unwrap().shadow_mesh {
+                    shadow_mesh.lock().unwrap().updated_animations_this_frame = false;
+                }
+                let texture = renderer.textures.get("snowball").cloned().unwrap();
+                mesh.position = position;
+                mesh.rotation = Quaternion::default();
+                mesh.scale = Vec3::new(0.5, 0.5, 0.5);
+
+                mesh.render(renderer, Some(&texture), None, shadow_pass);
             }
         }
 
@@ -1151,7 +1208,7 @@ impl WorldMachine {
             if let Some(mesh_renderer) = entity.get_component(COMPONENT_TYPE_MESH_RENDERER.clone()) {
                 if let Some(mesh) = mesh_renderer.get_parameter("mesh") {
                     // get the string value of the mesh
-                    let mut mesh_name = match mesh.value {
+                    let mesh_name = match mesh.value {
                         ParameterValue::String(ref s) => s.clone(),
                         _ => {
                             error!("render: mesh is not a string");
@@ -1341,7 +1398,7 @@ impl WorldMachine {
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;
                     let old_rotation = mesh.rotation;
-                    mesh.position = position + Vec3::new(0.0, -0.2, 0.0);
+                    mesh.position = position + Vec3::new(0.0, -0.5, 0.0);
                     mesh.rotation = rotation;
                     mesh.scale = Vec3::new(0.6, 0.6, 0.6);
 

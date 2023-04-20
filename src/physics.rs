@@ -9,7 +9,7 @@ use gfx_maths::{Vec3};
 use physx_sys::*;
 use physx_sys::PxPairFlag::{ContactDefault, TriggerDefault};
 
-lazy_static!{
+lazy_static! {
     static ref BOX_COLLIDERS: Arc<Mutex<Vec<PhysicsBoxColliderStatic>>> = Arc::new(Mutex::new(Vec::new()));
     static ref TRIGGER_SHAPES: Arc<Mutex<Vec<PhysicsTriggerShape>>> = Arc::new(Mutex::new(Vec::new()));
     static ref PHYSICS_SYSTEM: Arc<Mutex<Option<PhysicsSystem>>> = Arc::new(Mutex::new(None));
@@ -30,11 +30,9 @@ pub struct PhysicsSystem {
     pub physics_materials: HashMap<Materials, PhysicsMaterial>,
 }
 
-unsafe impl Send for PhysicsSystem {
-}
+unsafe impl Send for PhysicsSystem {}
 
-unsafe impl Sync for PhysicsSystem {
-}
+unsafe impl Sync for PhysicsSystem {}
 
 unsafe extern "C" fn on_trigger(
     _: *mut c_void,
@@ -177,7 +175,7 @@ impl PhysicsSystem {
     pub fn create_box_collider_static(&self, position: Vec3, size: Vec3, material: Materials) -> Option<PhysicsBoxColliderStatic> {
         // physx defines the center of the box as the center of the bottom face
         // ht2 defines the center of the box as the top right of the bottom face
-        let position = position + Vec3::new(size.x / 2.0, size.y / 2.0, -size.z / 2.0);
+        let position = position;
         let size = size;
 
         let transform = PxTransform {
@@ -205,7 +203,8 @@ impl PhysicsSystem {
             PxPhysics_createShape_mut(
                 self.physics,
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
-                *&material.material, true, shape_flags) };
+                *&material.material, true, shape_flags)
+        };
 
         unsafe {
             PxRigidActor_attachShape_mut(box_actor as *mut PxRigidActor, box_shape);
@@ -213,6 +212,50 @@ impl PhysicsSystem {
         Some(PhysicsBoxColliderStatic {
             actor: box_actor,
             shape: box_shape,
+            ref_count: Arc::new(Default::default()),
+        })
+    }
+
+    pub fn create_sphere_actor(&self, position: Vec3, radius: f32, material: Materials) -> Option<PhysicsSphereColliderDynamic> {
+        // physx defines the center of the box as the center of the bottom face
+        // ht2 defines the center of the box as the top right of the bottom face
+        let position = position;
+        let radius = radius;
+
+        let transform = PxTransform {
+            p: PxVec3 {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            },
+            q: PxQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            },
+        };
+
+        let geometry = unsafe { PxSphereGeometry_new(radius * 2.0) };
+
+        let material = self.physics_materials.get(&material).unwrap();
+
+        let actor = unsafe {
+            phys_PxCreateDynamic(self.physics,
+                                 &transform,
+                                 &geometry as *const PxSphereGeometry as *const PxGeometry,
+                                 material.material,
+                                 1.0,
+                                 &PxTransform_new_2(PxIDENTITY::PxIdentity),
+            )
+        };
+
+        unsafe {
+            PxRigidBody_setAngularDamping_mut(actor as *mut PxRigidBody, 0.5);
+        }
+
+        Some(PhysicsSphereColliderDynamic {
+            actor,
             ref_count: Arc::new(Default::default()),
         })
     }
@@ -248,7 +291,8 @@ impl PhysicsSystem {
             PxPhysics_createShape_mut(
                 self.physics,
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
-                *&material.material, true, shape_flags) };
+                *&material.material, true, shape_flags)
+        };
 
         unsafe {
             PxRigidActor_attachShape_mut(box_actor as *mut PxRigidActor, box_shape);
@@ -266,7 +310,7 @@ impl PhysicsSystem {
 pub enum ClimbingMode {
     Easy,
     Constrained,
-    Last
+    Last,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -294,11 +338,9 @@ pub struct PhysicsCharacterController {
     y_velocity: Arc<UnsafeCell<f32>>,
 }
 
-unsafe impl Send for PhysicsCharacterController {
-}
+unsafe impl Send for PhysicsCharacterController {}
 
-unsafe impl Sync for PhysicsCharacterController {
-}
+unsafe impl Sync for PhysicsCharacterController {}
 
 impl PhysicsCharacterController {
     pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
@@ -348,11 +390,11 @@ impl PhysicsCharacterController {
 
     pub fn get_position(&self) -> Vec3 {
         let mut position = unsafe {
-            PxController_getPosition(self.controller)
+            PxController_getFootPosition(self.controller)
         };
-        let x = unsafe { (*position).x };
-        let y = unsafe { (*position).y };
-        let z = unsafe { (*position).z };
+        let x = unsafe { (position).x };
+        let y = unsafe { (position).y };
+        let z = unsafe { (position).z };
         Vec3::new(x as f32, y as f32, z as f32)
     }
 
@@ -378,11 +420,9 @@ pub struct PhysicsMaterial {
     pub material: *mut PxMaterial,
 }
 
-unsafe impl Send for PhysicsMaterial {
-}
+unsafe impl Send for PhysicsMaterial {}
 
-unsafe impl Sync for PhysicsMaterial {
-}
+unsafe impl Sync for PhysicsMaterial {}
 
 pub struct PhysicsBoxColliderStatic {
     pub actor: *mut PxRigidStatic,
@@ -390,11 +430,9 @@ pub struct PhysicsBoxColliderStatic {
     ref_count: Arc<AtomicUsize>,
 }
 
-unsafe impl Send for PhysicsBoxColliderStatic {
-}
+unsafe impl Send for PhysicsBoxColliderStatic {}
 
-unsafe impl Sync for PhysicsBoxColliderStatic {
-}
+unsafe impl Sync for PhysicsBoxColliderStatic {}
 
 impl PhysicsBoxColliderStatic {
     pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
@@ -404,7 +442,9 @@ impl PhysicsBoxColliderStatic {
         BOX_COLLIDERS.lock().unwrap().push(self.clone());
     }
 
-    pub fn remove_self(&self, physics: PhysicsSystem) {
+    /// # Safety
+    /// could cause a double free, use drop instead
+    pub unsafe fn remove_self(&self, physics: PhysicsSystem) {
         unsafe {
             PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
             PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
@@ -434,17 +474,104 @@ impl Clone for PhysicsBoxColliderStatic {
     }
 }
 
+pub struct PhysicsSphereColliderDynamic {
+    pub actor: *mut PxRigidDynamic,
+    ref_count: Arc<AtomicUsize>,
+}
+
+unsafe impl Send for PhysicsSphereColliderDynamic {}
+
+unsafe impl Sync for PhysicsSphereColliderDynamic {}
+
+impl PhysicsSphereColliderDynamic {
+    pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
+        unsafe {
+            PxScene_addActor_mut(physics.scene, self.actor as *mut PxActor, null_mut());
+        }
+    }
+
+    pub fn set_velocity(&self, velocity: Vec3) {
+        let velocity = PxVec3 {
+            x: velocity.x,
+            y: velocity.y,
+            z: velocity.z,
+        };
+
+        unsafe {
+            PxRigidBody_addForce_mut(self.actor as *mut PxRigidBody, &velocity,
+                                     PxForceMode::VelocityChange, true);
+        }
+    }
+
+    /// # Safety
+    /// could cause a double free, use drop instead
+    pub unsafe fn remove_self(&self, physics: PhysicsSystem) {
+        unsafe {
+            PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
+            PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
+        }
+    }
+
+    pub fn get_position(&self) -> Vec3 {
+        let position = unsafe {
+            PxRigidActor_getGlobalPose(self.actor as *const PxRigidActor).p
+        };
+        let x = (position).x;
+        let y = (position).y;
+        let z = (position).z;
+        Vec3::new(x, y, z)
+    }
+
+    pub fn set_position(&self, position: Vec3) {
+        let position = PxTransform {
+            p: PxVec3 {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            },
+            q: PxQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            },
+        };
+        unsafe {
+            PxRigidActor_setGlobalPose_mut(self.actor as *mut PxRigidActor, &position, true);
+        }
+    }
+}
+
+impl Drop for PhysicsSphereColliderDynamic {
+    fn drop(&mut self) {
+        let ref_count = self.ref_count.fetch_sub(1, Ordering::SeqCst);
+        if ref_count == 0 {
+            unsafe {
+                self.remove_self(PHYSICS_SYSTEM.lock().unwrap().as_ref().unwrap().clone());
+            }
+        }
+    }
+}
+
+impl Clone for PhysicsSphereColliderDynamic {
+    fn clone(&self) -> Self {
+        self.ref_count.fetch_add(1, Ordering::SeqCst);
+        Self {
+            actor: self.actor,
+            ref_count: self.ref_count.clone(),
+        }
+    }
+}
+
 pub struct PhysicsTriggerShape {
     pub actor: *mut PxRigidStatic,
     pub shape: *mut PxShape,
     ref_count: Arc<AtomicUsize>,
 }
 
-unsafe impl Send for PhysicsTriggerShape {
-}
+unsafe impl Send for PhysicsTriggerShape {}
 
-unsafe impl Sync for PhysicsTriggerShape {
-}
+unsafe impl Sync for PhysicsTriggerShape {}
 
 impl PhysicsTriggerShape {
     pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
@@ -454,7 +581,9 @@ impl PhysicsTriggerShape {
         TRIGGER_SHAPES.lock().unwrap().push(self.clone());
     }
 
-    pub fn remove_self(&self, physics: PhysicsSystem) {
+    /// # Safety
+    /// could cause a double free, use drop instead
+    pub unsafe fn remove_self(&self, physics: PhysicsSystem) {
         unsafe {
             PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
             PxRigidActor_release_mut(self.actor as *mut PxRigidActor);

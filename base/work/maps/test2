@@ -82,9 +82,9 @@ entities:
       position:
         name: position
         value: !Vec3
-          x: -40.0
-          y: -3.0
-          z: 40.0
+          x: 15.2
+          y: 0.0
+          z: -20.0
       scale:
         name: scale
         value: !Vec3
@@ -156,15 +156,15 @@ entities:
       position:
         name: position
         value: !Vec3
-          x: -21.5
-          y: -3.5
-          z: 20.0
+          x: -20.5
+          y: 8.0
+          z: 0.0
       scale:
         name: scale
         value: !Vec3
           x: 1.0
           y: 20.0
-          z: 80.0
+          z: 40.0
       visualise:
         name: visualise
         value: !Bool false
@@ -181,13 +181,13 @@ entities:
       position:
         name: position
         value: !Vec3
-          x: -20.0
-          y: -3.5
-          z: 21.5
+          x: 0.0
+          y: 8.0
+          z: 20.5
       scale:
         name: scale
         value: !Vec3
-          x: 80.0
+          x: 40.0
           y: 20.0
           z: 1.0
       visualise:
@@ -206,13 +206,13 @@ entities:
       position:
         name: position
         value: !Vec3
-          x: -20.0
-          y: -3.5
+          x: 0.0
+          y: 8.0
           z: -20.5
       scale:
         name: scale
         value: !Vec3
-          x: 80.0
+          x: 40.0
           y: 20.0
           z: 1.0
       visualise:
@@ -232,14 +232,14 @@ entities:
         name: position
         value: !Vec3
           x: 20.5
-          y: -3.5
-          z: 20.1
+          y: 8.0
+          z: 0.0
       scale:
         name: scale
         value: !Vec3
           x: 1.0
           y: 20.0
-          z: 80.0
+          z: 40.0
       visualise:
         name: visualise
         value: !Bool false
