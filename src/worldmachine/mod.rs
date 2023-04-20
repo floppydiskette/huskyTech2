@@ -650,6 +650,7 @@ impl WorldMachine {
 
                                 if uuid == &who_sent {
                                     namebuf = Some(name.clone());
+                                    break;
                                 }
                             }
                         }
@@ -663,11 +664,11 @@ impl WorldMachine {
                 }
             }
             SteadyPacket::SetName(who_sent, new_name) => {
-                let players = self.world.entities.iter().filter(|e| e.has_component(COMPONENT_TYPE_PLAYER.clone())).collect::<Vec<&Entity>>();
+                let players = self.world.entities.iter_mut().filter(|e| e.has_component(COMPONENT_TYPE_PLAYER.clone())).collect::<Vec<&mut Entity>>();
                 let name = {
                     let mut namebuf = None;
                     for player in players {
-                        if let Some(player_component) = player.get_component(COMPONENT_TYPE_PLAYER.clone()) {
+                        if let Some(player_component) = player.get_component(COMPONENT_TYPE_PLAYER.clone()).cloned() {
                             let uuid = player_component.get_parameter("uuid").unwrap();
                             let uuid = match &uuid.value {
                                 ParameterValue::String(uuid) => uuid,
@@ -680,7 +681,9 @@ impl WorldMachine {
                             };
 
                             if uuid == &who_sent {
+                                player.set_component_parameter(COMPONENT_TYPE_PLAYER.clone(), "name", ParameterValue::String(new_name.clone()));
                                 namebuf = Some(name.clone());
+                                break;
                             }
                         }
                     }
@@ -690,12 +693,6 @@ impl WorldMachine {
                     chat::write_chat("server".to_string(), format!("{} is now known as {}", name, new_name));
                 } else {
                     chat::write_chat("server".to_string(), format!("{} is now known as {}", who_sent, new_name));
-                }
-                if let Some(players) = &self.players {
-                    let mut players = players.lock().await;
-                    if let Some(player) = players.get_mut(&who_sent) {
-                        player.player.name = new_name;
-                    }
                 }
             }
             SteadyPacket::NameRejected(reason) => {

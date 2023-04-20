@@ -9,6 +9,7 @@ use crate::camera::EYE_HEIGHT;
 use crate::helpers::lerp;
 use crate::keyboard::HTKey;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
+use crate::server::ConnectionUUID;
 use crate::server::server_player::{DEFAULT_HEIGHT, DEFAULT_MOVESPEED, DEFAULT_RADIUS, DEFAULT_SPRINTSPEED, DEFAULT_STEPHEIGHT};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::*;
@@ -21,9 +22,8 @@ pub struct PlayerComponent {}
 
 #[allow(clippy::new_ret_no_self)]
 impl PlayerComponent {
-    pub fn new(name: &str, position: Vec3, rotation: Quaternion, scale: Vec3) -> Component {
+    pub fn new(name: &str, uuid: ConnectionUUID, position: Vec3, rotation: Quaternion, scale: Vec3) -> Component {
         let mut parameters = BTreeMap::new();
-        let uuid = uuid::Uuid::new_v4().to_string();
         parameters.insert("uuid".to_string(), Parameter::new("uuid", ParameterValue::String(uuid)));
         parameters.insert("name".to_string(), Parameter::new("name", ParameterValue::String(name.to_string())));
         parameters.insert("position".to_string(), Parameter::new("position", ParameterValue::Vec3(position)));
@@ -41,7 +41,7 @@ impl PlayerComponent {
         }
     }
     pub fn default() -> Component {
-        Self::new("player", Vec3::new(0.0, 0.0, 0.0), Quaternion::new(0.0, 0.0, 0.0, 1.0), Vec3::new(1.0, 1.0, 1.0))
+        Self::new("player", "".to_string(), Vec3::new(0.0, 0.0, 0.0), Quaternion::new(0.0, 0.0, 0.0, 1.0), Vec3::new(1.0, 1.0, 1.0))
     }
 }
 

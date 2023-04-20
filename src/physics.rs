@@ -16,9 +16,9 @@ lazy_static!{
 }
 
 pub const GRAVITY: f32 = -9.81;
-pub const PLAYER_GRAVITY: f32 = -0.36;
+pub const PLAYER_GRAVITY: f32 = -24.36;
 pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
-pub const PLAYER_JUMP_VELOCITY: f32 = 14.3;
+pub const PLAYER_JUMP_VELOCITY: f32 = 12.3;
 
 #[derive(Clone)]
 pub struct PhysicsSystem {
@@ -315,7 +315,7 @@ impl PhysicsCharacterController {
         } else if !self.is_on_ground() {
             let gravity = PLAYER_GRAVITY;
             let mut velocity = unsafe { *self.y_velocity.get() };
-            velocity += gravity;
+            velocity += gravity * delta_time;
             velocity = velocity.max(PLAYER_TERMINAL_VELOCITY);
             unsafe {
                 *self.y_velocity.get() = velocity;
@@ -326,7 +326,8 @@ impl PhysicsCharacterController {
             }
         }
 
-        displacement.y = unsafe { *self.y_velocity.get() * frame_delta };
+        displacement.y = unsafe { *self.y_velocity.get() };
+        displacement.y *= delta_time;
 
         unsafe {
             let flags = PxController_move_mut(self.controller,
@@ -337,7 +338,7 @@ impl PhysicsCharacterController {
             *self.flags.lock().unwrap() = CollisionFlags::from_bits(flags.bits());
         }
 
-        Vec3::new(displacement.x / frame_delta, displacement.y / frame_delta, displacement.z / frame_delta)
+        Vec3::new(displacement.x / frame_delta, displacement.y / delta_time, displacement.z / frame_delta)
     }
 
     pub fn is_on_ground(&self) -> bool {

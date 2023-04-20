@@ -396,7 +396,7 @@ impl Server {
 
         let mut player_entity = Entity::new(player.name.as_str());
         let entity_uuid = player_entity.uid;
-        let player_component = PlayerComponent::new(name, position, rotation, scale);
+        let player_component = PlayerComponent::new(name, uuid.clone(), position, rotation, scale);
         player_entity.add_component(player_component);
 
         // relock worldmachine
