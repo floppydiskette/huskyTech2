@@ -19,7 +19,7 @@ impl Snowball {
             uuid: uuid::Uuid::new_v4().to_string(),
             position,
             initial_velocity,
-            time_to_live: 60.0,
+            time_to_live: 20.0,
             physics_object: phys,
         }
     }
@@ -34,7 +34,7 @@ impl Snowball {
             uuid,
             position,
             initial_velocity,
-            time_to_live: 60.0,
+            time_to_live: 20.0,
             physics_object: phys,
         }
     }

@@ -14,4 +14,4 @@ echo "creating container $CONTAINER_NAME"
 "$I_PREFER" build -t "$CONTAINER_NAME" .
 
 echo "running container $CONTAINER_NAME with cargo build --release --target x86_64-pc-windows-msvc"
-"$I_PREFER" run --rm -it -v "$WORKING_DIR":/ht2 -w=/ht2 "$CONTAINER_NAME" cargo build --release --target x86_64-pc-windows-msvc --no-default0-features --features "graphical"
+"$I_PREFER" run --rm -it -v "$WORKING_DIR":/ht2 -w=/ht2 "$CONTAINER_NAME" cargo build --release --target x86_64-pc-windows-msvc --no-default-features --features "graphical"

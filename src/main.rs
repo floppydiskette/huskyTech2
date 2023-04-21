@@ -95,7 +95,7 @@ async fn main() {
         let mut physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
-        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("lava".to_string()), physics, 25568, 25569, "0.0.0.0").await;
+        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("lava".to_string()), physics, 25566, 25567, "0.0.0.0").await;
         let mut server_clone = server.clone();
         info!("initialised server");
         server_clone.run().await;
@@ -128,7 +128,7 @@ async fn main() {
         info!("initialised worldmachine");
 
         if let Some(ip) = connect_to_lan_server {
-            let server_connection = ClientLanConnection::connect(ip.as_str(), 25568, 25569).await.expect("failed to connect to server");
+            let server_connection = ClientLanConnection::connect(ip.as_str(), 25566, 25567).await.expect("failed to connect to server");
             worldmachine.connect_to_server(ConnectionClientside::Lan(server_connection.clone()));
             let the_clone = server_connection.clone();
             tokio::spawn(async move {

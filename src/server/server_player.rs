@@ -137,7 +137,7 @@ impl ServerPlayer {
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
         worldmachine.physics.lock().unwrap().as_mut().unwrap().tick(delta);
         worldmachine.last_physics_update = current_time;
-        let new_position_calculated = self.physics_controller.lock().unwrap().as_mut().unwrap().get_position();
+        let new_position_calculated = self.physics_controller.lock().unwrap().as_mut().unwrap().get_foot_position();
         let distance = helpers::distance(new_position_calculated, new_position);
         if !self.physics_controller.lock().unwrap().as_ref().unwrap().is_on_ground() {
             self.height_gained_since_grounded += self.last_height - new_position_calculated.y;
@@ -167,9 +167,9 @@ impl ServerPlayer {
     pub async fn gravity_tick(&mut self, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine, frame_delta: f32) {
         let now = std::time::Instant::now();
         let delta = now.duration_since(self.last_move_call).as_secs_f32();
-        let previous_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_position();
+        let previous_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_foot_position();
         self.physics_controller.lock().unwrap().as_mut().unwrap().move_by(Vec3::zero(), false, true, false, delta, frame_delta);
-        let new_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_position();
+        let new_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_foot_position();
         self.last_move_call = now;
         if previous_position != new_position {
             self.set_position(new_position, entity_id, worldmachine).await;
@@ -179,7 +179,7 @@ impl ServerPlayer {
     pub async fn set_position(&mut self, position: Vec3, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) {
         self.position = position;
         if let Some(physics_controller) = self.physics_controller.lock().unwrap().as_ref() {
-            physics_controller.set_position(position);
+            physics_controller.set_foot_position(position);
         }
         if let Some(entity_id) = entity_id {
             let entity_index = worldmachine.get_entity_index(entity_id);
@@ -237,7 +237,7 @@ impl ServerPlayer {
 
     pub async fn get_position(&mut self, entity_id: Option<EntityId>, worldmachine: Option<&mut WorldMachine>) -> Vec3 {
         let position = if let Some(physics_controller) = self.physics_controller.lock().unwrap().as_ref() {
-            physics_controller.get_position()
+            physics_controller.get_foot_position()
         } else {
             self.position
         };
