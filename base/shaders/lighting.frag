@@ -28,6 +28,7 @@ struct Light {
     vec3 colour;
     float intensity;
     float radius;
+    bool casts_shadow;
 };
 
 #define MAX_LIGHTS 100
@@ -128,6 +129,10 @@ void main() {
                 lit = (shadow.r & mask) == 0;
             }
         } else {
+            lit = false;
+        }
+
+        if (!u_lights[i].casts_shadow) {
             lit = false;
         }
 

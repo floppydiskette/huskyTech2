@@ -899,11 +899,14 @@ impl ht_renderer {
                 let light_intensity = GetUniformLocation(lighting_shader.program, light_intensity_c.as_ptr());
                 let light_radius_c = CString::new(format!("u_lights[{}].radius", i)).unwrap();
                 let light_radius = GetUniformLocation(lighting_shader.program, light_radius_c.as_ptr());
+                let light_casts_shadow_c = CString::new(format!("u_lights[{}].casts_shadow", i)).unwrap();
+                let light_casts_shadow = GetUniformLocation(lighting_shader.program, light_casts_shadow_c.as_ptr());
 
                 Uniform3f(light_pos, light.position.x, light.position.y, light.position.z);
                 Uniform3f(light_color, light.color.x, light.color.y, light.color.z);
                 Uniform1f(light_intensity, light.intensity);
                 Uniform1f(light_radius, light.radius);
+                Uniform1i(light_casts_shadow, light.casts_shadow as i32);
             }
 
             // bind the gbuffer textures

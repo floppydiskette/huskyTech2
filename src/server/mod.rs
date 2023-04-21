@@ -406,6 +406,7 @@ impl Server {
         let mut worldmachine = self.worldmachine.lock().await;
         worldmachine.world.entities.push(player_entity.clone());
 
+        drop(worldmachine);
         let res = self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(
             player.uuid.clone(),
             entity_uuid,
@@ -413,6 +414,8 @@ impl Server {
             position,
             rotation,
             scale)).await;
+        let mut worldmachine = self.worldmachine.lock().await;
+        worldmachine.world.entities.push(player_entity.clone());
         worldmachine.queue_update(WorldUpdate::InitEntity(entity_uuid, player_entity.clone())).await;
 
         if !res {

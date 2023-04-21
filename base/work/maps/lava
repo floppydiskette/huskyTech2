@@ -149,7 +149,7 @@ entities:
     parameters:
       casts_shadow:
         name: casts_shadow
-        value: !Bool true
+        value: !Bool false
       colour:
         name: colour
         value: !Vec3
@@ -165,37 +165,6 @@ entities:
           x: 0.0
           y: 24.3
           z: 12.2
-      radius:
-        name: radius
-        value: !Float 40.0
-    component_type:
-      id: 4
-      name: Light
-  children: []
-  parent: null
-- name: ceiling light
-  uid: 5
-  components:
-  - name: Light
-    parameters:
-      casts_shadow:
-        name: casts_shadow
-        value: !Bool true
-      colour:
-        name: colour
-        value: !Vec3
-          x: 1.0
-          y: 1.0
-          z: 1.0
-      intensity:
-        name: intensity
-        value: !Float -0.7
-      position:
-        name: position
-        value: !Vec3
-          x: 0.0
-          y: 24.3
-          z: -12.2
       radius:
         name: radius
         value: !Float 40.0
@@ -691,7 +660,7 @@ entities:
     parameters:
       casts_shadow:
         name: casts_shadow
-        value: !Bool true
+        value: !Bool false
       colour:
         name: colour
         value: !Vec3
@@ -709,7 +678,7 @@ entities:
           z: 4.1
       radius:
         name: radius
-        value: !Float 59.0
+        value: !Float 35.6
     component_type:
       id: 4
       name: Light
@@ -763,7 +732,7 @@ entities:
     parameters:
       casts_shadow:
         name: casts_shadow
-        value: !Bool true
+        value: !Bool false
       colour:
         name: colour
         value: !Vec3
@@ -781,7 +750,7 @@ entities:
           z: 6.3
       radius:
         name: radius
-        value: !Float 59.0
+        value: !Float 56.6
     component_type:
       id: 4
       name: Light
@@ -835,7 +804,7 @@ entities:
     parameters:
       casts_shadow:
         name: casts_shadow
-        value: !Bool true
+        value: !Bool false
       colour:
         name: colour
         value: !Vec3
@@ -853,7 +822,7 @@ entities:
           z: 6.3
       radius:
         name: radius
-        value: !Float 59.0
+        value: !Float 41.1
     component_type:
       id: 4
       name: Light
