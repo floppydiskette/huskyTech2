@@ -125,9 +125,7 @@ pub struct Framebuffers {
     pub shadow_buffer_mask: usize,
     pub shadow_buffer_tex_scratch: usize,
     pub shadow_buffer_tex_mask: usize,
-
     pub samples: [Vec3; 256],
-
 }
 
 impl ht_renderer {
@@ -142,7 +140,7 @@ impl ht_renderer {
 
         {
             let backend = {
-                info!("running on linux, using glfw as backend");
+                info!("using glfw as backend");
                 unsafe {
                     let result = glfw::init(glfw::FAIL_ON_ERRORS);
                     if result.is_err() {
@@ -309,7 +307,7 @@ impl ht_renderer {
                     TexImage2D(TEXTURE_2D, 0, R32F as i32, render_width, render_height, 0, RED, FLOAT, std::ptr::null());
                     TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST as i32);
                     TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST as i32);
-                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT3, TEXTURE_2D, gbuffer_textures[4], 0);
+                    FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT4, TEXTURE_2D, gbuffer_textures[4], 0);
 
                     // renderbuffer for gbuffer
                     let mut gbuffer_renderbuffer = 0;
@@ -318,8 +316,8 @@ impl ht_renderer {
                     RenderbufferStorage(RENDERBUFFER, DEPTH24_STENCIL8, render_width, render_height);
                     FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, gbuffer_renderbuffer);
 
-                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, COLOR_ATTACHMENT2, COLOR_ATTACHMENT3];
-                    DrawBuffers(4, attachments.as_ptr());
+                    let attachments = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, COLOR_ATTACHMENT2, COLOR_ATTACHMENT3, COLOR_ATTACHMENT4];
+                    DrawBuffers(5, attachments.as_ptr());
 
                     if CheckFramebufferStatus(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
                         panic!("framebuffer is not complete (gbuffer)!");
@@ -396,8 +394,6 @@ impl ht_renderer {
 
                     Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT);
 
-
-
                     // print opengl errors
                     let mut error = GetError();
                     while error != NO_ERROR {
@@ -449,7 +445,6 @@ impl ht_renderer {
 
     pub fn lock_mouse(&mut self, lock: bool) {
         unsafe {
-
             {
                 if lock {
                     self.backend.window.lock().unwrap().set_cursor_mode(glfw::CursorMode::Disabled);
@@ -565,11 +560,8 @@ impl ht_renderer {
     // returns true if the window should close
     pub fn manage_window(&mut self) -> bool {
         {
-            unsafe {
-                self.backend.window.lock().unwrap().glfw.poll_events();
-                if self.backend.window.lock().unwrap().should_close() {
-                    return true;
-                }
+            if self.backend.window.lock().unwrap().should_close() {
+                return true;
             }
             false
         }
@@ -772,6 +764,7 @@ impl ht_renderer {
     // shadow pass
     pub fn setup_shadow_pass(&mut self, iteration: u8) {
         unsafe {
+            Viewport(0, 0, self.render_size.x as i32, self.render_size.y as i32);
             // if pass is 1, set framebuffer to the scratch shadow framebuffer
             // if pass is 2, set framebuffer to the mask shadow framebuffer
             if iteration == 1 {
@@ -797,7 +790,6 @@ impl ht_renderer {
                 DepthFunc(LEQUAL);
                 Enable(STENCIL_TEST);
                 DepthMask(FALSE);
-                ColorMask(FALSE, FALSE, FALSE, FALSE);
                 StencilFunc(ALWAYS, 0, 0xFF);
                 StencilOpSeparate(BACK, KEEP, INCR_WRAP, KEEP);
                 StencilOpSeparate(FRONT, KEEP, DECR_WRAP, KEEP);
@@ -807,7 +799,6 @@ impl ht_renderer {
             if iteration == 2 {
                 Viewport(0, 0, self.render_size.x as i32 / SHADOW_FRAC, self.render_size.y as i32 / SHADOW_FRAC);
                 Clear(STENCIL_BUFFER_BIT);
-                ColorMask(TRUE, TRUE, TRUE, TRUE);
 
                 // blit depth and stencil buffer from scratch shadow buffer
                 BindFramebuffer(READ_FRAMEBUFFER, self.backend.framebuffers.shadow_buffer_scratch as GLuint);
@@ -938,10 +929,9 @@ impl ht_renderer {
             Uniform1i(gbuffer_info_loc, 3);
             ActiveTexture(TEXTURE4);
             BindTexture(TEXTURE_2D, self.backend.framebuffers.gbuffer_depth as GLuint);
-            let scene_depth_c = CString::new("scene_depth").unwrap();
-            let scene_depth_loc = GetUniformLocation(lighting_shader.program, scene_depth_c.as_ptr());
-            Uniform1i(scene_depth_loc, 4);
-            // bind the shadow textures
+            let gbuffer_info2_c = CString::new("info2").unwrap();
+            let gbuffer_info2_loc = GetUniformLocation(lighting_shader.program, gbuffer_info2_c.as_ptr());
+            Uniform1i(gbuffer_info2_loc, 4);
             ActiveTexture(TEXTURE5);
             BindTexture(TEXTURE_2D, self.backend.framebuffers.shadow_buffer_tex_mask as GLuint);
             let shadow_buffer_depth_c = CString::new("shadow_mask").unwrap();
