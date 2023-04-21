@@ -13,6 +13,8 @@ lazy_static! {
     static ref BOX_COLLIDERS: Arc<Mutex<Vec<PhysicsBoxColliderStatic>>> = Arc::new(Mutex::new(Vec::new()));
     static ref TRIGGER_SHAPES: Arc<Mutex<Vec<PhysicsTriggerShape>>> = Arc::new(Mutex::new(Vec::new()));
     static ref PHYSICS_SYSTEM: Arc<Mutex<Option<PhysicsSystem>>> = Arc::new(Mutex::new(None));
+
+    pub static ref PHYSICS_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
 }
 
 pub const GRAVITY: f32 = -9.81;
@@ -45,6 +47,7 @@ unsafe extern "C" fn on_trigger(
 
 impl PhysicsSystem {
     pub fn init() -> Self {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let foundation = unsafe { physx_create_foundation() };
         let physics = unsafe { physx_create_physics(foundation) };
         let mut scene_desc = unsafe { PxSceneDesc_new(PxPhysics_getTolerancesScale(physics)) };
@@ -76,6 +79,7 @@ impl PhysicsSystem {
             PxControllerManager_setOverlapRecoveryModule_mut(controller_manager, true);
         }
 
+        drop(lock);
         let physics_materials = Self::init_materials(physics);
 
         let sys = Self {
@@ -90,24 +94,29 @@ impl PhysicsSystem {
 
     // drop colliders and shapes before switching scenes
     pub fn cleanup() {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let mut box_colliders = BOX_COLLIDERS.lock().unwrap();
         let mut trigger_shapes = TRIGGER_SHAPES.lock().unwrap();
         box_colliders.clear();
         trigger_shapes.clear();
+        drop(lock);
     }
 
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn init_materials(physics: *mut PxPhysics) -> HashMap<Materials, PhysicsMaterial> {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let mut physics_materials = HashMap::new();
 
         let player_material = unsafe { PxPhysics_createMaterial_mut(physics, 0.0, 0.0, 0.0) };
 
         physics_materials.insert(Materials::Player, PhysicsMaterial { material: player_material });
 
+        drop(lock);
         physics_materials
     }
 
     pub fn copy_with_new_scene(&self) -> Self {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let mut scene_desc = unsafe { PxSceneDesc_new(PxPhysics_getTolerancesScale(*self.physics.lock().unwrap())) };
         scene_desc.gravity = PxVec3 {
             x: 0.0,
@@ -137,6 +146,8 @@ impl PhysicsSystem {
             PxControllerManager_setOverlapRecoveryModule_mut(controller_manager, true);
         }
 
+        drop(lock);
+
         Self { foundation: self.foundation.clone(), physics: self.physics.clone(), dispatcher: self.dispatcher.clone(), scene, controller_manager, physics_materials: self.physics_materials.clone() }
     }
 
@@ -144,14 +155,18 @@ impl PhysicsSystem {
         if delta_time <= 0.01 { // physics doesn't like small time steps
             return Some(delta_time);
         }
+
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe { PxScene_simulate_mut(self.scene, delta_time, null_mut(), null_mut(), 0, true) };
         let mut error = 0u32;
         unsafe { PxScene_fetchResults_mut(self.scene, true, &mut error) };
         assert_eq!(error, 0, "physx error: {}", error);
+        drop(lock);
         None
     }
 
     pub fn create_character_controller(&self, radius: f32, height: f32, step_offset: f32, material: Materials) -> Option<PhysicsCharacterController> {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let mut controller_desc = unsafe { PxCapsuleControllerDesc_new_alloc() };
         unsafe { PxCapsuleControllerDesc_setToDefault_mut(controller_desc) };
         let material = self.physics_materials.get(&material).unwrap();
@@ -164,6 +179,7 @@ impl PhysicsSystem {
             if PxCapsuleControllerDesc_isValid(controller_desc) {
                 let mut controller = PxControllerManager_createController_mut(self.controller_manager, controller_desc as *mut _);
 
+                drop(lock);
                 Some(PhysicsCharacterController {
                     controller: Arc::new(Mutex::new(controller)),
                     flags: Arc::new(Mutex::new(CollisionFlags::default())),
@@ -171,12 +187,14 @@ impl PhysicsSystem {
                     y_velocity: Arc::new(UnsafeCell::new(0.0)),
                 })
             } else {
+                drop(lock);
                 None
             }
         }
     }
 
     pub fn create_box_collider_static(&self, position: Vec3, size: Vec3, material: Materials) -> Option<PhysicsBoxColliderStatic> {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         // physx defines the center of the box as the center of the bottom face
         // ht2 defines the center of the box as the top right of the bottom face
         let position = position;
@@ -213,6 +231,8 @@ impl PhysicsSystem {
         unsafe {
             PxRigidActor_attachShape_mut(box_actor as *mut PxRigidActor, box_shape);
         }
+
+        drop(lock);
         Some(PhysicsBoxColliderStatic {
             actor: box_actor,
             shape: box_shape,
@@ -221,6 +241,7 @@ impl PhysicsSystem {
     }
 
     pub fn create_sphere_actor(&self, position: Vec3, radius: f32, material: Materials) -> Option<PhysicsSphereColliderDynamic> {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         // physx defines the center of the box as the center of the bottom face
         // ht2 defines the center of the box as the top right of the bottom face
         let position = position;
@@ -258,6 +279,7 @@ impl PhysicsSystem {
             PxRigidBody_setAngularDamping_mut(actor as *mut PxRigidBody, 0.5);
         }
 
+        drop(lock);
         Some(PhysicsSphereColliderDynamic {
             actor,
             ref_count: Arc::new(Default::default()),
@@ -265,6 +287,7 @@ impl PhysicsSystem {
     }
 
     pub fn create_trigger_shape(&self, position: Vec3, size: Vec3, material: Materials) -> Option<PhysicsTriggerShape> {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         // physx defines the center of the box as the center of the bottom face
         // ht2 defines the center of the box as the top right of the bottom face
         let position = position + Vec3::new(size.x / 2.0, size.y / 2.0, -size.z / 2.0);
@@ -302,6 +325,7 @@ impl PhysicsSystem {
             PxRigidActor_attachShape_mut(box_actor as *mut PxRigidActor, box_shape);
         }
 
+        drop(lock);
         Some(PhysicsTriggerShape {
             actor: box_actor,
             shape: box_shape,
@@ -348,6 +372,7 @@ unsafe impl Sync for PhysicsCharacterController {}
 
 impl PhysicsCharacterController {
     pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         if delta_time <= 0.0 || frame_delta <= 0.0 {
             return Vec3::zero();
         }
@@ -388,6 +413,7 @@ impl PhysicsCharacterController {
             *self.flags.lock().unwrap() = CollisionFlags::from_bits(flags.bits());
         }
 
+        drop(lock);
         Vec3::new(displacement.x / frame_delta, displacement.y / delta_time, displacement.z / frame_delta)
     }
 
@@ -397,26 +423,31 @@ impl PhysicsCharacterController {
     }
 
     pub fn get_position(&self) -> Vec3 {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let mut position = unsafe {
             PxController_getPosition(*self.controller.lock().unwrap())
         };
         let x = unsafe { (*position).x };
         let y = unsafe { (*position).y };
         let z = unsafe { (*position).z };
+        drop(lock);
         Vec3::new(x as f32, y as f32, z as f32)
     }
 
     pub fn get_foot_position(&self) -> Vec3 {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let mut position = unsafe {
             PxController_getFootPosition(*self.controller.lock().unwrap())
         };
         let x = (position).x;
         let y = (position).y;
         let z = (position).z;
+        drop(lock);
         Vec3::new(x as f32, y as f32, z as f32)
     }
 
     pub fn set_position(&self, position: Vec3) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let position = PxExtendedVec3 {
             x: position.x as f64,
             y: position.y as f64,
@@ -425,9 +456,11 @@ impl PhysicsCharacterController {
         unsafe {
             PxController_setPosition_mut(*self.controller.lock().unwrap(), &position);
         }
+        drop(lock);
     }
 
     pub fn set_foot_position(&self, position: Vec3) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let position = PxExtendedVec3 {
             x: position.x as f64,
             y: position.y as f64,
@@ -436,6 +469,7 @@ impl PhysicsCharacterController {
         unsafe {
             PxController_setFootPosition_mut(*self.controller.lock().unwrap(), &position);
         }
+        drop(lock);
     }
 }
 
@@ -465,19 +499,23 @@ unsafe impl Sync for PhysicsBoxColliderStatic {}
 
 impl PhysicsBoxColliderStatic {
     pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe {
             PxScene_addActor_mut(physics.scene, self.actor as *mut PxActor, null_mut());
         }
         BOX_COLLIDERS.lock().unwrap().push(self.clone());
+        drop(lock);
     }
 
     /// # Safety
     /// could cause a double free, use drop instead
     pub unsafe fn remove_self(&self, physics: PhysicsSystem) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe {
             PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
             PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
         }
+        drop(lock);
     }
 }
 
@@ -514,12 +552,15 @@ unsafe impl Sync for PhysicsSphereColliderDynamic {}
 
 impl PhysicsSphereColliderDynamic {
     pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe {
             PxScene_addActor_mut(physics.scene, self.actor as *mut PxActor, null_mut());
         }
+        drop(lock);
     }
 
     pub fn set_velocity(&self, velocity: Vec3) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let velocity = PxVec3 {
             x: velocity.x,
             y: velocity.y,
@@ -530,28 +571,34 @@ impl PhysicsSphereColliderDynamic {
             PxRigidBody_addForce_mut(self.actor as *mut PxRigidBody, &velocity,
                                      PxForceMode::VelocityChange, true);
         }
+        drop(lock);
     }
 
     /// # Safety
     /// could cause a double free, use drop instead
     pub unsafe fn remove_self(&self, physics: PhysicsSystem) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe {
             PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
             PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
         }
+        drop(lock);
     }
 
     pub fn get_position(&self) -> Vec3 {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let position = unsafe {
             PxRigidActor_getGlobalPose(self.actor as *const PxRigidActor).p
         };
         let x = (position).x;
         let y = (position).y;
         let z = (position).z;
+        drop(lock);
         Vec3::new(x, y, z)
     }
 
     pub fn set_position(&self, position: Vec3) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         let position = PxTransform {
             p: PxVec3 {
                 x: position.x,
@@ -568,6 +615,7 @@ impl PhysicsSphereColliderDynamic {
         unsafe {
             PxRigidActor_setGlobalPose_mut(self.actor as *mut PxRigidActor, &position, true);
         }
+        drop(lock);
     }
 }
 
@@ -604,19 +652,23 @@ unsafe impl Sync for PhysicsTriggerShape {}
 
 impl PhysicsTriggerShape {
     pub fn add_self_to_scene(&self, physics: PhysicsSystem) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe {
             PxScene_addActor_mut(physics.scene, self.actor as *mut PxActor, null_mut());
         }
         TRIGGER_SHAPES.lock().unwrap().push(self.clone());
+        drop(lock);
     }
 
     /// # Safety
     /// could cause a double free, use drop instead
     pub unsafe fn remove_self(&self, physics: PhysicsSystem) {
+        let lock = PHYSICS_LOCK.lock().unwrap();
         unsafe {
             PxScene_removeActor_mut(physics.scene, self.actor as *mut PxActor, false);
             PxRigidActor_release_mut(self.actor as *mut PxRigidActor);
         }
+        drop(lock);
     }
 }
 

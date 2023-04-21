@@ -19,12 +19,14 @@ impl Snowball {
             uuid: uuid::Uuid::new_v4().to_string(),
             position,
             initial_velocity,
-            time_to_live: 120.0,
+            time_to_live: 60.0,
             physics_object: phys,
         }
     }
     pub fn new_with_uuid(uuid: String, position: Vec3, initial_velocity: Vec3, physics: &PhysicsSystem) -> Self {
         info!("creating snowball (clientside) at {:?}", position);
+        let mut oneshots = crate::audio::ONESHOTS.lock().unwrap();
+        oneshots.push(("donk.wav".to_string(), position));
         let phys = physics.create_sphere_actor(position, 0.05, Materials::Player).unwrap();
         phys.add_self_to_scene(physics.clone());
         phys.set_velocity(initial_velocity);
@@ -32,7 +34,7 @@ impl Snowball {
             uuid,
             position,
             initial_velocity,
-            time_to_live: 120.0,
+            time_to_live: 60.0,
             physics_object: phys,
         }
     }

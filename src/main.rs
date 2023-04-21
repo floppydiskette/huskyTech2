@@ -107,6 +107,7 @@ async fn main() {
         sengine.lock().unwrap().add_context(scontext.clone());
 
         let mut audio = crate::audio::AudioBackend::new();
+        audio.load_sound("donk.wav");
         info!("initialised audio subsystem");
         let renderer = ht_renderer::init();
         if renderer.is_err() {

@@ -510,7 +510,7 @@ impl Server {
                                     rotation.w = -rotation.w;
                                     let forward = rotation.forward();
                                     let forward = Vec3::new(forward.x, forward.y, forward.z);
-                                    let position = forward * 1.5 + Vec3::new(0.0, 1.0, 0.0) + position;
+                                    let position = forward * 1.5 + Vec3::new(0.0, 0.1, 0.0) + position;
                                     let velocity = forward * 20.0 + Vec3::new(0.0, 5.0, 0.0);
                                     drop(players);
 

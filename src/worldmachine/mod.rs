@@ -1116,7 +1116,7 @@ impl WorldMachine {
                     shadow_mesh.lock().unwrap().updated_animations_this_frame = false;
                 }
                 let texture = renderer.textures.get("default").cloned().unwrap();
-                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.5, 0.0);
+                mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.1, 0.0);
                 mesh.rotation = rotation;
                 mesh.scale = Vec3::new(1.0, 1.0, 1.0);
 
@@ -1425,9 +1425,9 @@ impl WorldMachine {
                     let mut mesh = mesh.clone();
                     let old_position = mesh.position;
                     let old_rotation = mesh.rotation;
-                    mesh.position = position + Vec3::new(0.0, -0.5, 0.0);
+                    mesh.position = position + Vec3::new(0.0, -0.1, 0.0);
                     mesh.rotation = rotation;
-                    mesh.scale = Vec3::new(0.6, 0.6, 0.6);
+                    mesh.scale = Vec3::new(1.0, 1.0, 1.0);
 
                     let move_anim = MoveAnim::from_values(speed, strafe);
 
