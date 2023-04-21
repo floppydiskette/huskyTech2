@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use gfx_maths::*;
 use crate::helpers;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
@@ -30,13 +32,14 @@ pub struct ServerPlayer {
     head_rotation: Quaternion,
     rotation: Quaternion,
     pub scale: Vec3,
-    physics_controller: Option<PhysicsCharacterController>,
+    physics_controller: Arc<Mutex<Option<PhysicsCharacterController>>>,
     movement_speed: f32,
     last_move_call: std::time::Instant,
     height_gained_since_grounded: f32,
     last_height: f32,
     pub speed: f32,
     pub strafe: f32,
+    pub snowball_cooldown: f32,
 }
 
 impl Default for ServerPlayer {
@@ -48,13 +51,14 @@ impl Default for ServerPlayer {
             head_rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             rotation: Quaternion::new(0.0, 0.0, 0.0, 1.0),
             scale: Vec3::new(1.0, 1.0, 1.0),
-            physics_controller: None,
+            physics_controller: Arc::new(Mutex::new(None)),
             movement_speed: DEFAULT_MOVESPEED,
             last_move_call: std::time::Instant::now(),
             height_gained_since_grounded: 0.0,
             last_height: 0.0,
             speed: 0.0,
             strafe: 0.0,
+            snowball_cooldown: 0.0,
         }
     }
 }
@@ -68,19 +72,20 @@ impl ServerPlayer {
             head_rotation: rotation,
             rotation,
             scale,
-            physics_controller: None,
+            physics_controller: Arc::new(Mutex::new(None)),
             movement_speed: DEFAULT_MOVESPEED,
             last_move_call: std::time::Instant::now(),
             height_gained_since_grounded: 0.0,
             last_height: 0.0,
             speed: 0.0,
             strafe: 0.0,
+            snowball_cooldown: 0.0,
         }
     }
 
     pub fn init(&mut self, physics_system: PhysicsSystem) {
-        self.physics_controller = physics_system.create_character_controller(DEFAULT_RADIUS, DEFAULT_HEIGHT, DEFAULT_STEPHEIGHT, Materials::Player);
-        if self.physics_controller.is_none() {
+        *self.physics_controller.lock().unwrap() = physics_system.create_character_controller(DEFAULT_RADIUS, DEFAULT_HEIGHT, DEFAULT_STEPHEIGHT, Materials::Player);
+        if self.physics_controller.lock().unwrap().is_none() {
             warn!("failed to create physics controller for player");
         }
     }
@@ -126,15 +131,15 @@ impl ServerPlayer {
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
         displacement_vector *= delta;
-        let final_movement = self.physics_controller.as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta, delta);
+        let _final_movement = self.physics_controller.lock().unwrap().as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta, delta);
         self.last_move_call = current_time;
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(worldmachine.last_physics_update).as_secs_f32();
-        worldmachine.physics.as_mut().unwrap().tick(delta);
+        worldmachine.physics.lock().unwrap().as_mut().unwrap().tick(delta);
         worldmachine.last_physics_update = current_time;
-        let new_position_calculated = self.physics_controller.as_mut().unwrap().get_position();
+        let new_position_calculated = self.physics_controller.lock().unwrap().as_mut().unwrap().get_position();
         let distance = helpers::distance(new_position_calculated, new_position);
-        if !self.physics_controller.as_ref().unwrap().is_on_ground() {
+        if !self.physics_controller.lock().unwrap().as_ref().unwrap().is_on_ground() {
             self.height_gained_since_grounded += self.last_height - new_position_calculated.y;
         } else {
             self.height_gained_since_grounded = 0.0;
@@ -162,9 +167,9 @@ impl ServerPlayer {
     pub async fn gravity_tick(&mut self, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine, frame_delta: f32) {
         let now = std::time::Instant::now();
         let delta = now.duration_since(self.last_move_call).as_secs_f32();
-        let previous_position = self.physics_controller.as_mut().unwrap().get_position();
-        self.physics_controller.as_mut().unwrap().move_by(Vec3::zero(), false, true, false, delta, frame_delta);
-        let new_position = self.physics_controller.as_mut().unwrap().get_position();
+        let previous_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_position();
+        self.physics_controller.lock().unwrap().as_mut().unwrap().move_by(Vec3::zero(), false, true, false, delta, frame_delta);
+        let new_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_position();
         self.last_move_call = now;
         if previous_position != new_position {
             self.set_position(new_position, entity_id, worldmachine).await;
@@ -173,7 +178,7 @@ impl ServerPlayer {
 
     pub async fn set_position(&mut self, position: Vec3, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) {
         self.position = position;
-        if let Some(physics_controller) = &self.physics_controller {
+        if let Some(physics_controller) = self.physics_controller.lock().unwrap().as_ref() {
             physics_controller.set_position(position);
         }
         if let Some(entity_id) = entity_id {
@@ -231,7 +236,7 @@ impl ServerPlayer {
     }
 
     pub async fn get_position(&mut self, entity_id: Option<EntityId>, worldmachine: Option<&mut WorldMachine>) -> Vec3 {
-        let position = if let Some(physics_controller) = &self.physics_controller {
+        let position = if let Some(physics_controller) = self.physics_controller.lock().unwrap().as_ref() {
             physics_controller.get_position()
         } else {
             self.position

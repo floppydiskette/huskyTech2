@@ -3,7 +3,7 @@ use gfx_maths::*;
 use crate::helpers;
 use crate::helpers::gfx_maths_mat4_to_glmatrix_mat4;
 
-pub const EYE_HEIGHT: f32 = 1.36;
+pub const EYE_HEIGHT: f32 = 1.66;
 
 #[derive(Clone)]
 pub struct Camera {

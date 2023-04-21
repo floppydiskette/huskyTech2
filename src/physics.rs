@@ -22,9 +22,9 @@ pub const PLAYER_JUMP_VELOCITY: f32 = 12.3;
 
 #[derive(Clone)]
 pub struct PhysicsSystem {
-    pub foundation: *mut PxFoundation,
-    pub physics: *mut PxPhysics,
-    pub dispatcher: *mut PxDefaultCpuDispatcher,
+    pub foundation: Arc<Mutex<*mut PxFoundation>>,
+    pub physics: Arc<Mutex<*mut PxPhysics>>,
+    pub dispatcher: Arc<Mutex<*mut PxDefaultCpuDispatcher>>,
     pub scene: *mut PxScene,
     pub controller_manager: *mut PxControllerManager,
     pub physics_materials: HashMap<Materials, PhysicsMaterial>,
@@ -78,7 +78,11 @@ impl PhysicsSystem {
 
         let physics_materials = Self::init_materials(physics);
 
-        let sys = Self { foundation, physics, dispatcher, scene, controller_manager, physics_materials };
+        let sys = Self {
+            foundation: Arc::new(Mutex::new(foundation)),
+            physics: Arc::new(Mutex::new(physics)),
+            dispatcher: Arc::new(Mutex::new(dispatcher)),
+            scene, controller_manager, physics_materials };
 
         PHYSICS_SYSTEM.lock().unwrap().replace(sys.clone());
         sys
@@ -104,7 +108,7 @@ impl PhysicsSystem {
     }
 
     pub fn copy_with_new_scene(&self) -> Self {
-        let mut scene_desc = unsafe { PxSceneDesc_new(PxPhysics_getTolerancesScale(self.physics)) };
+        let mut scene_desc = unsafe { PxSceneDesc_new(PxPhysics_getTolerancesScale(*self.physics.lock().unwrap())) };
         scene_desc.gravity = PxVec3 {
             x: 0.0,
             y: GRAVITY,
@@ -125,7 +129,7 @@ impl PhysicsSystem {
 
         scene_desc.cpuDispatcher = dispatcher as *mut _;
 
-        let scene = unsafe { PxPhysics_createScene_mut(self.physics, &scene_desc) };
+        let scene = unsafe { PxPhysics_createScene_mut(*self.physics.lock().unwrap(), &scene_desc) };
 
         let controller_manager = unsafe { phys_PxCreateControllerManager(scene, true) };
 
@@ -133,7 +137,7 @@ impl PhysicsSystem {
             PxControllerManager_setOverlapRecoveryModule_mut(controller_manager, true);
         }
 
-        Self { foundation: self.foundation, physics: self.physics, dispatcher: self.dispatcher, scene, controller_manager, physics_materials: self.physics_materials.clone() }
+        Self { foundation: self.foundation.clone(), physics: self.physics.clone(), dispatcher: self.dispatcher.clone(), scene, controller_manager, physics_materials: self.physics_materials.clone() }
     }
 
     pub fn tick(&self, delta_time: f32) -> Option<f32> {
@@ -161,7 +165,7 @@ impl PhysicsSystem {
                 let mut controller = PxControllerManager_createController_mut(self.controller_manager, controller_desc as *mut _);
 
                 Some(PhysicsCharacterController {
-                    controller,
+                    controller: Arc::new(Mutex::new(controller)),
                     flags: Arc::new(Mutex::new(CollisionFlags::default())),
                     scene: self.scene,
                     y_velocity: Arc::new(UnsafeCell::new(0.0)),
@@ -196,12 +200,12 @@ impl PhysicsSystem {
 
         let material = self.physics_materials.get(&material).unwrap();
 
-        let box_actor = unsafe { PxPhysics_createRigidStatic_mut(self.physics, &transform) };
+        let box_actor = unsafe { PxPhysics_createRigidStatic_mut(*self.physics.lock().unwrap(), &transform) };
         let shape_flags = PxShapeFlag::SimulationShape as u8 | PxShapeFlag::SceneQueryShape as u8;
         let shape_flags = PxShapeFlags::from_bits(shape_flags).unwrap();
         let box_shape = unsafe {
             PxPhysics_createShape_mut(
-                self.physics,
+                *self.physics.lock().unwrap(),
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
                 *&material.material, true, shape_flags)
         };
@@ -241,7 +245,7 @@ impl PhysicsSystem {
         let material = self.physics_materials.get(&material).unwrap();
 
         let actor = unsafe {
-            phys_PxCreateDynamic(self.physics,
+            phys_PxCreateDynamic(*self.physics.lock().unwrap(),
                                  &transform,
                                  &geometry as *const PxSphereGeometry as *const PxGeometry,
                                  material.material,
@@ -284,12 +288,12 @@ impl PhysicsSystem {
 
         let material = self.physics_materials.get(&material).unwrap();
 
-        let box_actor = unsafe { PxPhysics_createRigidStatic_mut(self.physics, &transform) };
+        let box_actor = unsafe { PxPhysics_createRigidStatic_mut(*self.physics.lock().unwrap(), &transform) };
         let shape_flags = PxShapeFlag::TriggerShape as u8;
         let shape_flags = PxShapeFlags::from_bits(shape_flags).unwrap();
         let box_shape = unsafe {
             PxPhysics_createShape_mut(
-                self.physics,
+                *self.physics.lock().unwrap(),
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
                 *&material.material, true, shape_flags)
         };
@@ -332,7 +336,7 @@ impl CollisionFlags {
 
 #[derive(Clone)]
 pub struct PhysicsCharacterController {
-    pub controller: *mut PxController,
+    pub controller: Arc<Mutex<*mut PxController>>,
     pub flags: Arc<Mutex<CollisionFlags>>,
     scene: *mut PxScene,
     y_velocity: Arc<UnsafeCell<f32>>,
@@ -376,7 +380,7 @@ impl PhysicsCharacterController {
         displacement.y *= delta_time;
 
         unsafe {
-            let flags = PxController_move_mut(self.controller,
+            let flags = PxController_move_mut(*self.controller.lock().unwrap(),
                                               &displacement,
                                               0.0,
                                               delta_time,
@@ -394,7 +398,7 @@ impl PhysicsCharacterController {
 
     pub fn get_position(&self) -> Vec3 {
         let mut position = unsafe {
-            PxController_getPosition(self.controller)
+            PxController_getPosition(*self.controller.lock().unwrap())
         };
         let x = unsafe { (*position).x };
         let y = unsafe { (*position).y };
@@ -404,7 +408,7 @@ impl PhysicsCharacterController {
 
     pub fn get_foot_position(&self) -> Vec3 {
         let mut position = unsafe {
-            PxController_getFootPosition(self.controller)
+            PxController_getFootPosition(*self.controller.lock().unwrap())
         };
         let x = (position).x;
         let y = (position).y;
@@ -419,7 +423,7 @@ impl PhysicsCharacterController {
             z: position.z as f64,
         };
         unsafe {
-            PxController_setPosition_mut(self.controller, &position);
+            PxController_setPosition_mut(*self.controller.lock().unwrap(), &position);
         }
     }
 
@@ -430,7 +434,7 @@ impl PhysicsCharacterController {
             z: position.z as f64,
         };
         unsafe {
-            PxController_setFootPosition_mut(self.controller, &position);
+            PxController_setFootPosition_mut(*self.controller.lock().unwrap(), &position);
         }
     }
 }

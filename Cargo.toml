@@ -30,6 +30,7 @@ gl_matrix = "0.0"
 lazy_static = "1.4.0"
 glad-gl = { path = "./glad-gl", optional = true }
 rand = "0.8.5"
+libm = "0.2.6"
 
 [profile.release.package.physx-sys]
 debug = false

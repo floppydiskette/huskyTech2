@@ -12,7 +12,7 @@ pub struct Snowball {
 impl Snowball {
     pub fn new(position: Vec3, initial_velocity: Vec3, physics: &PhysicsSystem) -> Self {
         info!("creating snowball at {:?}", position);
-        let phys = physics.create_sphere_actor(position, 0.5, Materials::Player).unwrap();
+        let phys = physics.create_sphere_actor(position, 0.05, Materials::Player).unwrap();
         phys.add_self_to_scene(physics.clone());
         phys.set_velocity(initial_velocity);
         Self {
@@ -25,7 +25,7 @@ impl Snowball {
     }
     pub fn new_with_uuid(uuid: String, position: Vec3, initial_velocity: Vec3, physics: &PhysicsSystem) -> Self {
         info!("creating snowball (clientside) at {:?}", position);
-        let phys = physics.create_sphere_actor(position, 0.5, Materials::Player).unwrap();
+        let phys = physics.create_sphere_actor(position, 0.05, Materials::Player).unwrap();
         phys.add_self_to_scene(physics.clone());
         phys.set_velocity(initial_velocity);
         Self {

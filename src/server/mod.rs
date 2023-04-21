@@ -1,6 +1,7 @@
 use halfbrown::HashMap;
 use std::collections::{VecDeque};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use async_recursion::async_recursion;
 use gfx_maths::*;
 use tokio::sync::{mpsc, Mutex, watch};
@@ -375,7 +376,7 @@ impl Server {
         let worldmachine = self.worldmachine.lock().await;
         // for each entity in the worldmachine, send an initialise packet
         let world_clone = worldmachine.world.clone();
-        let physics = worldmachine.physics.clone().unwrap();
+        let physics = worldmachine.physics.lock().unwrap().clone().unwrap();
         // drop worldmachine so we don't hold the lock while we send packets
         drop(worldmachine);
         for entity in world_clone.entities.iter() {
@@ -404,6 +405,7 @@ impl Server {
         // relock worldmachine
         let mut worldmachine = self.worldmachine.lock().await;
         worldmachine.world.entities.push(player_entity.clone());
+
         let res = self.send_steady_packet(&connection, SteadyPacket::InitialisePlayer(
             player.uuid.clone(),
             entity_uuid,
@@ -500,29 +502,36 @@ impl Server {
                                 let mut worldmachine = self.worldmachine.lock().await;
                                 let mut players = worldmachine.players.as_mut().unwrap().lock().await;
                                 let player = players.get_mut(&local_connection.uuid).unwrap();
-                                let position = player.player.get_position(None, None).await;
-                                let rotation = player.player.get_head_rotation(None, None).await;
-                                let velocity = rotation.forward() * 10.0;
-                                drop(players);
+                                let snowball_cooldown = player.player.snowball_cooldown;
+                                if snowball_cooldown <= 0.0 {
+                                    player.player.snowball_cooldown = 0.5;
+                                    let position = player.player.get_position(None, None).await;
+                                    let mut rotation = player.player.get_head_rotation(None, None).await;
+                                    rotation.w = -rotation.w;
+                                    let forward = rotation.forward();
+                                    let forward = Vec3::new(forward.x, forward.y, forward.z);
+                                    let position = forward * 1.5 + Vec3::new(0.0, 1.0, 0.0) + position;
+                                    let velocity = forward * 20.0 + Vec3::new(0.0, 5.0, 0.0);
+                                    drop(players);
 
-                                let snowball = Snowball::new(position, velocity, worldmachine.physics.as_ref().unwrap());
-                                // send to all clients (including the one that sent it)
-                                let packet = SteadyPacket::ThrowSnowball(snowball.uuid.clone(), position, velocity);
+                                    let snowball = Snowball::new(position, velocity, worldmachine.physics.lock().unwrap().as_ref().unwrap());
+                                    // send to all clients (including the one that sent it)
+                                    let packet = SteadyPacket::ThrowSnowball(snowball.uuid.clone(), position, velocity);
 
-                                worldmachine.snowballs.push(snowball);
-                                drop(local_connection);
-                                match &self.connections {
-                                    Connections::Local(local_connections) => {
-                                        let cons = local_connections.lock().await.clone();
-                                        for connection in cons.iter() {
-                                            self.send_steady_packet(&Connection::Local(connection.clone()), packet.clone()).await;
+                                    worldmachine.snowballs.push(snowball);
+                                    drop(local_connection);
+                                    match &self.connections {
+                                        Connections::Local(local_connections) => {
+                                            let cons = local_connections.lock().await.clone();
+                                            for connection in cons.iter() {
+                                                self.send_steady_packet(&Connection::Local(connection.clone()), packet.clone()).await;
+                                            }
+                                        }
+                                        Connections::Lan(_, _) => {
+                                            unimplemented!()
                                         }
                                     }
-                                    Connections::Lan(_, _) => {
-                                        unimplemented!()
-                                    }
                                 }
-
                             }
                             SteadyPacket::NameRejected(_) => {}
                         }
@@ -613,7 +622,7 @@ impl Server {
                             let velocity = -rotation.right() * 10.0;
                             drop(players);
 
-                            let snowball = Snowball::new(position, velocity, worldmachine.physics.as_ref().unwrap());
+                            let snowball = Snowball::new(position, velocity, worldmachine.physics.lock().unwrap().as_ref().unwrap());
                             // send to all clients (including the one that sent it)
                             let packet = SteadyPacket::ThrowSnowball(snowball.uuid.clone(), position, velocity);
 
@@ -996,14 +1005,14 @@ impl Server {
     pub async fn run(&mut self) {
         let mut compensation_delta = 0.0;
         loop {
-
             // do physics tick
             let mut worldmachine = self.worldmachine.lock().await;
             let last_physics_tick = worldmachine.last_physics_update;
             let current_time = std::time::Instant::now();
             let delta = (current_time - last_physics_tick).as_secs_f32();
-            if delta > 0.1 {
-                if let Some(delta) = worldmachine.physics.as_mut().unwrap().tick(delta + compensation_delta) {
+            if delta > 0.0 {
+                let res = worldmachine.physics.lock().unwrap().as_mut().unwrap().tick(delta + compensation_delta);
+                if let Some(delta) = res {
                     compensation_delta += delta;
                 } else {
                     compensation_delta = 0.0;
@@ -1015,6 +1024,7 @@ impl Server {
                     let mut players = players.lock().await;
                     for (_uuid, player) in players.iter_mut() {
                         player.player.gravity_tick(player.entity_id, &mut worldmachine, delta).await;
+                        player.player.snowball_cooldown -= delta;
                     }
                 }
             }

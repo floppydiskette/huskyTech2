@@ -100,7 +100,7 @@ impl Clone for World {
 pub struct WorldMachine {
     pub world: World,
     pub snowballs: Vec<Snowball>,
-    pub physics: Option<PhysicsSystem>,
+    pub physics: Arc<std::sync::Mutex<Option<PhysicsSystem>>>,
     pub last_physics_update: std::time::Instant,
     pub game_data_path: String,
     pub counter: f32,
@@ -127,7 +127,7 @@ impl Default for WorldMachine {
         Self {
             world,
             snowballs: vec![],
-            physics: None,
+            physics: Arc::new(std::sync::Mutex::new(None)),
             last_physics_update: std::time::Instant::now(),
             game_data_path: String::from(""),
             counter: 0.0,
@@ -148,12 +148,12 @@ impl WorldMachine {
     pub fn initialise(&mut self, physics: PhysicsSystem, is_server: bool) {
         let _ = *components::COMPONENTS_INITIALISED;
         self.game_data_path = String::from("base");
-        self.physics = Some(physics);
+        self.physics = Arc::new(std::sync::Mutex::new(Some(physics)));
         self.is_server = is_server;
 
         if self.is_server {
-            let physics = self.physics.as_mut().unwrap().copy_with_new_scene();
-            self.physics = Some(physics);
+            let physics = self.physics.lock().unwrap().as_mut().unwrap().copy_with_new_scene();
+            self.physics = Arc::new(std::sync::Mutex::new(Some(physics)));
         }
 
         self.blank_slate(is_server);
@@ -251,8 +251,8 @@ impl WorldMachine {
                     position += trans_position;
                     scale *= trans_scale;
                 }
-                let box_collider_physics = self.physics.as_ref().unwrap().create_box_collider_static(position, scale, Materials::Player).unwrap();
-                box_collider_physics.add_self_to_scene(self.physics.clone().unwrap());
+                let box_collider_physics = self.physics.lock().unwrap().as_ref().unwrap().create_box_collider_static(position, scale, Materials::Player).unwrap();
+                box_collider_physics.add_self_to_scene(self.physics.lock().unwrap().clone().unwrap());
             }
             if let Some(trigger) = entity.get_component(COMPONENT_TYPE_TRIGGER.clone()) {
                 let trigger = trigger.borrow();
@@ -281,8 +281,8 @@ impl WorldMachine {
                     position += trans_position;
                     scale *= trans_scale;
                 }
-                let trigger_physics = self.physics.as_ref().unwrap().create_trigger_shape(position, scale, Materials::Player).unwrap();
-                trigger_physics.add_self_to_scene(self.physics.clone().unwrap());
+                let trigger_physics = self.physics.lock().unwrap().as_ref().unwrap().create_trigger_shape(position, scale, Materials::Player).unwrap();
+                trigger_physics.add_self_to_scene(self.physics.lock().unwrap().clone().unwrap());
                 debug!("added trigger to physics scene with position: {:?} and scale: {:?}", position, scale);
             }
         }
@@ -631,7 +631,7 @@ impl WorldMachine {
             }
             SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
                 let mut player = Player::default();
-                player.init(self.physics.clone().unwrap(), uuid, name.clone(), position, rotation, scale);
+                player.init(self.physics.lock().unwrap().clone().unwrap(), uuid, name.clone(), position, rotation, scale);
                 chat::CHAT_BUFFER.lock().unwrap().my_name = name;
                 self.ignore_this_entity = Some(id);
                 self.player = Some(PlayerContainer {
@@ -746,7 +746,7 @@ impl WorldMachine {
                     }
                 }
                 if !already_have {
-                    let snowball = Snowball::new_with_uuid(uuid, position, initial_velocity, self.physics.as_ref().unwrap());
+                    let snowball = Snowball::new_with_uuid(uuid, position, initial_velocity, self.physics.lock().unwrap().as_ref().unwrap());
                     self.snowballs.push(snowball);
                 }
             }
@@ -1118,7 +1118,7 @@ impl WorldMachine {
                 let texture = renderer.textures.get("default").cloned().unwrap();
                 mesh.position = position + (rotation.forward() * -0.2) + Vec3::new(0.0, -0.5, 0.0);
                 mesh.rotation = rotation;
-                mesh.scale = Vec3::new(0.6, 0.6, 0.6);
+                mesh.scale = Vec3::new(1.0, 1.0, 1.0);
 
                 let move_anim = MoveAnim::from_values(player.player.speed, player.player.strafe);
 
