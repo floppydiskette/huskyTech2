@@ -89,6 +89,27 @@ impl ServerPlayer {
     pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, movement_info: MovementInfo, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine) -> bool {
         // TODO!! IMPORTANT!! remember to check that the player is not trying to move vertically, or through a wall! displacement_vector should not contain a y value, and the new_position should be checked against the world to make sure it is not inside a wall.
 
+        // if any of the values are NaN, return false
+        if new_position.x.is_nan() || new_position.y.is_nan() || new_position.z.is_nan() {
+            return false;
+        }
+
+        if new_rotation.x.is_nan() || new_rotation.y.is_nan() || new_rotation.z.is_nan() || new_rotation.w.is_nan() {
+            return false;
+        }
+
+        if new_head_rotation.x.is_nan() || new_head_rotation.y.is_nan() || new_head_rotation.z.is_nan() || new_head_rotation.w.is_nan() {
+            return false;
+        }
+
+        if displacement_vector.x.is_nan() || displacement_vector.y.is_nan() || displacement_vector.z.is_nan() {
+            return false;
+        }
+
+        if movement_info.speed.is_nan() || movement_info.strafe.is_nan() {
+            return false;
+        }
+
         if movement_info.sprinting {
             self.movement_speed = DEFAULT_SPRINTSPEED;
         } else {

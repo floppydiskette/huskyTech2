@@ -77,11 +77,13 @@ impl MeshRenderer {
 pub struct Light {}
 
 impl Light {
-    pub fn new(position: Vec3, colour: Vec3, intensity: f64) -> Component {
+    pub fn new(position: Vec3, colour: Vec3, intensity: f64, radius: f64, casts_shadow: bool) -> Component {
         let mut parameters = BTreeMap::new();
         parameters.insert("position".to_string(), Parameter::new("position", ParameterValue::Vec3(position)));
         parameters.insert("colour".to_string(), Parameter::new("colour", ParameterValue::Vec3(colour)));
         parameters.insert("intensity".to_string(), Parameter::new("intensity", ParameterValue::Float(intensity)));
+        parameters.insert("radius".to_string(), Parameter::new("radius", ParameterValue::Float(radius)));
+        parameters.insert("casts_shadow".to_string(), Parameter::new("casts_shadow", ParameterValue::Bool(casts_shadow)));
 
         Component {
             name: "Light".to_string(),
@@ -90,7 +92,7 @@ impl Light {
         }
     }
     pub fn default() -> Component {
-        Self::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0), 1.0)
+        Self::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0), 1.0, 30.0, true)
     }
 }
 

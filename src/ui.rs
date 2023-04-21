@@ -15,6 +15,7 @@ lazy_static!{
     pub static ref SHOW_FPS: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
     pub static ref SHOW_DEBUG_LOG: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
     pub static ref DEBUG_LOCATION: Arc<Mutex<Vec3>> = Arc::new(Mutex::new(Vec3::new(0.0, 0.0, 0.0)));
+    pub static ref BOB_T: Arc<Mutex<f32>> = Arc::new(Mutex::new(0.0));
     pub static ref FPS: Arc<Mutex<f32>> = Arc::new(Mutex::new(0.0));
     pub static ref DEBUG_LOG: Arc<Mutex<OnScreenDebugLog>> = Arc::new(Mutex::new(OnScreenDebugLog {
         buffer: VecDeque::new(),
@@ -203,8 +204,10 @@ fn render_debug_location(ui: &mut Ui) {
 
 fn render_fps(ui: &mut Ui) {
     let fps = FPS.lock().unwrap();
+    let bob_t = BOB_T.lock().unwrap();
     ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
         ui.label(format!("FPS: {}", *fps as u32));
+        ui.label(format!("BOB_T: {}", *bob_t));
     });
 }
 

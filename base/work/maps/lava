@@ -1,0 +1,457 @@
+entities:
+- name: ht2
+  uid: 1
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 5.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      mesh:
+        name: mesh
+        value: !String ht2
+      texture:
+        name: texture
+        value: !String default
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: floor
+  uid: 2
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: -4.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      mesh:
+        name: mesh
+        value: !String level
+      texture:
+        name: texture
+        value: !String rock4k
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: ceiling light
+  uid: 3
+  components:
+  - name: Light
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      intensity:
+        name: intensity
+        value: !Float 3.1
+      position:
+        name: position
+        value: !Vec3
+          x: 115.6
+          y: 22.8
+          z: -6.0
+      radius:
+        name: radius
+        value: !Float 88.7
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: ceiling light
+  uid: 4
+  components:
+  - name: Light
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      intensity:
+        name: intensity
+        value: !Float 3.1
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 24.3
+          z: 12.2
+      radius:
+        name: radius
+        value: !Float 40.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: ceiling light
+  uid: 5
+  components:
+  - name: Light
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      intensity:
+        name: intensity
+        value: !Float 3.1
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 24.3
+          z: -12.2
+      radius:
+        name: radius
+        value: !Float 40.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: ceiling light
+  uid: 6
+  components:
+  - name: Light
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+      intensity:
+        name: intensity
+        value: !Float 3.1
+      position:
+        name: position
+        value: !Vec3
+          x: 47.7
+          y: 22.8
+          z: -8.5
+      radius:
+        name: radius
+        value: !Float 88.7
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: col_beam_4
+  uid: 9
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 77.6
+          y: -19.7
+          z: -5.3
+      scale:
+        name: scale
+        value: !Vec3
+          x: 8.5
+          y: 30.3
+          z: 5.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_floor_1
+  uid: 10
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: -19.1
+          z: 0.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 40.0
+          y: 30.3
+          z: 41.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_ceiling
+  uid: 11
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 57.3
+          y: 33.7
+          z: 0.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 158.5
+          y: 4.2
+          z: 41.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_beam_1
+  uid: 12
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 27.2
+          y: -19.3
+          z: 0.5
+      scale:
+        name: scale
+        value: !Vec3
+          x: 8.5
+          y: 30.3
+          z: 5.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_beam_2
+  uid: 13
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 43.2
+          y: -20.1
+          z: -5.2
+      scale:
+        name: scale
+        value: !Vec3
+          x: 8.5
+          y: 30.3
+          z: 5.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_beam_3
+  uid: 14
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 61.2
+          y: -19.8
+          z: 5.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 8.5
+          y: 30.3
+          z: 5.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_floor_2
+  uid: 15
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 112.7
+          y: -19.1
+          z: 0.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 40.0
+          y: 30.3
+          z: 41.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: col_floor_3
+  uid: 16
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 57.3
+          y: -42.3
+          z: 0.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 80.3
+          y: 30.3
+          z: 41.5
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: ceiling
+  uid: 17
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 1.0
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      mesh:
+        name: mesh
+        value: !String ceiling
+      texture:
+        name: texture
+        value: !String rock4k
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+systems: []
+eid_manager: 17
+current_map: lava

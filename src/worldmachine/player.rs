@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use gfx_maths::*;
@@ -366,17 +366,23 @@ impl Player {
             let mut movement = movement.0;
             movement.y = 0.0;
             bob_mag = movement.magnitude() * 0.1;
+            if movement.y < 0.0 {
+                bob_mag = 0.0;
+            }
         }
 
         // for lerp
         self.bob_t += delta_time;
+        *crate::ui::BOB_T.lock().unwrap() = self.bob_t;
 
         // head bob
         if self.bob_on {
             let initial_head = self.get_position() + Vec3::new(0.0, EYE_HEIGHT, 0.0);
-            let bob = if bob_mag != 0.0 { initial_head + Vec3::new(0.0, 0.1 * ((self.bob_t  * 17.0).sin() * bob_mag), 0.0) } else {
+            let bob = if bob_mag != 0.0 { initial_head + Vec3::new(0.0, 0.1 * ((self.bob_t  * 12.0).sin() * bob_mag), 0.0) } else if delta_time > 0.0 {
                 self.bob_t = 0.0;
-                helpers::lerp_vec3(initial_head, renderer.camera.get_position(), self.bob_t)
+                initial_head
+            } else {
+                initial_head
             };
             renderer.camera.set_position(bob);
         }
@@ -389,13 +395,13 @@ impl Player {
     }
 
     pub fn get_position(&mut self) -> Vec3 {
-        let position = self.physics_controller.as_mut().unwrap().get_position();
+        let position = self.physics_controller.as_mut().unwrap().get_foot_position();
         self.position = position;
         position
     }
 
     pub fn set_position(&mut self, position: Vec3) {
-        self.physics_controller.as_mut().unwrap().set_position(position);
+        self.physics_controller.as_mut().unwrap().set_foot_position(position);
         self.position = position;
     }
 

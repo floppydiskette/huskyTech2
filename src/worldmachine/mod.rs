@@ -4,6 +4,7 @@ use halfbrown::HashMap;
 use std::collections::{VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use fyrox_sound::context::SoundContext;
 use gfx_maths::{Quaternion, Vec2, Vec3};
@@ -225,24 +226,24 @@ impl WorldMachine {
         for entity in &mut self.world.entities {
             if let Some(box_collider) = entity.get_component(COMPONENT_TYPE_BOX_COLLIDER.clone()) {
                 let box_collider = box_collider.borrow();
-                let position = box_collider.get_parameter("position").unwrap().borrow().clone();
+                let position = box_collider.get_parameter("position").borrow().clone();
                 let mut position = match position.value {
                     ParameterValue::Vec3(position) => position,
                     _ => panic!("position is not a vec3"),
                 };
-                let scale = box_collider.get_parameter("scale").unwrap().borrow().clone();
+                let scale = box_collider.get_parameter("scale").borrow().clone();
                 let mut scale = match scale.value {
                     ParameterValue::Vec3(scale) => scale,
                     _ => panic!("scale is not a vec3"),
                 };
                 if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
                     let transform = transform.borrow();
-                    let trans_position = transform.get_parameter("position").unwrap().borrow().clone();
+                    let trans_position = transform.get_parameter("position").borrow().clone();
                     let trans_position = match trans_position.value {
                         ParameterValue::Vec3(position) => position,
                         _ => panic!("position is not a vec3"),
                     };
-                    let trans_scale = transform.get_parameter("scale").unwrap().borrow().clone();
+                    let trans_scale = transform.get_parameter("scale").borrow().clone();
                     let trans_scale = match trans_scale.value {
                         ParameterValue::Vec3(scale) => scale,
                         _ => panic!("scale is not a vec3"),
@@ -255,24 +256,24 @@ impl WorldMachine {
             }
             if let Some(trigger) = entity.get_component(COMPONENT_TYPE_TRIGGER.clone()) {
                 let trigger = trigger.borrow();
-                let position = trigger.get_parameter("position").unwrap().borrow().clone();
+                let position = trigger.get_parameter("position").borrow().clone();
                 let mut position = match position.value {
                     ParameterValue::Vec3(position) => position,
                     _ => panic!("position is not a vec3"),
                 };
-                let scale = trigger.get_parameter("size").unwrap().borrow().clone();
+                let scale = trigger.get_parameter("size").borrow().clone();
                 let mut scale = match scale.value {
                     ParameterValue::Vec3(scale) => scale,
                     _ => panic!("scale is not a vec3"),
                 };
                 if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
                     let transform = transform.borrow();
-                    let trans_position = transform.get_parameter("position").unwrap().borrow().clone();
+                    let trans_position = transform.get_parameter("position").borrow().clone();
                     let trans_position = match trans_position.value {
                         ParameterValue::Vec3(position) => position,
                         _ => panic!("position is not a vec3"),
                     };
-                    let trans_scale = transform.get_parameter("scale").unwrap().borrow().clone();
+                    let trans_scale = transform.get_parameter("scale").borrow().clone();
                     let trans_scale = match trans_scale.value {
                         ParameterValue::Vec3(scale) => scale,
                         _ => panic!("scale is not a vec3"),
@@ -340,7 +341,7 @@ impl WorldMachine {
             }
             if let Some(light) = light_component {
                 let light = light.clone();
-                let position = light.get_parameter("position").unwrap();
+                let position = light.get_parameter("position");
                 let mut position = match position.value {
                     ParameterValue::Vec3(v) => v,
                     _ => {
@@ -348,7 +349,7 @@ impl WorldMachine {
                         Vec3::new(0.0, 0.0, 0.0)
                     }
                 };
-                let color = light.get_parameter("colour").unwrap();
+                let color = light.get_parameter("colour");
                 let color = match color.value {
                     ParameterValue::Vec3(v) => v,
                     _ => {
@@ -356,7 +357,7 @@ impl WorldMachine {
                         Vec3::new(0.0, 0.0, 0.0)
                     }
                 };
-                let intensity = light.get_parameter("intensity").unwrap();
+                let intensity = light.get_parameter("intensity");
                 let intensity = match intensity.value {
                     ParameterValue::Float(v) => v,
                     _ => {
@@ -364,9 +365,26 @@ impl WorldMachine {
                         0.0
                     }
                 };
+                let radius = light.get_parameter("radius");
+                let radius = match radius.value {
+                    ParameterValue::Float(v) => v,
+                    _ => {
+                        error!("send_lights_to_renderer: light radius is not a float");
+                        0.0
+                    }
+                };
+                let casts_shadow = light.get_parameter("casts_shadow");
+                let casts_shadow = match casts_shadow.value {
+                    ParameterValue::Bool(v) => v,
+                    _ => {
+                        error!("send_lights_to_renderer: light casts_shadow is not a bool");
+                        false
+                    }
+                };
+
                 if let Some(transform) = transform_component {
                     let transform = transform.clone();
-                    let trans_position = transform.get_parameter("position").unwrap();
+                    let trans_position = transform.get_parameter("position");
                     let trans_position = match trans_position.value {
                         ParameterValue::Vec3(v) => v,
                         _ => {
@@ -380,7 +398,8 @@ impl WorldMachine {
                     position,
                     color,
                     intensity: intensity as f32,
-                    radius: 40.0,
+                    radius: radius as f32,
+                    casts_shadow,
                 });
             }
         }
@@ -649,12 +668,12 @@ impl WorldMachine {
                         let mut namebuf = None;
                         for player in players {
                             if let Some(player_component) = player.get_component(COMPONENT_TYPE_PLAYER.clone()) {
-                                let uuid = player_component.get_parameter("uuid").unwrap();
+                                let uuid = player_component.get_parameter("uuid");
                                 let uuid = match &uuid.value {
                                     ParameterValue::String(uuid) => uuid,
                                     _ => panic!("uuid is not a string")
                                 };
-                                let name = player_component.get_parameter("name").unwrap();
+                                let name = player_component.get_parameter("name");
                                 let name = match &name.value {
                                     ParameterValue::String(name) => name,
                                     _ => panic!("name is not a string")
@@ -681,12 +700,12 @@ impl WorldMachine {
                     let mut namebuf = None;
                     for player in players {
                         if let Some(player_component) = player.get_component(COMPONENT_TYPE_PLAYER.clone()).cloned() {
-                            let uuid = player_component.get_parameter("uuid").unwrap();
+                            let uuid = player_component.get_parameter("uuid");
                             let uuid = match &uuid.value {
                                 ParameterValue::String(uuid) => uuid,
                                 _ => panic!("uuid is not a string")
                             };
-                            let name = player_component.get_parameter("name").unwrap();
+                            let name = player_component.get_parameter("name");
                             let name = match &name.value {
                                 ParameterValue::String(name) => name,
                                 _ => panic!("name is not a string")
@@ -821,7 +840,7 @@ impl WorldMachine {
                     let entity = self.world.entities.get_mut(entity_index).unwrap();
                     let prev_transform = entity.get_component(COMPONENT_TYPE_PLAYER.clone());
                     if let Some(prev_transform) = prev_transform {
-                        let prev_position = prev_transform.get_parameter("position").unwrap();
+                        let prev_position = prev_transform.get_parameter("position");
 
                         // calculate the difference between the previous and new position
                         let prev_position = match prev_position.value {
@@ -1135,7 +1154,7 @@ impl WorldMachine {
             for component in components {
                 match component.get_type() {
                     x if x == COMPONENT_TYPE_MESH_RENDERER.clone() => {
-                        let mesh = component.get_parameter("mesh").unwrap();
+                        let mesh = component.get_parameter("mesh");
                         let mesh = match &mesh.value {
                             ParameterValue::String(v) => Some(v),
                             _ => {
@@ -1144,7 +1163,7 @@ impl WorldMachine {
                             }
                         };
                         let mesh = mesh.unwrap();
-                        let texture = component.get_parameter("texture").unwrap();
+                        let texture = component.get_parameter("texture");
                         let texture = match &texture.value {
                             ParameterValue::String(v) => Some(v),
                             _ => {
@@ -1168,7 +1187,7 @@ impl WorldMachine {
                         }
                     }
                     x if x == COMPONENT_TYPE_TERRAIN.clone() => {
-                        let name = component.get_parameter("name").unwrap();
+                        let name = component.get_parameter("name");
                         let name = match &name.value {
                             ParameterValue::String(v) => Some(v),
                             _ => {
@@ -1206,100 +1225,108 @@ impl WorldMachine {
                 continue;
             }
             if let Some(mesh_renderer) = entity.get_component(COMPONENT_TYPE_MESH_RENDERER.clone()) {
-                if let Some(mesh) = mesh_renderer.get_parameter("mesh") {
                     // get the string value of the mesh
-                    let mesh_name = match mesh.value {
-                        ParameterValue::String(ref s) => s.clone(),
-                        _ => {
-                            error!("render: mesh is not a string");
+                let mesh_name = match mesh_renderer.get_parameter("mesh").value {
+                    ParameterValue::String(ref s) => s.clone(),
+                    _ => {
+                        error!("render: mesh is not a string");
+                        continue;
+                    }
+                };
+
+                // todo: add "shadow casting" parameter to mesh renderer and stop hardcoding this
+                if mesh_name == "Plane" {
+                    if let Some((pass, _)) = shadow_pass {
+                        if pass == 1 {
                             continue;
+                        }
+                    }
+                }
+
+                // if so, render it
+                let mesh = renderer.meshes.get(&*mesh_name).cloned();
+                if let Some(mut mesh) = mesh {
+                    let casts_shadow = mesh_renderer.get_parameter("casts_shadow");
+                    let casts_shadow = match casts_shadow.value {
+                        ParameterValue::Bool(v) => v,
+                        _ => {
+                            error!("render: casts_shadow is not a bool");
+                            true
                         }
                     };
 
-                    // todo: add "shadow casting" parameter to mesh renderer and stop hardcoding this
-                    if mesh_name == "Plane" {
+                    if !casts_shadow {
                         if let Some((pass, _)) = shadow_pass {
                             if pass == 1 {
                                 continue;
                             }
                         }
                     }
+                    let texture = mesh_renderer.get_parameter("texture");
+                    let texture_name = match texture.value {
+                        ParameterValue::String(ref s) => s.clone(),
+                        _ => {
+                            error!("render: texture is not a string");
+                            continue;
+                        }
+                    };
+                    let texture = renderer.textures.get(&*texture_name).cloned();
+                    if texture.is_none() {
+                        error!("texture not found: {:?}", texture_name);
+                        continue;
+                    }
+                    let texture = texture.unwrap();
 
-                    // if so, render it
-                    let mesh = renderer.meshes.get(&*mesh_name).cloned();
-                    if let Some(mut mesh) = mesh {
-                        let texture = mesh_renderer.get_parameter("texture").unwrap();
-                        let texture_name = match texture.value {
-                            ParameterValue::String(ref s) => s.clone(),
+                    let old_position = mesh.position;
+                    let old_rotation = mesh.rotation;
+                    let old_scale = mesh.scale;
+
+                    // if this entity has a transform, apply it
+                    if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
+                        let position = match transform.get_parameter("position").value {
+                            ParameterValue::Vec3(v) => v,
                             _ => {
-                                error!("render: texture is not a string");
+                                error!("render: transform position is not a vec3");
                                 continue;
                             }
                         };
-                        let texture = renderer.textures.get(&*texture_name).cloned();
-                        if texture.is_none() {
-                            error!("texture not found: {:?}", texture_name);
-                            continue;
-                        }
-                        let texture = texture.unwrap();
-
-                        let old_position = mesh.position;
-                        let old_rotation = mesh.rotation;
-                        let old_scale = mesh.scale;
-
-                        // if this entity has a transform, apply it
-                        if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
-                            if let Some(position) = transform.get_parameter("position") {
-                                let position = match position.value {
-                                    ParameterValue::Vec3(v) => v,
-                                    _ => {
-                                        error!("render: transform position is not a vec3");
-                                        continue;
-                                    }
-                                };
-                                mesh.position += position;
+                        mesh.position += position;
+                        let rotation = match transform.get_parameter("rotation").value {
+                            ParameterValue::Quaternion(v) => v,
+                            _ => {
+                                error!("render: transform rotation is not a quaternion");
+                                continue;
                             }
-                            if let Some(rotation) = transform.get_parameter("rotation") {
-                                let rotation = match rotation.value {
-                                    ParameterValue::Quaternion(v) => v,
-                                    _ => {
-                                        error!("render: transform rotation is not a quaternion");
-                                        continue;
-                                    }
-                                };
-                                // add a bit of rotation to the transform to make things more interesting
-                                mesh.rotation = rotation;
-                            }
-                            if let Some(scale) = transform.get_parameter("scale") {
-                                let scale = match scale.value {
-                                    ParameterValue::Vec3(v) => v,
-                                    _ => {
-                                        error!("render: transform scale is not a vec3");
-                                        continue;
-                                    }
-                                };
-                                mesh.scale *= scale;
-                            }
-                        }
-
+                        };
                         // add a bit of rotation to the transform to make things more interesting
-                        //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
-
-                        let mut anim_weights = None;
-                        if mesh_name == "player" {
-                            let move_anim = MoveAnim::from_values(0.0, 0.0);
-                            anim_weights = Some(move_anim.weights());
-                        }
-
-                        mesh.render(renderer, Some(&texture), anim_weights, shadow_pass);
-                        mesh.position = old_position;
-                        mesh.rotation = old_rotation;
-                        mesh.scale = old_scale;
-                        *renderer.meshes.get_mut(&*mesh_name).unwrap() = mesh;
-                    } else {
-                        // if not, add it to the list of things to load
-                        self.entities_wanting_to_load_things.push(i);
+                        mesh.rotation = rotation;
+                        let scale = match transform.get_parameter("scale").value {
+                            ParameterValue::Vec3(v) => v,
+                            _ => {
+                                error!("render: transform scale is not a vec3");
+                                continue;
+                            }
+                        };
+                        mesh.scale *= scale;
                     }
+
+                    // add a bit of rotation to the transform to make things more interesting
+                    //entity.set_component_parameter(COMPONENT_TYPE_TRANSFORM.clone(), "rotation", Box::new(Quaternion::from_euler_angles_zyx(&Vec3::new(0.0, self.counter, 0.0))));
+
+                    let mut anim_weights = None;
+                    if mesh_name == "player" {
+                        let move_anim = MoveAnim::from_values(0.0, 0.0);
+                        anim_weights = Some(move_anim.weights());
+                    }
+
+                    mesh.render(renderer, Some(&texture), anim_weights, shadow_pass);
+                    mesh.position = old_position;
+                    mesh.rotation = old_rotation;
+                    mesh.scale = old_scale;
+                    *renderer.meshes.get_mut(&*mesh_name).unwrap() = mesh;
+                } else {
+                    // if not, add it to the list of things to load
+                    self.entities_wanting_to_load_things.push(i);
                 }
             }
             /*if let Some(terrain) = entity.get_component(COMPONENT_TYPE_TERRAIN.clone()) {
@@ -1357,7 +1384,7 @@ impl WorldMachine {
                         continue;
                     }
                 }
-                let position = player_component.get_parameter("position").unwrap();
+                let position = player_component.get_parameter("position"); // todo: change to foot position
                 let position = match position.value {
                     ParameterValue::Vec3(v) => v,
                     _ => {
@@ -1365,7 +1392,7 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let rotation = player_component.get_parameter("rotation").unwrap();
+                let rotation = player_component.get_parameter("rotation");
                 let rotation = match rotation.value {
                     ParameterValue::Quaternion(v) => v,
                     _ => {
@@ -1373,7 +1400,7 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let speed = player_component.get_parameter("speed").unwrap();
+                let speed = player_component.get_parameter("speed");
                 let speed = match speed.value {
                     ParameterValue::Float(v) => v,
                     _ => {
@@ -1381,7 +1408,7 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let strafe = player_component.get_parameter("strafe").unwrap();
+                let strafe = player_component.get_parameter("strafe");
                 let strafe = match strafe.value {
                     ParameterValue::Float(v) => v,
                     _ => {
@@ -1423,7 +1450,7 @@ impl WorldMachine {
             for component in components {
                 match component.get_type() {
                     x if x == COMPONENT_TYPE_JUKEBOX.clone() => {
-                        let track = component.get_parameter("track").unwrap();
+                        let track = component.get_parameter("track");
                         let track = match track.value {
                             ParameterValue::String(ref s) => s.clone(),
                             _ => {
@@ -1445,7 +1472,7 @@ impl WorldMachine {
 
         for (i, entity) in self.world.entities.iter_mut().enumerate() {
             if let Some(jukebox) = entity.get_component(COMPONENT_TYPE_JUKEBOX.clone()) {
-                let track = jukebox.get_parameter("track").unwrap();
+                let track = jukebox.get_parameter("track");
                 let track = match track.value {
                     ParameterValue::String(ref s) => s.clone(),
                     _ => {
@@ -1453,7 +1480,7 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let volume = jukebox.get_parameter("volume").unwrap();
+                let volume = jukebox.get_parameter("volume");
                 let volume = match volume.value {
                     ParameterValue::Float(v) => v,
                     _ => {
@@ -1461,7 +1488,7 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let playing = jukebox.get_parameter("playing").unwrap();
+                let playing = jukebox.get_parameter("playing");
                 let playing = match playing.value {
                     ParameterValue::Bool(ref s) => s.clone(),
                     _ => {
@@ -1469,7 +1496,7 @@ impl WorldMachine {
                         continue;
                     }
                 };
-                let uuid = jukebox.get_parameter("uuid").unwrap();
+                let uuid = jukebox.get_parameter("uuid");
                 let uuid = match uuid.value {
                     ParameterValue::String(ref s) => s.clone(),
                     _ => {
@@ -1479,7 +1506,7 @@ impl WorldMachine {
                 };
 
                 let position = if let Some(transform) = entity.get_component(COMPONENT_TYPE_TRANSFORM.clone()) {
-                    let position = transform.get_parameter("position").unwrap();
+                    let position = transform.get_parameter("position");
                     let position = match position.value {
                         ParameterValue::Vec3(v) => v,
                         _ => {

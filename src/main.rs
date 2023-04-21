@@ -95,7 +95,7 @@ async fn main() {
         let mut physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
-        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("test".to_string()), physics, 25568, 25569, "0.0.0.0").await;
+        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("lava".to_string()), physics, 25568, 25569, "0.0.0.0").await;
         let mut server_clone = server.clone();
         info!("initialised server");
         server_clone.run().await;
@@ -138,7 +138,7 @@ async fn main() {
                 the_clone.tcp_listener_thread().await;
             });
         } else {
-            let mut server = server::Server::new(&level_to_load.unwrap_or("test".to_string()), physics.clone());
+            let mut server = server::Server::new(&level_to_load.unwrap_or("lava".to_string()), physics.clone());
             let mut server_clone = server.clone();
             tokio::spawn(async move {
                 server_clone.run().await;
@@ -160,7 +160,7 @@ async fn main() {
             let use_shadows_loc = GetUniformLocation(lighting_shader.program, use_shadows_c.as_ptr() as *const GLchar);
             Uniform1i(use_shadows_loc, 1);
         }
-        renderer.backend.clear_colour.store(RGBA { r: 0, g: 75, b: 75, a: 255 }, Ordering::SeqCst);
+        renderer.backend.clear_colour.store(RGBA { r: 0, g: 0, b: 0, a: 255 }, Ordering::SeqCst);
         crate::ui::SHOW_UI.store(true, Ordering::SeqCst);
 
         renderer.camera.set_fov(DEFAULT_FOV);
@@ -223,9 +223,11 @@ async fn main() {
             renderer.clear_all_shadow_buffers();
             let light_count = renderer.lights.len();
             for i in 0..light_count {
-                worldmachine.render(&mut renderer, Some((1, i)));
-                worldmachine.render(&mut renderer, Some((2, i)));
-                renderer.next_light();
+                if renderer.lights[i].casts_shadow {
+                    worldmachine.render(&mut renderer, Some((1, i)));
+                    worldmachine.render(&mut renderer, Some((2, i)));
+                    renderer.next_light();
+                }
             }
 
             renderer.swap_buffers(&mut worldmachine).await;

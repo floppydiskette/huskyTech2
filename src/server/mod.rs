@@ -659,6 +659,11 @@ impl Server {
                 let connection = connection.clone();
                 self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
             }
+            if player.player.get_position(None, None).await.y < -20.0 {
+                let connection = connection.clone();
+                player.player.set_position(Vec3::new(0.0, 0.0, 0.0), player.entity_id, &mut worldmachine).await;
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
+            }
         }
     }
 
@@ -991,8 +996,29 @@ impl Server {
     pub async fn run(&mut self) {
         let mut compensation_delta = 0.0;
         loop {
-            self.listen_for_lan_connections().await;
 
+            // do physics tick
+            let mut worldmachine = self.worldmachine.lock().await;
+            let last_physics_tick = worldmachine.last_physics_update;
+            let current_time = std::time::Instant::now();
+            let delta = (current_time - last_physics_tick).as_secs_f32();
+            if delta > 0.1 {
+                if let Some(delta) = worldmachine.physics.as_mut().unwrap().tick(delta + compensation_delta) {
+                    compensation_delta += delta;
+                } else {
+                    compensation_delta = 0.0;
+                    worldmachine.last_physics_update = current_time;
+                }
+                // do a player physics tick for each player
+                {
+                    let players = worldmachine.players.clone().unwrap();
+                    let mut players = players.lock().await;
+                    for (_uuid, player) in players.iter_mut() {
+                        player.player.gravity_tick(player.entity_id, &mut worldmachine, delta).await;
+                    }
+                }
+            }
+            drop(worldmachine);
 
             // lock worldmachine
             {
@@ -1004,29 +1030,9 @@ impl Server {
                 if let Some(updates) = updates {
                     self.handle_world_updates(updates).await;
                 }
-
-                // do physics tick
-                let mut worldmachine = self.worldmachine.lock().await;
-                let last_physics_tick = worldmachine.last_physics_update;
-                let current_time = std::time::Instant::now();
-                let delta = (current_time - last_physics_tick).as_secs_f32();
-                if delta > 0.1 {
-                    // do a player physics tick for each player
-                    {
-                        let players = worldmachine.players.clone().unwrap();
-                        let mut players = players.lock().await;
-                        for (_uuid, player) in players.iter_mut() {
-                            player.player.gravity_tick(player.entity_id, &mut worldmachine, delta).await;
-                        }
-                    }
-                    if let Some(delta) = worldmachine.physics.as_mut().unwrap().tick(delta + compensation_delta) {
-                        compensation_delta += delta;
-                    } else {
-                        compensation_delta = 0.0;
-                        worldmachine.last_physics_update = current_time;
-                    }
-                }
             }
+
+            self.listen_for_lan_connections().await;
         }
     }
 }

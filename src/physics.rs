@@ -17,7 +17,7 @@ lazy_static! {
 
 pub const GRAVITY: f32 = -9.81;
 pub const PLAYER_GRAVITY: f32 = -24.36;
-pub const PLAYER_TERMINAL_VELOCITY: f32 = -90.0;
+pub const PLAYER_TERMINAL_VELOCITY: f32 = 90.0;
 pub const PLAYER_JUMP_VELOCITY: f32 = 12.3;
 
 #[derive(Clone)]
@@ -344,6 +344,10 @@ unsafe impl Sync for PhysicsCharacterController {}
 
 impl PhysicsCharacterController {
     pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
+        if delta_time <= 0.0 || frame_delta <= 0.0 {
+            return Vec3::zero();
+        }
+
         let mut displacement = PxVec3 {
             x: displacement.x,
             y: displacement.y,
@@ -358,7 +362,7 @@ impl PhysicsCharacterController {
             let gravity = PLAYER_GRAVITY;
             let mut velocity = unsafe { *self.y_velocity.get() };
             velocity += gravity * delta_time;
-            velocity = velocity.max(PLAYER_TERMINAL_VELOCITY);
+            velocity = velocity.clamp(-PLAYER_TERMINAL_VELOCITY, PLAYER_TERMINAL_VELOCITY);
             unsafe {
                 *self.y_velocity.get() = velocity;
             }
@@ -390,11 +394,21 @@ impl PhysicsCharacterController {
 
     pub fn get_position(&self) -> Vec3 {
         let mut position = unsafe {
+            PxController_getPosition(self.controller)
+        };
+        let x = unsafe { (*position).x };
+        let y = unsafe { (*position).y };
+        let z = unsafe { (*position).z };
+        Vec3::new(x as f32, y as f32, z as f32)
+    }
+
+    pub fn get_foot_position(&self) -> Vec3 {
+        let mut position = unsafe {
             PxController_getFootPosition(self.controller)
         };
-        let x = unsafe { (position).x };
-        let y = unsafe { (position).y };
-        let z = unsafe { (position).z };
+        let x = (position).x;
+        let y = (position).y;
+        let z = (position).z;
         Vec3::new(x as f32, y as f32, z as f32)
     }
 
@@ -406,6 +420,17 @@ impl PhysicsCharacterController {
         };
         unsafe {
             PxController_setPosition_mut(self.controller, &position);
+        }
+    }
+
+    pub fn set_foot_position(&self, position: Vec3) {
+        let position = PxExtendedVec3 {
+            x: position.x as f64,
+            y: position.y as f64,
+            z: position.z as f64,
+        };
+        unsafe {
+            PxController_setFootPosition_mut(self.controller, &position);
         }
     }
 }

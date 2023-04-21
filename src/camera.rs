@@ -41,11 +41,9 @@ impl Camera {
 
     pub fn get_front(&self) -> Vec3 {
         // forward vector is third column of view matrix
-        let view = self.view;
-        let view = gfx_maths_mat4_to_glmatrix_mat4(view);
-        let view = gl_matrix::mat4::invert(&mut gl_matrix::common::Mat4::default(), &view).unwrap();
-        let view = helpers::glmatrix_mat4_to_gfx_maths_mat4(view);
-        *helpers::column_mat_to_vec(view, 2).normalize().deref()
+        let mut front = Vec3::new(0.0, 0.0, 1.0);
+        front = helpers::rotate_vector_by_quaternion(front, self.rotation);
+        *front.normalize().deref()
     }
 
     pub fn get_forward_no_pitch(&self) -> Vec3 {
@@ -57,11 +55,9 @@ impl Camera {
 
     pub fn get_right(&self) -> Vec3 {
         // right vector is first column of view matrix
-        let view = self.view;
-        let view = gfx_maths_mat4_to_glmatrix_mat4(view);
-        let view = gl_matrix::mat4::invert(&mut gl_matrix::common::Mat4::default(), &view).unwrap();
-        let view = helpers::glmatrix_mat4_to_gfx_maths_mat4(view);
-        -helpers::column_mat_to_vec(view, 0)
+        let mut right = Vec3::new(-1.0, 0.0, 0.0);
+        right = helpers::rotate_vector_by_quaternion(right, self.rotation);
+        *right.normalize().deref()
     }
 
     pub fn get_up(&self) -> Vec3 {

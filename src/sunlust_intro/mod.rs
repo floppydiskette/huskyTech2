@@ -52,12 +52,14 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         color: Vec3::new(1.0, 1.0, 1.0),
         intensity: 1000.0,
         radius: 10.0,
+        casts_shadow: true,
     };
     let mut light_b = Light {
         position: Vec3::new(-0.5, 0.0, 1.6),
         color: Vec3::new(1.0, 1.0, 1.0),
         intensity: 1000.0,
         radius: 10.0,
+        casts_shadow: true,
     };
 
     let mut sunlust_sfx = SoundBufferResource::new_generic(block_on(DataSource::from_file("base/snd/sunlust.wav")).unwrap()).unwrap();

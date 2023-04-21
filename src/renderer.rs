@@ -99,7 +99,7 @@ pub struct ht_renderer {
     pub loading_meshes: HashMap<String, (Arc<AtomicBool>, Arc<Mutex<Option<IntermidiaryMesh>>>)>,
     pub shaders: HashMap<String, usize>,
     pub lights: Vec<Light>,
-    
+
     pub backend: GLFWBackend,
 }
 
@@ -135,8 +135,8 @@ impl ht_renderer {
         // some constants we can later change (todo: make these configurable?)
         let window_width = 1920;
         let window_height = 1080;
-        let render_width = 1280;
-        let render_height = 720;
+        let render_width = 1920;
+        let render_height = 1080;
 
         let camera = Camera::new(Vec2::new(render_width as f32, render_height as f32), 45.0, 0.1, 1000.0);
 
@@ -449,7 +449,7 @@ impl ht_renderer {
 
     pub fn lock_mouse(&mut self, lock: bool) {
         unsafe {
-            
+
             {
                 if lock {
                     self.backend.window.lock().unwrap().set_cursor_mode(glfw::CursorMode::Disabled);
@@ -993,7 +993,8 @@ impl ht_renderer {
             BindVertexArray(self.backend.framebuffers.screenquad_vao as GLuint);
             Disable(DEPTH_TEST);
 
-            Disable(FRAMEBUFFER_SRGB);
+            // enable gamma correction
+            Enable(FRAMEBUFFER_SRGB);
 
             // make sure that gl doesn't cull the back face of the quad
             Disable(CULL_FACE);

@@ -25,6 +25,13 @@ pub enum ParameterValue {
     String(String),
 }
 
+lazy_static! {
+    pub static ref EMPTY_PARAMETER: Parameter = Parameter {
+        name: "".to_string(),
+        value: ParameterValue::Vec3(Vec3::zero()),
+    };
+}
+
 impl Parameter {
     pub(crate) fn new(name: &str, value: ParameterValue) -> Parameter {
         Self {
@@ -76,8 +83,8 @@ impl Component {
         self.component_type.clone()
     }
 
-    pub fn get_parameter(&self, name: &str) -> Option<&Parameter> {
-        self.parameters.get(name)
+    pub fn get_parameter(&self, name: &str) -> &Parameter {
+        self.parameters.get(name).unwrap_or(&EMPTY_PARAMETER)
     }
 }
 
