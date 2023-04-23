@@ -23,7 +23,7 @@ use crate::textures::{IntermidiaryTexture, Texture};
 use crate::worldmachine::WorldMachine;
 
 pub static MAX_LIGHTS: usize = 100;
-pub static SHADOW_FRAC: i32 = 2; // note: currently it does not seem that any performance is gained by increasing this value
+pub static SHADOW_FRAC: i32 = 8;
 
 #[derive(Clone, Copy)]
 pub struct RGBA {

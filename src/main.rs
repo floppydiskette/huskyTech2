@@ -119,6 +119,8 @@ async fn main() {
         renderer.initialise_basic_resources();
         info!("initialised renderer");
 
+        if !skip_intro { sunlust_intro::animate(&mut renderer, &scontext) }
+
         let mut physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
@@ -151,7 +153,6 @@ async fn main() {
         debug!("connected to server");
 
         renderer.load_mesh_if_not_already_loaded("player");
-        if !skip_intro { sunlust_intro::animate(&mut renderer, &scontext) }
         unsafe {
             // todo: put this somewhere else!
             let lighting_shader = *renderer.shaders.get("lighting").unwrap();

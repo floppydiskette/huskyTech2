@@ -67,7 +67,9 @@ impl PhysicsSystem {
             scene_desc.filterShader = get_default_simulation_filter_shader();//filter_shader as *mut _;
         }
 
-        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate(2, std::ptr::null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
+        let nproc = num_cpus::get();
+
+        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate((nproc / 2).min(1) as u32, std::ptr::null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
 
         scene_desc.cpuDispatcher = dispatcher as *mut _;
 

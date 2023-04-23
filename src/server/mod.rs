@@ -244,7 +244,7 @@ impl Server {
             Connection::Lan(_, connection) => {
                 let mut start_time = Instant::now();
                 let retry_time = Duration::from_millis(1000);
-                let timeout_time = Duration::from_millis(50000);
+                let timeout_time = Duration::from_secs(30);
                 loop {
                     loop {
                         let res = connection.serialise_and_send_steady(packet.clone()).await;
@@ -578,12 +578,16 @@ impl Server {
                     let position = forward * 1.5 + Vec3::new(0.0, 0.1, 0.0) + position;
                     let velocity = forward * 20.0 + Vec3::new(0.0, 5.0, 0.0);
                     drop(players);
+                    let physics = worldmachine.physics.clone();
+                    drop(worldmachine);
 
-                    let snowball = Snowball::new(position, velocity, worldmachine.physics.lock().unwrap().as_ref().unwrap());
+                    let snowball = Snowball::new(position, velocity, physics.lock().unwrap().as_ref().unwrap());
                     // send to all clients (including the one that sent it)
                     let packet = SteadyPacket::ThrowSnowball(snowball.uuid.clone(), position, velocity);
 
+                    let mut worldmachine = self.worldmachine.lock().await;
                     worldmachine.snowballs.push(snowball);
+                    drop(worldmachine);
                     match &self.connections {
                         Connections::Local(local_connections) => {
                             let cons = local_connections.lock().await.clone();
@@ -646,15 +650,24 @@ impl Server {
             let mut players = worldmachine.players.clone();
             let mut players = players.as_mut().unwrap().lock().await;
             let player = players.get_mut(&uuid).unwrap();
-            let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, movement_info.unwrap_or_default(), player.entity_id, &mut worldmachine).await;
+            drop(worldmachine);
+            let success = player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, movement_info.unwrap_or_default(), player.entity_id, self.worldmachine.clone()).await;
             if success {} else {
+                let worldmachine = self.worldmachine.clone();
+                let mut worldmachine = worldmachine.lock().await;
                 let connection = connection.clone();
-                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
+                let position = player.player.get_position(player.entity_id, Some(&mut worldmachine)).await;
+                drop(worldmachine);
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(position)).await
             }
             if player.player.get_position(None, None).await.y < -20.0 {
+                let worldmachine = self.worldmachine.clone();
+                let mut worldmachine = worldmachine.lock().await;
                 let connection = connection.clone();
                 player.player.set_position(Vec3::new(0.0, 0.0, 0.0), player.entity_id, &mut worldmachine).await;
-                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
+                let position = player.player.get_position(player.entity_id, Some(&mut worldmachine)).await;
+                drop(worldmachine);
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(position)).await
             }
         }
     }
@@ -669,7 +682,9 @@ impl Server {
             let server_position = player.player.get_position(player.entity_id, Some(&mut worldmachine)).await;
             let success = server_position == position;
             if success {} else {
-                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(player.player.get_position(player.entity_id, Some(&mut worldmachine)).await)).await
+                let position = player.player.get_position(player.entity_id, Some(&mut worldmachine)).await;
+                drop(worldmachine);
+                self.send_fast_packet(&connection, FastPacket::PlayerFuckYouMoveHere(position)).await
             }
         }
     }

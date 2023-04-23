@@ -85,10 +85,13 @@ pub async fn render(renderer: &mut ht_renderer, wm: &mut WorldMachine) {
         wm.send_chat_message(message).await;
     }
 
-    SidePanel::right("right_debug")
-        .frame(Frame::none())
-        .show_separator_line(false)
+    egui::Window::new("right debug")
+        .title_bar(false)
         .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-30.0, 10.0))
+        .fixed_size(egui::Vec2::new(400.0, 400.0))
+        .frame(Frame::dark_canvas(&Style::default()))
         .show(&renderer.backend.egui_context.lock().unwrap(), |ui| {
             // right align
             if SHOW_DEBUG_LOCATION.load(Ordering::Relaxed) {
