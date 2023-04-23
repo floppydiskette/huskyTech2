@@ -10,7 +10,8 @@ use fyrox_sound::context::SoundContext;
 use gfx_maths::{Quaternion, Vec2, Vec3};
 use gl_matrix::common::Quat;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, Mutex};
+//use tokio::sync::{mpsc, Mutex};
+use mutex_timeouts::tokio::MutexWithTimeout as Mutex;
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
@@ -114,6 +115,9 @@ pub struct WorldMachine {
     player: Option<PlayerContainer>,
     ignore_this_entity: Option<EntityId>, // should be the player entity that other players will see, we don't want it's updates to be received because we already know them
     pub players: Option<Arc<Mutex<HashMap<ConnectionUUID, ServerPlayerContainer>>>>, // not used clientside
+
+    // only used clientside
+    last_ping: Instant,
 }
 
 impl Default for WorldMachine {
@@ -140,6 +144,7 @@ impl Default for WorldMachine {
             player: None,
             ignore_this_entity: None,
             players: None,
+            last_ping: Instant::now(),
         }
     }
 }
@@ -411,63 +416,12 @@ impl WorldMachine {
         self.server_connection = Some(connection);
     }
 
-    async unsafe fn send_queued_steady_message(&mut self, message: SteadyPacketData) {
-        let mut tries = 0;
-        const MAX_TRIES: i32 = 10;
-
-        if let Some(connection) = &mut self.server_connection {
-            match connection {
-                ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
-                    let attempt = connection.steady_update_sender.send(message);
-                    if attempt.is_err() {
-                        error!("send_queued_steady_message: failed to send message");
-                    }
-                    loop {
-                        let try_recv = connection.steady_update_receiver.try_recv();
-                        if let Ok(message) = try_recv {
-                            if let SteadyPacket::Consume(uuid) = message.packet.unwrap().clone() {
-                                if uuid == message.uuid.unwrap() {
-                                    debug!("consume message received");
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                ConnectionClientside::Lan(connection) => {
-                    let attempt = connection.send_steady_and_serialise(message).await;
-                    if attempt.is_err() {
-                        error!("send_queued_steady_message: failed to send message");
-                    }
-                    loop {
-                        let try_recv = connection.attempt_receive_steady_and_deserialise().await;
-                        if let Some(message) = try_recv {
-                            if let SteadyPacket::Consume(uuid) = message.clone().packet.unwrap() {
-                                if uuid == message.clone().uuid.unwrap() {
-                                    debug!("consume message received");
-                                    break;
-                                } else {
-                                    // requeue the message
-                                    connection.steady_receiver_queue.lock().await.push(message);
-                                }
-                            } else {
-                                // requeue the message
-                                connection.steady_receiver_queue.lock().await.push(message);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     async fn send_queued_steady_messages(&mut self) {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
-                    let mut queue = connection.steady_sender_queue.lock().await;
+                    let mut connection = connection.lock().await.unwrap();
+                    let mut queue = connection.steady_sender_queue.lock().await.unwrap();
                     while let Some(message) = queue.pop().await {}
                 }
                 ConnectionClientside::Lan(connection) => {
@@ -489,8 +443,8 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
-                    let attempt = connection.fast_update_sender.send(message);
+                    let mut connection = connection.lock().await.unwrap();
+                    let attempt = connection.fast_update_sender.send(message).await;
                     if attempt.is_err() {
                         error!("send_fast_message: failed to send message");
                     }
@@ -506,8 +460,8 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
-                    let attempt = connection.steady_update_sender.send(message);
+                    let mut connection = connection.lock().await.unwrap();
+                    let attempt = connection.steady_update_sender.send(message).await;
                     if attempt.is_err() {
                         error!("send_steady_message: failed to send message");
                     }
@@ -526,11 +480,11 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
+                    let mut connection = connection.lock().await.unwrap();
                     let attempt = connection.steady_update_sender.send(SteadyPacketData {
                         packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
                         uuid: Some(server::generate_uuid()),
-                    });
+                    }).await;
                     if attempt.is_err() {
                         error!("send_queued_steady_message: failed to send message");
                     }
@@ -750,6 +704,9 @@ impl WorldMachine {
                     self.snowballs.push(snowball);
                 }
             }
+            SteadyPacket::Ping => {
+                self.last_ping = Instant::now();
+            }
         }
     }
 
@@ -757,7 +714,7 @@ impl WorldMachine {
         if let Some(connection) = self.server_connection.clone() {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
+                    let mut connection = connection.lock().await.unwrap();
                     // check if we have any messages to process
                     let try_recv = connection.steady_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
@@ -921,9 +878,10 @@ impl WorldMachine {
         if let Some(connection) = self.server_connection.clone() {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
+                    let mut connection = connection.lock().await.unwrap();
                     // check if we have any messages to process
                     let try_recv = connection.fast_update_receiver.try_recv();
+                    drop(connection);
                     if let Ok(message) = try_recv {
                         self.handle_message_fast(message.clone().packet.unwrap()).await;
                     } else if let Err(e) = try_recv {
@@ -1029,7 +987,7 @@ impl WorldMachine {
     pub async fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {
         let mut updates = Vec::new();
 
-        let mut world_updates = self.world_update_queue.lock().await;
+        let mut world_updates = self.world_update_queue.lock().await.unwrap();
         world_updates.drain(..).for_each(|update| {
             updates.push(update);
         });
@@ -1046,7 +1004,7 @@ impl WorldMachine {
         if !self.is_server {
             warn!("queue_update: called on client");
         } else {
-            let mut world_updates = self.world_update_queue.lock().await;
+            let mut world_updates = self.world_update_queue.lock().await.unwrap();
             world_updates.push_back(update);
         }
     }
@@ -1057,7 +1015,7 @@ impl WorldMachine {
         } else {
             let world_updates = self.world_update_queue.clone();
             tokio::spawn(async move {
-                let mut world_updates = world_updates.lock().await;
+                let mut world_updates = world_updates.lock().await.unwrap();
                 updates.iter().for_each(|update| {
                     world_updates.push_back(update.clone());
                 });
@@ -1091,6 +1049,16 @@ impl WorldMachine {
 
         for (i, snowball) in snowballs_to_remove.iter().enumerate() {
             self.snowballs.remove(*snowball - i);
+        }
+
+        if self.last_ping.elapsed().as_secs_f32() >= 2.0 {
+            crate::ui::UNSTABLE_CONNECTION.store(true, Ordering::Relaxed);
+        } else {
+            crate::ui::UNSTABLE_CONNECTION.store(false, Ordering::Relaxed);
+        }
+
+        if self.last_ping.elapsed().as_secs_f32() >= 30.0 {
+            crate::ui::DISCONNECTED.store(true, Ordering::Relaxed);
         }
 
         updates

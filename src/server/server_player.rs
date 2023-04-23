@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 use gfx_maths::*;
+use tokio::time::Instant;
 use crate::helpers;
 use crate::physics::{ClimbingMode, Materials, PhysicsCharacterController, PhysicsSystem};
-use crate::server::Server;
+use crate::server::{Connection, Server};
 use crate::worldmachine::{EntityId, WorldMachine, WorldUpdate};
 use crate::worldmachine::components::COMPONENT_TYPE_PLAYER;
 use crate::worldmachine::ecs::ParameterValue;
@@ -22,6 +23,7 @@ pub const MAX_HEIGHT_BEFORE_FLIGHT: f32 = 10.0;
 pub struct ServerPlayerContainer {
     pub player: ServerPlayer,
     pub entity_id: Option<EntityId>,
+    pub connection: Connection,
 }
 
 #[derive(Clone)]
@@ -40,6 +42,8 @@ pub struct ServerPlayer {
     pub speed: f32,
     pub strafe: f32,
     pub snowball_cooldown: f32,
+    pub last_successful_ping: Instant,
+    pub pinging: Arc<AtomicBool>,
 }
 
 impl Default for ServerPlayer {
@@ -59,6 +63,8 @@ impl Default for ServerPlayer {
             speed: 0.0,
             strafe: 0.0,
             snowball_cooldown: 0.0,
+            last_successful_ping: Instant::now(),
+            pinging: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -80,6 +86,8 @@ impl ServerPlayer {
             speed: 0.0,
             strafe: 0.0,
             snowball_cooldown: 0.0,
+            last_successful_ping: Instant::now(),
+            pinging: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -91,28 +99,30 @@ impl ServerPlayer {
     }
 
     /// attempts to move the player to the given position, returning true if the move was successful, or false if the move was too fast.
-    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, movement_info: MovementInfo, entity_id: Option<EntityId>, worldmachine: Arc<tokio::sync::Mutex<WorldMachine>>) -> bool {
+    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, movement_info: MovementInfo, entity_id: Option<EntityId>, worldmachine: Arc<mutex_timeouts::tokio::MutexWithTimeout<WorldMachine>>) -> (bool, Option<Vec3>) {
         // TODO!! IMPORTANT!! remember to check that the player is not trying to move vertically, or through a wall! displacement_vector should not contain a y value, and the new_position should be checked against the world to make sure it is not inside a wall.
+
+        let last_position = self.get_position(None, None).await;
 
         // if any of the values are NaN, return false
         if new_position.x.is_nan() || new_position.y.is_nan() || new_position.z.is_nan() {
-            return false;
+            return (false, Some(last_position));
         }
 
         if new_rotation.x.is_nan() || new_rotation.y.is_nan() || new_rotation.z.is_nan() || new_rotation.w.is_nan() {
-            return false;
+            return (false, Some(last_position));
         }
 
         if new_head_rotation.x.is_nan() || new_head_rotation.y.is_nan() || new_head_rotation.z.is_nan() || new_head_rotation.w.is_nan() {
-            return false;
+            return (false, Some(last_position));
         }
 
         if displacement_vector.x.is_nan() || displacement_vector.y.is_nan() || displacement_vector.z.is_nan() {
-            return false;
+            return (false, Some(last_position));
         }
 
         if movement_info.speed.is_nan() || movement_info.strafe.is_nan() {
-            return false;
+            return (false, Some(last_position));
         }
 
         if movement_info.sprinting {
@@ -134,9 +144,9 @@ impl ServerPlayer {
         let _final_movement = self.physics_controller.lock().unwrap().as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta, delta);
         self.last_move_call = current_time;
         let current_time = std::time::Instant::now();
-        let delta = current_time.duration_since(worldmachine.lock().await.last_physics_update).as_secs_f32();
-        worldmachine.lock().await.physics.lock().unwrap().as_mut().unwrap().tick(delta);
-        worldmachine.lock().await.last_physics_update = current_time;
+        let delta = current_time.duration_since(worldmachine.lock().await.unwrap().last_physics_update).as_secs_f32();
+        worldmachine.lock().await.unwrap().physics.lock().unwrap().as_mut().unwrap().tick(delta);
+        worldmachine.lock().await.unwrap().last_physics_update = current_time;
         let new_position_calculated = self.physics_controller.lock().unwrap().as_mut().unwrap().get_foot_position();
         let distance = helpers::distance(new_position_calculated, new_position);
         if !self.physics_controller.lock().unwrap().as_ref().unwrap().is_on_ground() {
@@ -148,31 +158,32 @@ impl ServerPlayer {
 
         if self.height_gained_since_grounded > MAX_HEIGHT_BEFORE_FLIGHT {
             warn!("player {} is flying", self.uuid);
-            return false;
+            return (false, Some(last_position));
         }
 
         if distance < ERROR_MARGIN {
-            let mut wm = worldmachine.lock().await;
+            let mut wm = worldmachine.lock().await.unwrap();
             self.set_position(new_position, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await;
+            let mut wm = worldmachine.lock().await.unwrap();
             self.set_rotation(new_rotation, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await;
+            let mut wm = worldmachine.lock().await.unwrap();
             self.set_head_rotation(new_head_rotation, entity_id, &mut wm).await;
             drop(wm);
-            true
+            (true, None)
         } else {
-            let mut wm = worldmachine.lock().await;
+            let mut wm = worldmachine.lock().await.unwrap();
             self.set_position(new_position_calculated, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await;
+            let mut wm = worldmachine.lock().await.unwrap();
             self.set_rotation(new_rotation, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await;
+            let mut wm = worldmachine.lock().await.unwrap();
             self.set_head_rotation(new_head_rotation, entity_id, &mut wm).await;
             drop(wm);
-            false
+            let position = self.get_position(None, None).await;
+            (false, Some(position))
         }
     }
 

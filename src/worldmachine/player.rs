@@ -1,7 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::sync::Mutex;
 use gfx_maths::*;
 use serde::{Deserialize, Serialize};
 use crate::{helpers, ht_renderer, keyboard, mouse};

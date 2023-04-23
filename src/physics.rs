@@ -3,7 +3,8 @@ use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use halfbrown::HashMap;
 use std::ptr::{null, null_mut};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use mutex_timeouts::std::MutexWithTimeout as Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use gfx_maths::{Vec3};
 use physx_sys::*;
@@ -154,7 +155,7 @@ impl PhysicsSystem {
     }
 
     pub fn tick(&self, delta_time: f32) -> Option<f32> {
-        if delta_time <= 0.01 { // physics doesn't like small time steps
+        if delta_time <= 0.001 { // physics doesn't like small time steps
             return Some(delta_time);
         }
 

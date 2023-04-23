@@ -3,7 +3,7 @@ use std::ops::Mul;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use egui_glfw_gl::egui;
-use egui_glfw_gl::egui::{CentralPanel, Frame, Rgba, SidePanel, Style, TopBottomPanel, Ui};
+use egui_glfw_gl::egui::{CentralPanel, Color32, Frame, Rgba, SidePanel, Style, TopBottomPanel, Ui};
 use gfx_maths::Vec3;
 use crate::renderer::ht_renderer;
 use crate::ui_defs::chat;
@@ -27,6 +27,9 @@ lazy_static!{
         powered_by: None,
         copyright: None,
     }));
+
+    pub static ref UNSTABLE_CONNECTION: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    pub static ref DISCONNECTED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
 
 pub struct SunlustInfo {
@@ -99,6 +102,20 @@ pub async fn render(renderer: &mut ht_renderer, wm: &mut WorldMachine) {
             }
             if SHOW_FPS.load(Ordering::Relaxed) {
                 render_fps(ui);
+            }
+
+            if UNSTABLE_CONNECTION.load(Ordering::Relaxed) && !DISCONNECTED.load(Ordering::Relaxed) {
+                let style = ui.style().visuals.widgets.noninteractive.bg_fill.clone();
+                ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::from(Rgba::from_rgb(0.8, 0.0, 0.0));
+                ui.label("unstable connection!");
+                ui.style_mut().visuals.widgets.noninteractive.bg_fill = style;
+            }
+
+            if DISCONNECTED.load(Ordering::Relaxed) {
+                let style = ui.style().visuals.widgets.noninteractive.bg_fill.clone();
+                ui.style_mut().visuals.widgets.noninteractive.bg_fill = Color32::from(Rgba::from_rgb(0.8, 0.0, 0.0));
+                ui.label("you have disconnected from the server ):");
+                ui.style_mut().visuals.widgets.noninteractive.bg_fill = style;
             }
         });
 
