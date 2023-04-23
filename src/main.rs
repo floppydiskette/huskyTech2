@@ -181,12 +181,12 @@ async fn main() {
 
         chat::write_chat("engine".to_string(), "welcome to the huskyTech2 demo! press the comma key to unlock your mouse and send messages, or the period key to lock your mouse again (:".to_string());
         chat::write_chat("engine".to_string(), format!("there are {} players online", if let Some(players) = &worldmachine.players {
-            players.lock().await.unwrap().len()
+            players.lock().await.len()
         } else {
             0
         }));
         chat::write_chat("engine".to_string(), (if let Some(players) = &worldmachine.players {
-            let players = players.lock().await.unwrap();
+            let players = players.lock().await;
             let mut names = String::new();
             for player in players.iter() {
                 names.push_str(&player.1.player.name);

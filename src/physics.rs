@@ -1,14 +1,12 @@
 use std::cell::UnsafeCell;
 use std::ffi::c_void;
-use std::mem::MaybeUninit;
 use halfbrown::HashMap;
-use std::ptr::{null, null_mut};
+use std::ptr::{null_mut};
 use std::sync::{Arc};
 use mutex_timeouts::std::MutexWithTimeout as Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use gfx_maths::{Vec3};
 use physx_sys::*;
-use physx_sys::PxPairFlag::{ContactDefault, TriggerDefault};
 
 lazy_static! {
     static ref BOX_COLLIDERS: Arc<Mutex<Vec<PhysicsBoxColliderStatic>>> = Arc::new(Mutex::new(Vec::new()));
@@ -70,7 +68,7 @@ impl PhysicsSystem {
 
         let nproc = num_cpus::get();
 
-        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate((nproc / 2).min(1) as u32, std::ptr::null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
+        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate((nproc / 2).min(1) as u32, null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
 
         scene_desc.cpuDispatcher = dispatcher as *mut _;
 
@@ -137,7 +135,7 @@ impl PhysicsSystem {
             scene_desc.filterShader = get_default_simulation_filter_shader();//filter_shader as *mut _;
         }
 
-        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate(2, std::ptr::null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
+        let dispatcher = unsafe { phys_PxDefaultCpuDispatcherCreate(2, null_mut(), PxDefaultCpuDispatcherWaitForWorkMode::WaitForWork, 0) };
 
         scene_desc.cpuDispatcher = dispatcher as *mut _;
 
@@ -180,13 +178,12 @@ impl PhysicsSystem {
             (*controller_desc).material = material.material;
 
             if PxCapsuleControllerDesc_isValid(controller_desc) {
-                let mut controller = PxControllerManager_createController_mut(self.controller_manager, controller_desc as *mut _);
+                let controller = PxControllerManager_createController_mut(self.controller_manager, controller_desc as *mut _);
 
                 drop(lock);
                 Some(PhysicsCharacterController {
                     controller: Arc::new(Mutex::new(controller)),
                     flags: Arc::new(Mutex::new(CollisionFlags::default())),
-                    scene: self.scene,
                     y_velocity: Arc::new(UnsafeCell::new(0.0)),
                 })
             } else {
@@ -217,7 +214,7 @@ impl PhysicsSystem {
             },
         };
 
-        let mut geometry = unsafe { PxBoxGeometry_new(size.x / 2.0, size.y / 2.0, size.z / 2.0) };
+        let geometry = unsafe { PxBoxGeometry_new(size.x / 2.0, size.y / 2.0, size.z / 2.0) };
 
         let material = self.physics_materials.get(&material).unwrap();
 
@@ -228,7 +225,7 @@ impl PhysicsSystem {
             PxPhysics_createShape_mut(
                 *self.physics.lock().unwrap(),
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
-                *&material.material, true, shape_flags)
+                material.material, true, shape_flags)
         };
 
         unsafe {
@@ -310,7 +307,7 @@ impl PhysicsSystem {
             },
         };
 
-        let mut geometry = unsafe { PxBoxGeometry_new(size.x / 2.0, size.y / 2.0, size.z / 2.0) };
+        let geometry = unsafe { PxBoxGeometry_new(size.x / 2.0, size.y / 2.0, size.z / 2.0) };
 
         let material = self.physics_materials.get(&material).unwrap();
 
@@ -321,7 +318,7 @@ impl PhysicsSystem {
             PxPhysics_createShape_mut(
                 *self.physics.lock().unwrap(),
                 &geometry as *const PxBoxGeometry as *const PxGeometry,
-                *&material.material, true, shape_flags)
+                material.material, true, shape_flags)
         };
 
         unsafe {
@@ -365,7 +362,6 @@ impl CollisionFlags {
 pub struct PhysicsCharacterController {
     pub controller: Arc<Mutex<*mut PxController>>,
     pub flags: Arc<Mutex<CollisionFlags>>,
-    scene: *mut PxScene,
     y_velocity: Arc<UnsafeCell<f32>>,
 }
 
@@ -374,7 +370,7 @@ unsafe impl Send for PhysicsCharacterController {}
 unsafe impl Sync for PhysicsCharacterController {}
 
 impl PhysicsCharacterController {
-    pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
+    pub fn move_by(&mut self, displacement: Vec3, jump: bool, _server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
         let lock = PHYSICS_LOCK.lock().unwrap();
         if delta_time <= 0.0 || frame_delta <= 0.0 {
             return Vec3::zero();
@@ -427,7 +423,7 @@ impl PhysicsCharacterController {
 
     pub fn get_position(&self) -> Vec3 {
         let lock = PHYSICS_LOCK.lock().unwrap();
-        let mut position = unsafe {
+        let position = unsafe {
             PxController_getPosition(*self.controller.lock().unwrap())
         };
         let x = unsafe { (*position).x };
@@ -439,7 +435,7 @@ impl PhysicsCharacterController {
 
     pub fn get_foot_position(&self) -> Vec3 {
         let lock = PHYSICS_LOCK.lock().unwrap();
-        let mut position = unsafe {
+        let position = unsafe {
             PxController_getFootPosition(*self.controller.lock().unwrap())
         };
         let x = (position).x;

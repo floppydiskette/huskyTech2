@@ -1,0 +1,137 @@
+entities:
+- name: ht2
+  uid: 1
+  components:
+  - name: Transform
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: -0.0
+          y: -2.0
+          z: -1.5
+      rotation:
+        name: rotation
+        value: !Quaternion
+          x: 0.70710677
+          y: -5.2763373e-17
+          z: -5.2763373e-17
+          w: 0.70710677
+      scale:
+        name: scale
+        value: !Vec3
+          x: 1.0
+          y: 1.0
+          z: 1.0
+    component_type:
+      id: 2
+      name: Transform
+  - name: MeshRenderer
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      mesh:
+        name: mesh
+        value: !String sponza
+      texture:
+        name: texture
+        value: !String rock4k
+      unlit:
+        name: unlit
+        value: !Bool false
+    component_type:
+      id: 3
+      name: MeshRenderer
+  children: []
+  parent: null
+- name: floor_col
+  uid: 2
+  components:
+  - name: BoxCollider
+    parameters:
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: -2.3
+          z: -1.5
+      scale:
+        name: scale
+        value: !Vec3
+          x: 39.5
+          y: 1.0
+          z: 19.0
+      visualise:
+        name: visualise
+        value: !Bool false
+    component_type:
+      id: 5
+      name: BoxCollider
+  children: []
+  parent: null
+- name: l1
+  uid: 3
+  components:
+  - name: Light
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      colour:
+        name: colour
+        value: !Vec3
+          x: 0.3
+          y: 0.5
+          z: 3.1
+      intensity:
+        name: intensity
+        value: !Float 1.0
+      position:
+        name: position
+        value: !Vec3
+          x: -5.1
+          y: 0.0
+          z: -2.2
+      radius:
+        name: radius
+        value: !Float 30.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+- name: l1
+  uid: 4
+  components:
+  - name: Light
+    parameters:
+      casts_shadow:
+        name: casts_shadow
+        value: !Bool true
+      colour:
+        name: colour
+        value: !Vec3
+          x: 1.5
+          y: 0.2
+          z: 2.5
+      intensity:
+        name: intensity
+        value: !Float 1.0
+      position:
+        name: position
+        value: !Vec3
+          x: 0.0
+          y: 0.0
+          z: 0.0
+      radius:
+        name: radius
+        value: !Float 30.0
+    component_type:
+      id: 4
+      name: Light
+  children: []
+  parent: null
+systems: []
+eid_manager: 4
+current_map: ''

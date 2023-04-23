@@ -44,6 +44,7 @@ pub struct ServerPlayer {
     pub snowball_cooldown: f32,
     pub last_successful_ping: Instant,
     pub pinging: Arc<AtomicBool>,
+    pub respawning: Arc<AtomicBool>,
 }
 
 impl Default for ServerPlayer {
@@ -65,6 +66,7 @@ impl Default for ServerPlayer {
             snowball_cooldown: 0.0,
             last_successful_ping: Instant::now(),
             pinging: Arc::new(AtomicBool::new(false)),
+            respawning: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -88,6 +90,7 @@ impl ServerPlayer {
             snowball_cooldown: 0.0,
             last_successful_ping: Instant::now(),
             pinging: Arc::new(AtomicBool::new(false)),
+            respawning: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -99,7 +102,7 @@ impl ServerPlayer {
     }
 
     /// attempts to move the player to the given position, returning true if the move was successful, or false if the move was too fast.
-    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, movement_info: MovementInfo, entity_id: Option<EntityId>, worldmachine: Arc<mutex_timeouts::tokio::MutexWithTimeout<WorldMachine>>) -> (bool, Option<Vec3>) {
+    pub async fn attempt_position_change(&mut self, new_position: Vec3, displacement_vector: Vec3, new_rotation: Quaternion, new_head_rotation: Quaternion, movement_info: MovementInfo, entity_id: Option<EntityId>, worldmachine: Arc<mutex_timeouts::tokio::MutexWithTimeoutAuto<WorldMachine>>) -> (bool, Option<Vec3>) {
         // TODO!! IMPORTANT!! remember to check that the player is not trying to move vertically, or through a wall! displacement_vector should not contain a y value, and the new_position should be checked against the world to make sure it is not inside a wall.
 
         let last_position = self.get_position(None, None).await;
@@ -141,12 +144,16 @@ impl ServerPlayer {
         let current_time = std::time::Instant::now();
         let delta = current_time.duration_since(self.last_move_call).as_secs_f32();
         displacement_vector *= delta;
-        let _final_movement = self.physics_controller.lock().unwrap().as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta, delta);
-        self.last_move_call = current_time;
+        if delta >= 0.01 {
+            let _final_movement = self.physics_controller.lock().unwrap().as_mut().unwrap().move_by(displacement_vector, movement_info.jumped, true, false, delta, delta);
+            self.last_move_call = current_time;
+        }
         let current_time = std::time::Instant::now();
-        let delta = current_time.duration_since(worldmachine.lock().await.unwrap().last_physics_update).as_secs_f32();
-        worldmachine.lock().await.unwrap().physics.lock().unwrap().as_mut().unwrap().tick(delta);
-        worldmachine.lock().await.unwrap().last_physics_update = current_time;
+        let delta = current_time.duration_since(worldmachine.lock().await.last_physics_update).as_secs_f32();
+        if delta >= 0.01 {
+            worldmachine.lock().await.physics.lock().unwrap().as_mut().unwrap().tick(delta);
+            worldmachine.lock().await.last_physics_update = current_time;
+        }
         let new_position_calculated = self.physics_controller.lock().unwrap().as_mut().unwrap().get_foot_position();
         let distance = helpers::distance(new_position_calculated, new_position);
         if !self.physics_controller.lock().unwrap().as_ref().unwrap().is_on_ground() {
@@ -162,24 +169,24 @@ impl ServerPlayer {
         }
 
         if distance < ERROR_MARGIN {
-            let mut wm = worldmachine.lock().await.unwrap();
+            let mut wm = worldmachine.lock().await;
             self.set_position(new_position, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await.unwrap();
+            let mut wm = worldmachine.lock().await;
             self.set_rotation(new_rotation, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await.unwrap();
+            let mut wm = worldmachine.lock().await;
             self.set_head_rotation(new_head_rotation, entity_id, &mut wm).await;
             drop(wm);
             (true, None)
         } else {
-            let mut wm = worldmachine.lock().await.unwrap();
+            let mut wm = worldmachine.lock().await;
             self.set_position(new_position_calculated, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await.unwrap();
+            let mut wm = worldmachine.lock().await;
             self.set_rotation(new_rotation, entity_id, &mut wm).await;
             drop(wm);
-            let mut wm = worldmachine.lock().await.unwrap();
+            let mut wm = worldmachine.lock().await;
             self.set_head_rotation(new_head_rotation, entity_id, &mut wm).await;
             drop(wm);
             let position = self.get_position(None, None).await;

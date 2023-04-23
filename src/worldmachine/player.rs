@@ -336,22 +336,24 @@ impl Player {
         }
 
         let mut updates = Vec::new();
-        if jump {
-            updates.push(ClientUpdate::IJumped);
-            if let Some(movement) = movement {
-                let mut new_movement = movement.1;
-                new_movement.jumped = true;
-                updates.push(ClientUpdate::IDisplaced((movement.0, Some(new_movement)))); // using displaced as the returned value is a displacement vector for the physics engine
-            } else {
-                updates.push(ClientUpdate::IDisplaced((Vec3::zero(), None)));
+        if self.has_camera_control && self.locked_mouse {
+            if jump {
+                updates.push(ClientUpdate::IJumped);
+                if let Some(movement) = movement {
+                    let mut new_movement = movement.1;
+                    new_movement.jumped = true;
+                    updates.push(ClientUpdate::IDisplaced((movement.0, Some(new_movement)))); // using displaced as the returned value is a displacement vector for the physics engine
+                } else {
+                    updates.push(ClientUpdate::IDisplaced((Vec3::zero(), None)));
+                }
             }
-        }
-        if let Some(look) = look {
-            updates.push(ClientUpdate::ILooked(look));
-        }
+            if let Some(look) = look {
+                updates.push(ClientUpdate::ILooked(look));
+            }
 
-        if mouse::get_mouse_button_state(0) == MouseButtonState::Pressed {
-            updates.push(ClientUpdate::IThrewSnowball);
+            if mouse::get_mouse_button_state(0) == MouseButtonState::Pressed {
+                updates.push(ClientUpdate::IThrewSnowball);
+            }
         }
 
         // how much do we bob?

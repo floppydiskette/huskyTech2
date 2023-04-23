@@ -11,7 +11,7 @@ use gfx_maths::{Quaternion, Vec2, Vec3};
 use gl_matrix::common::Quat;
 use serde::{Deserialize, Serialize};
 //use tokio::sync::{mpsc, Mutex};
-use mutex_timeouts::tokio::MutexWithTimeout as Mutex;
+use mutex_timeouts::tokio::MutexWithTimeoutAuto as Mutex;
 use tokio::sync::mpsc::error::TryRecvError;
 use crate::camera::Camera;
 use crate::{ht_renderer, renderer, server};
@@ -101,7 +101,7 @@ impl Clone for World {
 pub struct WorldMachine {
     pub world: World,
     pub snowballs: Vec<Snowball>,
-    pub physics: Arc<std::sync::Mutex<Option<PhysicsSystem>>>,
+    pub physics: Arc<mutex_timeouts::std::MutexWithTimeout<Option<PhysicsSystem>>>,
     pub last_physics_update: std::time::Instant,
     pub game_data_path: String,
     pub counter: f32,
@@ -131,7 +131,7 @@ impl Default for WorldMachine {
         Self {
             world,
             snowballs: vec![],
-            physics: Arc::new(std::sync::Mutex::new(None)),
+            physics: Arc::new(mutex_timeouts::std::MutexWithTimeout::new(None)),
             last_physics_update: std::time::Instant::now(),
             game_data_path: String::from(""),
             counter: 0.0,
@@ -153,12 +153,12 @@ impl WorldMachine {
     pub fn initialise(&mut self, physics: PhysicsSystem, is_server: bool) {
         let _ = *components::COMPONENTS_INITIALISED;
         self.game_data_path = String::from("base");
-        self.physics = Arc::new(std::sync::Mutex::new(Some(physics)));
+        self.physics = Arc::new(mutex_timeouts::std::MutexWithTimeout::new(Some(physics)));
         self.is_server = is_server;
 
         if self.is_server {
             let physics = self.physics.lock().unwrap().as_mut().unwrap().copy_with_new_scene();
-            self.physics = Arc::new(std::sync::Mutex::new(Some(physics)));
+            self.physics = Arc::new(mutex_timeouts::std::MutexWithTimeout::new(Some(physics)));
         }
 
         self.blank_slate(is_server);
@@ -420,8 +420,8 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await.unwrap();
-                    let mut queue = connection.steady_sender_queue.lock().await.unwrap();
+                    let mut connection = connection.lock().await;
+                    let mut queue = connection.steady_sender_queue.lock().await;
                     while let Some(message) = queue.pop().await {}
                 }
                 ConnectionClientside::Lan(connection) => {
@@ -443,7 +443,7 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await.unwrap();
+                    let mut connection = connection.lock().await;
                     let attempt = connection.fast_update_sender.send(message).await;
                     if attempt.is_err() {
                         error!("send_fast_message: failed to send message");
@@ -460,7 +460,7 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await.unwrap();
+                    let mut connection = connection.lock().await;
                     let attempt = connection.steady_update_sender.send(message).await;
                     if attempt.is_err() {
                         error!("send_steady_message: failed to send message");
@@ -480,7 +480,7 @@ impl WorldMachine {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await.unwrap();
+                    let mut connection = connection.lock().await;
                     let attempt = connection.steady_update_sender.send(SteadyPacketData {
                         packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
                         uuid: Some(server::generate_uuid()),
@@ -707,6 +707,12 @@ impl WorldMachine {
             SteadyPacket::Ping => {
                 self.last_ping = Instant::now();
             }
+            SteadyPacket::Respawn(position) => {
+                if let Some(player) = &mut self.player {
+                    info!("respawning player");
+                    player.player.set_position(position);
+                }
+            }
         }
     }
 
@@ -714,7 +720,7 @@ impl WorldMachine {
         if let Some(connection) = self.server_connection.clone() {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await.unwrap();
+                    let mut connection = connection.lock().await;
                     // check if we have any messages to process
                     let try_recv = connection.steady_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
@@ -878,7 +884,7 @@ impl WorldMachine {
         if let Some(connection) = self.server_connection.clone() {
             match connection {
                 ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await.unwrap();
+                    let mut connection = connection.lock().await;
                     // check if we have any messages to process
                     let try_recv = connection.fast_update_receiver.try_recv();
                     drop(connection);
@@ -987,7 +993,7 @@ impl WorldMachine {
     pub async fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {
         let mut updates = Vec::new();
 
-        let mut world_updates = self.world_update_queue.lock().await.unwrap();
+        let mut world_updates = self.world_update_queue.lock().await;
         world_updates.drain(..).for_each(|update| {
             updates.push(update);
         });
@@ -1004,7 +1010,7 @@ impl WorldMachine {
         if !self.is_server {
             warn!("queue_update: called on client");
         } else {
-            let mut world_updates = self.world_update_queue.lock().await.unwrap();
+            let mut world_updates = self.world_update_queue.lock().await;
             world_updates.push_back(update);
         }
     }
@@ -1015,7 +1021,7 @@ impl WorldMachine {
         } else {
             let world_updates = self.world_update_queue.clone();
             tokio::spawn(async move {
-                let mut world_updates = world_updates.lock().await.unwrap();
+                let mut world_updates = world_updates.lock().await;
                 updates.iter().for_each(|update| {
                     world_updates.push_back(update.clone());
                 });
@@ -1051,7 +1057,7 @@ impl WorldMachine {
             self.snowballs.remove(*snowball - i);
         }
 
-        if self.last_ping.elapsed().as_secs_f32() >= 2.0 {
+        if self.last_ping.elapsed().as_secs_f32() >= 10.0 {
             crate::ui::UNSTABLE_CONNECTION.store(true, Ordering::Relaxed);
         } else {
             crate::ui::UNSTABLE_CONNECTION.store(false, Ordering::Relaxed);

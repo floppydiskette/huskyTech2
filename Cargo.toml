@@ -32,7 +32,7 @@ glad-gl = { path = "./glad-gl", optional = true }
 rand = "0.8.5"
 libm = "0.2.6"
 num_cpus = "1.15.0"
-mutex-timeouts = { version = "0.2.0", features = ["tokio"] }
+mutex-timeouts = { version = "0.3.0", features = ["tokio"] }
 
 [profile.release.package.physx-sys]
 debug = false
