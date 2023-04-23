@@ -63,8 +63,8 @@ pub mod ui_defs;
 #[allow(unused_must_use)]
 async fn main() {
     env_logger::init();
-    mutex_timeouts::tokio::GLOBAL_TOKIO_TIMEOUT.store(10, Ordering::SeqCst);
-    mutex_timeouts::std::GLOBAL_STD_TIMEOUT.store(10, Ordering::SeqCst);
+    mutex_timeouts::tokio::GLOBAL_TOKIO_TIMEOUT.store(20, Ordering::SeqCst);
+    mutex_timeouts::std::GLOBAL_STD_TIMEOUT.store(20, Ordering::SeqCst);
 
     // get args
     let mut args = std::env::args();

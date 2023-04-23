@@ -262,7 +262,7 @@ impl Server {
             Connection::Lan(_, connection) => {
                 let mut start_time = Instant::now();
                 let retry_time = Duration::from_millis(1000);
-                let timeout_time = Duration::from_secs(30);
+                let timeout_time = Duration::from_secs(10);
                 loop {
                     loop {
                         let res = connection.serialise_and_send_steady(packet.clone()).await;
@@ -433,21 +433,22 @@ impl Server {
             position,
             rotation,
             scale)).await;
+        if !res {
+            return None;
+        }
         let mut worldmachine = self.worldmachine.lock().await;
         worldmachine.world.entities.push(player_entity.clone());
         worldmachine.queue_update(WorldUpdate::InitEntity(entity_uuid, player_entity.clone())).await;
 
-        if !res {
-            return None;
-        }
+        let players = worldmachine.players.clone();
+        drop(worldmachine);
 
-        worldmachine.players.as_mut().unwrap().lock().await.insert(uuid.clone(), ServerPlayerContainer {
+        players.unwrap().lock().await.insert(uuid.clone(), ServerPlayerContainer {
             player: player.clone(),
             entity_id: Some(entity_uuid),
             connection: connection.clone(),
         });
 
-        drop(worldmachine);
 
         let res = self.send_steady_packet(&connection, SteadyPacket::FinaliseMapLoad).await;
 
@@ -672,11 +673,15 @@ impl Server {
         if let FastPacket::PlayerMove(uuid, position, displacement_vector, rotation, head_rotation, movement_info) = packet {
             let (success, correct_position) = {
                 let worldmachine = self.worldmachine.clone();
-                let mut worldmachine = worldmachine.lock().await;
+                let worldmachine = worldmachine.lock().await;
                 let mut players = worldmachine.players.clone();
                 drop(worldmachine);
                 let mut players = players.as_mut().unwrap().lock().await;
-                let player = players.get_mut(&uuid).unwrap();
+                let player = players.get_mut(&uuid);
+                if player.is_none() {
+                    return;
+                }
+                let player = player.unwrap();
                 player.player.attempt_position_change(position, displacement_vector, rotation, head_rotation, movement_info.unwrap_or_default(), player.entity_id, self.worldmachine.clone()).await
             };
             if success {} else {
@@ -829,7 +834,9 @@ impl Server {
             worldmachine.world.entities.retain(|x| x.uid != player_entity_id);
             worldmachine.queue_update(WorldUpdate::EntityNoLongerExists(player_entity_id)).await;
         }
-        if let Some(players) = &worldmachine.players {
+        let players = worldmachine.players.clone();
+        drop(worldmachine);
+        if let Some(players) = players {
             let mut players = players.lock().await;
             players.retain(|_, x| x.entity_id != Some(player_entity_id));
         }
