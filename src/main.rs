@@ -58,6 +58,7 @@ pub mod audio;
 pub mod common_anim;
 pub mod maps;
 pub mod ui_defs;
+pub mod motifui;
 
 #[tokio::main]
 #[allow(unused_must_use)]

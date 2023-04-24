@@ -240,10 +240,10 @@ impl Server {
                         drop(connection_lock);
                         let mut sur = sur.lock().await;
                         if let Some(packet_recv) = sur.recv().await {
+                            drop(sur);
                             if let SteadyPacket::Consume(uuid) = packet_recv.packet.clone().unwrap() {
                                 if uuid == packet.clone().uuid.unwrap() {
                                     debug!("packet consumed");
-                                    drop(sur);
                                     return true;
                                 } else {
                                     // requeue packet
@@ -639,11 +639,12 @@ impl Server {
         match connection.clone() {
             Connection::Local(local_connection) => {
                 let local_connection = local_connection.lock().await;
-                let mut sur = local_connection.steady_update_receiver.lock().await;
+                let sur = local_connection.steady_update_receiver.clone();
+                drop(local_connection);
+                let mut sur = sur.lock().await;
                 if let Ok(packet) = sur.try_recv() {
+                    drop(sur);
                     if let Some(steady_packet) = packet.clone().packet {
-                        drop(sur);
-                        drop(local_connection);
                         if !self.steady_packet(connection.clone(), steady_packet, packet).await {
                             return false;
                         }
