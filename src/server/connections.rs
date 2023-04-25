@@ -18,7 +18,7 @@ impl SteadyMessageQueue {
         }
     }
 
-    pub async fn pop(&mut self) -> Option<SteadyPacketData> {
+    pub async fn pop(&self) -> Option<SteadyPacketData> {
         let mut receiver = self.receiver.lock().await;
         let peek = receiver.try_recv();
         if let Ok(packet) = peek {
@@ -28,7 +28,7 @@ impl SteadyMessageQueue {
         }
     }
 
-    pub fn push(&mut self, packet: SteadyPacketData) {
+    pub fn push(&self, packet: SteadyPacketData) {
         let _ = self.sender.try_send(packet);
     }
 }

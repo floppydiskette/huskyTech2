@@ -95,13 +95,21 @@ async fn main() {
     if run_as_lan_server {
         info!("good day! running as lan server");
 
-        let mut physics = physics::PhysicsSystem::init();
+        let physics = physics::PhysicsSystem::init();
         info!("initialised physics");
 
-        let mut server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("lava".to_string()), physics, 25566, 25567, "0.0.0.0").await;
-        let mut server_clone = server.clone();
+        let server = server::Server::new_host_lan_server(&level_to_load.unwrap_or("lava".to_string()), physics, 25566, 25567, "0.0.0.0").await;
+        let server_clone_a = server.clone();
+        let server_clone_b = server.clone();
+        let mut server_clone_c = server.clone();
         info!("initialised server");
-        server_clone.run().await;
+        tokio::spawn(async move {
+            server_clone_a.physics_thread().await;
+        });
+        tokio::spawn(async move {
+            server_clone_b.player_tick_thread().await;
+        });
+        server_clone_c.run().await;
     } else {
         info!("good day! initialising huskyTech2");
         let sengine = SoundEngine::new();
@@ -145,12 +153,20 @@ async fn main() {
             });
         } else {
             let mut server = server::Server::new(&level_to_load.unwrap_or("lava".to_string()), physics.clone());
-            let mut server_clone = server.clone();
+            let server_clone_a = server.clone();
+            let server_clone_b = server.clone();
+            let mut server_clone_c = server.clone();
             tokio::spawn(async move {
-                server_clone.run().await;
+                server_clone_a.physics_thread().await;
+            });
+            tokio::spawn(async move {
+                server_clone_b.player_tick_thread().await;
+            });
+            tokio::spawn(async move {
+                server_clone_c.run().await;
             });
             let server_connection = server.join_local_server().await;
-            worldmachine.connect_to_server(ConnectionClientside::Local(server_connection.clone()));
+            worldmachine.connect_to_server(ConnectionClientside::Local(server_connection));
         }
 
         debug!("connected to server");

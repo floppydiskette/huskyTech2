@@ -28,7 +28,7 @@ pub type ConnectionUUID = String;
 
 #[derive(Clone)]
 pub enum Connection {
-    Local(Arc<Mutex<LocalConnection>>),
+    Local(Arc<LocalConnection>),
     Lan(LanListener, LanConnection),
 }
 
@@ -81,7 +81,6 @@ pub enum NameRejectionReason {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SteadyPacket {
-    Consume(PacketUUID),
     SelfTest,
     KeepAlive,
     InitialiseEntity(EntityId, Entity),
@@ -126,7 +125,7 @@ pub struct LocalConnectionClientSide {
 
 #[derive(Clone)]
 pub enum Connections {
-    Local(Arc<Mutex<Vec<Arc<Mutex<LocalConnection>>>>>),
+    Local(Arc<Mutex<Vec<Arc<LocalConnection>>>>),
     Lan(LanListener, Arc<Mutex<Vec<LanConnection>>>),
 }
 
@@ -215,110 +214,25 @@ impl Server {
 
     async fn get_connection_uuid(&self, connection: &Connection) -> ConnectionUUID {
         match connection {
-            Connection::Local(local_connection) => local_connection.lock().await.uuid.clone(),
+            Connection::Local(local_connection) => local_connection.uuid.clone(),
             Connection::Lan(_, lan_connection) => lan_connection.uuid.clone(),
         }
     }
 
     async unsafe fn send_steady_packet_unsafe(&self, connection_og: &Connection, packet: SteadyPacketData) -> bool {
-        let mut tries = 0;
-        const MAX_TRIES: i32 = 10;
-
         match connection_og.clone() {
             Connection::Local(connection) => {
-                let connection_lock = connection.lock().await;
-                let sus = connection_lock.steady_update_sender.clone();
-                drop(connection_lock);
+                let sus = connection.steady_update_sender.clone();
                 sus.send(packet.clone()).await.unwrap();
                 drop(sus);
                 debug!("sent packet to local connection");
-                // wait for the packet to be consumed
-                loop {
-                    {
-                        let connection_lock = connection.lock().await;
-                        let sur = connection_lock.steady_update_receiver.clone();
-                        drop(connection_lock);
-                        let mut sur = sur.lock().await;
-                        if let Some(packet_recv) = sur.recv().await {
-                            drop(sur);
-                            if let SteadyPacket::Consume(uuid) = packet_recv.packet.clone().unwrap() {
-                                if uuid == packet.clone().uuid.unwrap() {
-                                    debug!("packet consumed");
-                                    return true;
-                                } else {
-                                    // requeue packet
-                                    let connection_lock = connection.lock().await;
-                                    connection_lock.clientside_steady_update_sender.send(packet.clone()).await.unwrap();
-                                }
-                            } else {
-                                // requeue packet
-                                let connection_lock = connection.lock().await;
-                                connection_lock.clientside_steady_update_sender.send(packet.clone()).await.unwrap();
-                            }
-                        }
-                    }
-                }
             }
             Connection::Lan(_, connection) => {
-                let mut start_time = Instant::now();
-                let retry_time = Duration::from_millis(1000);
-                let timeout_time = Duration::from_secs(10);
-                loop {
-                    loop {
-                        let res = connection.serialise_and_send_steady(packet.clone()).await;
-                        if res.is_ok() {
-                            break;
-                        } else if tries < MAX_TRIES {
-                            tries += 1;
-                            //warn!("failed to send packet to lan connection, retrying");
-                            continue;
-                        } else {
-                            return false;
-                        }
-                    }
-                    debug!("sent packet to lan connection");
-                    debug!("uuid: {:?}", packet.clone().uuid);
-                    debug!("type: {:?}", packet.clone().packet);
-                    tokio::time::sleep(Duration::from_millis(100)).await; // wait a bit cause the packet might still be sending
-                    // wait for the packet to be consumed
-                    tries = 0;
-                    loop {
-                        let received_packet = connection.attempt_receive_steady_and_deserialise().await;
-                        if let Err(e) = received_packet {
-                           // warn!("failed to receive packet from lan connection: {:?}", e);
-                            return false;
-                        }
-                        let received_packet = received_packet.unwrap();
-                        if let Some(received_packet) = received_packet {
-                            if let SteadyPacket::Consume(uuid) = received_packet.packet.clone().unwrap() {
-                                if uuid == packet.clone().uuid.unwrap() {
-                                    debug!("packet consumed");
-                                    return true;
-                                } else {
-                                    // requeue the packet
-                                    connection.steady_receive_queue.lock().await.0.push(received_packet);
-                                }
-                            } else {
-                                // requeue the packet
-                                connection.steady_receive_queue.lock().await.0.push(received_packet);
-                            }
-                        } else if tries < MAX_TRIES {
-                            tries += 1;
-                           // warn!("failed to receive packet from lan connection, retrying");
-                            tokio::time::sleep(Duration::from_millis(100)).await; // wait a bit cause the packet might still be sending
-                            continue;
-                        } else {
-                            if start_time.elapsed() > timeout_time {
-                                //warn!("timed out waiting for packet to be consumed");
-                                return false;
-                            }
-                            if start_time.elapsed() > retry_time {
-                                //warn!("retrying packet");
-                                start_time = Instant::now();
-                                break;
-                            }
-                        }
-                    }
+                let res = connection.serialise_and_send_steady(packet.clone()).await;
+                return if res.is_ok() {
+                    true
+                } else {
+                    false
                 }
             }
         }
@@ -353,9 +267,7 @@ impl Server {
     pub async fn send_fast_packet(&self, connection: &Connection, packet: FastPacket) {
         match connection.clone() {
             Connection::Local(connection) => {
-                let connection = connection.lock().await;
                 let fus = connection.fast_update_sender.clone();
-                drop(connection);
                 let packet_data = FastPacketData {
                     packet: Some(packet),
                 };
@@ -373,7 +285,6 @@ impl Server {
     pub async fn try_receive_fast_packet(&mut self, connection: &Connection) -> Option<FastPacket> {
         match connection.clone() {
             Connection::Local(connection) => {
-                let connection = connection.lock().await;
                 let mut fur = connection.fast_update_receiver.lock().await;
                 if let Ok(packet) = fur.try_recv() {
                     return Some(packet.packet.unwrap());
@@ -469,19 +380,6 @@ impl Server {
                 // client shouldn't be sending this
                 debug!("client sent initialise packet");
             }
-            SteadyPacket::Consume(_) => {
-                match connection.clone() {
-                    Connection::Local(local_connection) => {
-                        let local_connection = local_connection.lock().await;
-                        local_connection.consume_receiver_queue.lock().await.push(steady_packet_data);
-                    }
-                    Connection::Lan(_, connection) => {
-                        // oops, requeue the packet
-                        connection.steady_receive_queue.lock().await.0.push(steady_packet_data);
-                    }
-                }
-            }
-
             // client shouldn't be sending these
             SteadyPacket::SelfTest => {}
             SteadyPacket::InitialisePlayer(_, _, _, _, _, _) => {}
@@ -492,7 +390,6 @@ impl Server {
                 // mirror to all other clients
                 let who_sent = match connection.clone() {
                     Connection::Local(local_connection) => {
-                        let local_connection = local_connection.lock().await;
                         local_connection.uuid.clone()
                     }
                     Connection::Lan(listener, connection) => {
@@ -519,7 +416,6 @@ impl Server {
                 // mirror to all other clients
                 let who_sent = match connection.clone() {
                     Connection::Local(local_connection) => {
-                        let local_connection = local_connection.lock().await;
                         local_connection.uuid.clone()
                     }
                     Connection::Lan(listener, connection) => {
@@ -582,10 +478,9 @@ impl Server {
                 let mut players = players.lock().await;
                 let uuid = match connection.clone() {
                     Connection::Local(local_connection) => {
-                        let local_connection = local_connection.lock().await;
                         local_connection.uuid.clone()
                     }
-                    Connection::Lan(listener, connection) => {
+                    Connection::Lan(_, connection) => {
                         connection.uuid.clone()
                     }
                 };
@@ -628,8 +523,23 @@ impl Server {
                     }
                 }
             }
+            SteadyPacket::Ping => {
+                let worldmachine = self.worldmachine.lock().await;
+                let players = worldmachine.players.as_ref().unwrap().clone();
+                drop(worldmachine);
+                let mut players = players.lock().await;
+                let uuid = match connection.clone() {
+                    Connection::Local(local_connection) => {
+                        local_connection.uuid.clone()
+                    }
+                    Connection::Lan(_, connection) => {
+                        connection.uuid
+                    }
+                };
+                let player = players.get_mut(&uuid).unwrap();
+                player.player.last_successful_ping = Instant::now();
+            }
             SteadyPacket::NameRejected(_) => {}
-            SteadyPacket::Ping => {}
             SteadyPacket::Respawn(_) => {}
         }
         true
@@ -638,9 +548,7 @@ impl Server {
     async fn handle_steady_packets(&self, connection: Connection) -> bool {
         match connection.clone() {
             Connection::Local(local_connection) => {
-                let local_connection = local_connection.lock().await;
                 let sur = local_connection.steady_update_receiver.clone();
-                drop(local_connection);
                 let mut sur = sur.lock().await;
                 if let Ok(packet) = sur.try_recv() {
                     drop(sur);
@@ -713,11 +621,9 @@ impl Server {
     async fn handle_fast_packets(&self, connection: Connection) {
         match connection.clone() {
             Connection::Local(local_connection) => {
-                let local_connection = local_connection.lock().await;
                 let mut fur = local_connection.fast_update_receiver.lock().await;
                 if let Ok(packet) = fur.try_recv() {
                     drop(fur);
-                    drop(local_connection);
                     if let Some(fast_packet) = packet.packet {
                         match fast_packet.clone() {
                             /// sent when the player wants to move
@@ -930,7 +836,7 @@ impl Server {
         };
         tokio::spawn(async move {
             let thread_data = thread_data;
-            let connection = Arc::new(Mutex::new(local_connection));
+            let connection = Arc::new(local_connection);
             thread_data.server.new_connection(Connection::Local(connection)).await;
         });
         connection
@@ -1025,80 +931,15 @@ impl Server {
         }
     }
 
-    // ran once whenever we see a player with over 500ms since last ping
-    async fn ping_player_task(&mut self, connection: Connection) {
-        match connection {
-            Connection::Local(local_connection) => {
-                if !self.send_steady_packet(&Connection::Local(local_connection.clone()), SteadyPacket::Ping).await {
-                    let local_connection = local_connection.lock().await;
-                    let uuid = local_connection.uuid.clone();
-                    drop(local_connection);
-                    let wm = self.worldmachine.lock().await;
-                    if let Some(players) = wm.players.clone() {
-                        drop(wm);
-                        let players = players.lock().await;
-                        if let Some(player) = players.get(&uuid) {
-                            if player.player.last_successful_ping.elapsed().as_secs_f32() > 10.0 {
-                                //self.disconnect_player(uuid, player.entity_id.unwrap()).await;
-                            }
-                        }
-                    }
-                } else {
-                    let local_connection = local_connection.lock().await;
-                    let uuid = local_connection.uuid.clone();
-                    drop(local_connection);
-                    let wm = self.worldmachine.lock().await;
-                    if let Some(players) = wm.players.clone() {
-                        drop(wm);
-                        let mut players = players.lock().await;
-                        if let Some(player) = players.get_mut(&uuid) {
-                            player.player.last_successful_ping = Instant::now();
-                        }
-                    }
-                }
-            }
-            Connection::Lan(listener, lan_connection) => {
-                if !self.send_steady_packet(&Connection::Lan(listener.clone(), lan_connection.clone()), SteadyPacket::Ping).await {
-                    let wm = self.worldmachine.lock().await;
-                    if let Some(players) = wm.players.clone() {
-                        drop(wm);
-                        let players = players.lock().await;
-                        let uuid = lan_connection.uuid.clone();
-                        if let Some(player) = players.get(&uuid) {
-                            if player.player.last_successful_ping.elapsed().as_secs_f32() > 10.0 {
-                                self.disconnect_player(uuid, player.entity_id.unwrap()).await;
-                            }
-                        }
-                    }
-                } else {
-                    let wm = self.worldmachine.lock().await;
-                    if let Some(players) = wm.players.clone() {
-                        drop(wm);
-                        let mut players = players.lock().await;
-                        let uuid = lan_connection.uuid.clone();
-                        if let Some(player) = players.get_mut(&uuid) {
-                            player.player.last_successful_ping = Instant::now();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // loop
-    // check if there are any new connections to initialise
-    // if there are, initialise them
-    // if not, run the worldmachine
-    pub async fn run(&mut self) {
-        let mut compensation_delta = 0.0;
+    pub async fn physics_thread(&self) {
+        let mut compensation_delta = 0.0;// do physics tick
         loop {
-            // do physics tick
-            let mut worldmachine = self.worldmachine.lock().await;
+            let worldmachine = self.worldmachine.lock().await;
             let last_physics_tick = worldmachine.last_physics_update;
             drop(worldmachine);
             let current_time = std::time::Instant::now();
             let delta = (current_time - last_physics_tick).as_secs_f32();
-            if delta > 0.0 {
+            if delta > 0.01 {
                 let mut worldmachine = self.worldmachine.lock().await;
                 let res = worldmachine.physics.lock().unwrap().as_mut().unwrap().tick(delta + compensation_delta);
                 if let Some(delta) = res {
@@ -1117,35 +958,54 @@ impl Server {
                         player.player.gravity_tick(player.entity_id, &mut worldmachine, delta).await;
                         drop(worldmachine);
                         player.player.snowball_cooldown -= delta;
-                        if player.player.last_successful_ping.elapsed().as_secs_f32() > 5.0 && !player.player.pinging.load(Ordering::Relaxed) {
-                            player.player.pinging.store(true, Ordering::Relaxed);
-                            let conn_clone = player.connection.clone();
-                            let mut self_clone = self.clone();
-                            let pinging = player.player.pinging.clone();
-                            tokio::spawn(async move {
-                                self_clone.ping_player_task(conn_clone).await;
-                                pinging.store(false, Ordering::Relaxed);
-                            });
-                        }
-                        let position = player.player.get_position(None, None).await;
-                        if position.y < -20.0 && !player.player.respawning.load(Ordering::Relaxed) {
-                            player.player.respawning.store(true, Ordering::Relaxed);
-                            let respawning = player.player.respawning.clone();
-                            let packet = SteadyPacket::Respawn(Vec3::new(0.0, 0.0, 0.0));
-                            let conn_clone = player.connection.clone();
-                            let self_clone = self.clone();
-                            let mut worldmachine = self.worldmachine.lock().await;
-                            player.player.set_position(Vec3::new(0.0, 0.0, 0.0), player.entity_id, &mut worldmachine).await;
-                            drop(worldmachine);
-                            tokio::spawn(async move {
-                                self_clone.send_steady_packet(&conn_clone, packet).await;
-                                respawning.store(false, Ordering::Relaxed);
-                            });
-                        }
                     }
                 }
             }
+        }
+    }
 
+    pub async fn player_tick_thread(&self) {
+        loop {
+            {
+                let worldmachine = self.worldmachine.lock().await;
+                let players = worldmachine.players.clone().unwrap();
+                drop(worldmachine);
+                let mut players = players.lock().await;
+                for (_uuid, player) in players.iter_mut() {
+                    if player.player.last_successful_ping.elapsed().as_secs_f32() > 60.0 {
+                        match &player.connection {
+                            Connection::Local(con) => {
+                                self.disconnect_player(con.uuid.clone(), player.entity_id.unwrap()).await;
+                            }
+                            Connection::Lan(_, con) => {
+                                self.disconnect_player(con.uuid.clone(), player.entity_id.unwrap()).await;
+                            }
+                        }
+                    }
+                    let position = player.player.get_position(None, None).await;
+                    if position.y < -20.0 && !player.player.respawning.load(Ordering::Relaxed) {
+                        player.player.respawning.store(true, Ordering::Relaxed);
+                        let respawning = player.player.respawning.clone();
+                        let packet = SteadyPacket::Respawn(Vec3::new(0.0, 0.0, 0.0));
+                        let conn_clone = player.connection.clone();
+                        let self_clone = self.clone();
+                        let mut worldmachine = self.worldmachine.lock().await;
+                        player.player.set_position(Vec3::new(0.0, 0.0, 0.0), player.entity_id, &mut worldmachine).await;
+                        drop(worldmachine);
+                        self_clone.send_steady_packet(&conn_clone, packet).await;
+                        respawning.store(false, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+    }
+
+    // loop
+    // check if there are any new connections to initialise
+    // if there are, initialise them
+    // if not, run the worldmachine
+    pub async fn run(&mut self) {
+        loop {
             // lock worldmachine
             {
                 let mut worldmachine = self.worldmachine.lock().await;

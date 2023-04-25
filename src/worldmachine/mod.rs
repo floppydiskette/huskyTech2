@@ -456,7 +456,7 @@ impl WorldMachine {
         }
     }
 
-    async fn send_steady_message(&mut self, message: SteadyPacketData) {
+    async fn send_steady_message(&mut self, message: SteadyPacketData) -> bool {
         if let Some(connection) = &mut self.server_connection {
             match connection {
                 ConnectionClientside::Local(connection) => {
@@ -464,47 +464,21 @@ impl WorldMachine {
                     let attempt = connection.steady_update_sender.send(message).await;
                     if attempt.is_err() {
                         error!("send_steady_message: failed to send message");
+                        return false;
                     }
+                    true
                 }
                 ConnectionClientside::Lan(connection) => {
                     let attempt = connection.send_steady_and_serialise(message).await;
                     if attempt.is_err() {
                         error!("send_steady_message: failed to send message");
+                        return false;
                     }
-                }
-            }
-        }
-    }
-
-    async fn consume_steady_message(&mut self, message: SteadyPacketData) {
-        if let Some(connection) = &mut self.server_connection {
-            match connection {
-                ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
-                    let attempt = connection.steady_update_sender.send(SteadyPacketData {
-                        packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
-                        uuid: Some(server::generate_uuid()),
-                    }).await;
-                    if attempt.is_err() {
-                        error!("send_queued_steady_message: failed to send message");
-                    }
-                    debug!("consume message sent");
-                }
-                ConnectionClientside::Lan(connection) => {
-                    let attempt = connection
-                        .send_steady_and_serialise(SteadyPacketData {
-                            packet: Some(SteadyPacket::Consume(message.uuid.unwrap())),
-                            uuid: Some(server::generate_uuid()),
-                        })
-                        .await;
-                    if attempt.is_err() {
-                        error!("send_queued_steady_message: failed to send message");
-                    }
-                    debug!("consume message sent");
+                    true
                 }
             }
         } else {
-            error!("consume_steady_message: no connection");
+            false
         }
     }
 
@@ -546,7 +520,6 @@ impl WorldMachine {
 
     async fn handle_steady_message(&mut self, packet: SteadyPacket) {
         match packet {
-            SteadyPacket::Consume(_) => {}
             SteadyPacket::KeepAlive => {}
             SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
                 if let Some(ignore) = self.ignore_this_entity {
@@ -704,15 +677,13 @@ impl WorldMachine {
                     self.snowballs.push(snowball);
                 }
             }
-            SteadyPacket::Ping => {
-                self.last_ping = Instant::now();
-            }
             SteadyPacket::Respawn(position) => {
                 if let Some(player) = &mut self.player {
                     info!("respawning player");
                     player.player.set_position(position);
                 }
             }
+            SteadyPacket::Ping => {}
         }
     }
 
@@ -726,7 +697,6 @@ impl WorldMachine {
                     if let Ok(message) = try_recv {
                         drop(connection);
                         self.handle_steady_message(message.clone().packet.unwrap()).await;
-                        self.consume_steady_message(message).await;
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
                             warn!("process_steady_messages: error receiving message: {:?}", e);
@@ -738,11 +708,6 @@ impl WorldMachine {
                     let try_recv = connection.attempt_receive_steady_and_deserialise().await;
                     if let Some(message) = try_recv {
                         self.handle_steady_message(message.clone().packet.unwrap()).await;
-                        // don't consume consume packets
-                        if let SteadyPacket::Consume(_) = message.clone().packet.unwrap() {
-                        } else {
-                            self.consume_steady_message(message).await;
-                        }
                     }
                 }
             }
@@ -983,11 +948,25 @@ impl WorldMachine {
         }
     }
 
+    async fn ping_if_needed(&mut self) {
+        if self.last_ping.elapsed().as_secs_f32() > 5.0 {
+            let res = self.send_steady_message(SteadyPacketData {
+                packet: Some(SteadyPacket::Ping),
+                uuid: Some(server::generate_uuid()),
+            }).await;
+            if !res {
+                crate::ui::DISCONNECTED.store(true, Ordering::Relaxed);
+            }
+            self.last_ping = Instant::now();
+        }
+    }
+
     pub async fn tick_connection(&mut self, client_updates: &mut Vec<ClientUpdate>) {
         self.process_steady_messages().await;
         self.send_queued_steady_messages().await;
         self.process_fast_messages().await;
         self.process_client_updates(client_updates).await;
+        self.ping_if_needed().await;
     }
 
     pub async fn server_tick(&mut self) -> Option<Vec<WorldUpdate>> {

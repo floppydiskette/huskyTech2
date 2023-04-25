@@ -197,7 +197,10 @@ impl ServerPlayer {
     pub async fn gravity_tick(&mut self, entity_id: Option<EntityId>, worldmachine: &mut WorldMachine, frame_delta: f32) {
         let now = std::time::Instant::now();
         let delta = now.duration_since(self.last_move_call).as_secs_f32();
-        if delta < 0.01 {
+        if delta < 0.3 {
+            return;
+        }
+        if frame_delta < 0.01 {
             return;
         }
         let previous_position = self.physics_controller.lock().unwrap().as_mut().unwrap().get_foot_position();

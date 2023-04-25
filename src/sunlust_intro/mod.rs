@@ -90,7 +90,18 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         }
 
         if current_time.duration_since(last_time).unwrap().as_secs_f32() <= 0.01 {
+            // poll events
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            if renderer.manage_window() {
+                process::exit(0);
+            }
             continue;
+        } else {
+            // poll events
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            if renderer.manage_window() {
+                process::exit(0);
+            }
         }
 
         // set colour of mesh
@@ -116,11 +127,6 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         mesh.render_basic_lines(renderer, rainbow_shader.clone());
         // swap buffers
         renderer.sunlust_swap_buffers();
-
-        // poll events
-        if renderer.manage_window() {
-            process::exit(0);
-        }
 
         last_time = current_time;
     }
@@ -148,7 +154,18 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         }
 
         if current_time.duration_since(last_time).unwrap().as_secs_f32() <= 0.01 {
+            // poll events
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            if renderer.manage_window() {
+                process::exit(0);
+            }
             continue;
+        } else {
+            // poll events
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            if renderer.manage_window() {
+                process::exit(0);
+            }
         }
         renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
         renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
@@ -204,10 +221,6 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         // swap buffers
         renderer.sunlust_swap_buffers();
 
-        // poll events
-        if renderer.manage_window() {
-            process::exit(0);
-        }
         last_time = current_time;
     }
     let copyright_time = 2000.0 + normal_time; // in milliseconds
@@ -223,7 +236,18 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         }
 
         if current_time.duration_since(last_time).unwrap().as_secs_f32() <= 0.01 {
+            // poll events
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            if renderer.manage_window() {
+                process::exit(0);
+            }
             continue;
+        } else {
+            // poll events
+            renderer.backend.window.lock().unwrap().glfw.poll_events();
+            if renderer.manage_window() {
+                process::exit(0);
+            }
         }
         renderer.backend.input_state.lock().unwrap().input.time = Some(start_time.elapsed().as_secs_f64());
         renderer.backend.egui_context.lock().unwrap().begin_frame(renderer.backend.input_state.lock().unwrap().input.take());
@@ -235,11 +259,6 @@ pub fn animate(renderer: &mut ht_renderer, sss: &SoundContext) {
         crate::ui::SUNLUST_INFO.lock().unwrap().show_copyright = true;
         // swap buffers
         renderer.sunlust_swap_buffers();
-
-        // poll events
-        if renderer.manage_window() {
-            process::exit(0);
-        }
 
         last_time = current_time;
     }
