@@ -107,7 +107,7 @@ async fn main() {
             server_clone_a.physics_thread().await;
         });
         tokio::spawn(async move {
-            server_clone_b.player_tick_thread().await;
+            server_clone_b.player_and_physics_tick_thread().await;
         });
         server_clone_c.run().await;
     } else {
@@ -160,7 +160,7 @@ async fn main() {
                 server_clone_a.physics_thread().await;
             });
             tokio::spawn(async move {
-                server_clone_b.player_tick_thread().await;
+                server_clone_b.player_and_physics_tick_thread().await;
             });
             tokio::spawn(async move {
                 server_clone_c.run().await;
@@ -197,26 +197,8 @@ async fn main() {
         }
 
         chat::write_chat("engine".to_string(), "welcome to the huskyTech2 demo! press the comma key to unlock your mouse and send messages, or the period key to lock your mouse again (:".to_string());
-        chat::write_chat("engine".to_string(), format!("there are {} players online", if let Some(players) = &worldmachine.players {
-            players.lock().await.len()
-        } else {
-            0
-        }));
-        chat::write_chat("engine".to_string(), (if let Some(players) = &worldmachine.players {
-            let players = players.lock().await;
-            let mut names = String::new();
-            for player in players.iter() {
-                names.push_str(&player.1.player.name);
-                names.push_str(", ");
-            }
-            names.pop();
-            names.pop();
-            format!("players online: {}", names)
-        } else {
-            "".to_string()
-        }).to_string());
 
-        let mut last_frame_time = std::time::Instant::now();
+        let mut last_frame_time = Instant::now();
         let mut compensation_delta = 0.0;
         loop {
             let delta = (last_frame_time.elapsed().as_millis() as f64 / 1000.0) as f32;

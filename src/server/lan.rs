@@ -9,7 +9,7 @@ use tokio::sync::{mpsc};
 use mutex_timeouts::tokio::MutexWithTimeoutAuto as Mutex;
 use serde::{Serialize, Deserialize};
 use std::net::{SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use bytes::{Bytes, BytesMut};
 use fyrox_sound::futures::{SinkExt, TryStreamExt};
@@ -74,10 +74,11 @@ impl FastUpdateQueue<FastPacketLan> {
 #[derive(Clone)]
 pub struct LanConnection {
     pub steady_update: mpsc::Sender<SteadyPacketData>,
-    pub steady_receiver: SteadyMessageQueue,
+    pub steady_receiver_passthrough: Arc<Mutex<Option<mpsc::Receiver<SteadyPacketData>>>>,
     pub is_connected: Arc<AtomicBool>,
     pub remote_addr: SocketAddr,
     pub uuid: ConnectionUUID,
+    pub last_successful_ping: Arc<AtomicU64>,
 }
 
 unsafe impl Send for LanConnection {}
@@ -330,18 +331,19 @@ impl LanListener {
 
 impl LanConnection {
     pub fn new(uuid: ConnectionUUID, steady_update: Framed<TcpStream, LengthDelimitedCodec>, peer_addr: SocketAddr) -> Self {
-        let mut smq = SteadyMessageQueue::new();
-        let (steady_sender_to_client, steady_sender_at_tcpthread) = mpsc::channel(100);
+        let (steady_sender_to_client, steady_receiver_at_tcpthread) = mpsc::channel(100);
+        let (steady_sender_at_tcpthread, steady_receiver_from_tcpthread) = mpsc::channel(100);
         let the_self = Self {
             steady_update: steady_sender_to_client,
-            steady_receiver: smq.clone(),
+            steady_receiver_passthrough: Arc::new(Mutex::new(Some(steady_receiver_from_tcpthread))),
             is_connected: Arc::new(AtomicBool::new(true)),
             remote_addr: peer_addr,
             uuid,
+            last_successful_ping: Arc::new(AtomicU64::new(0)),
         };
         let the_clone = the_self.clone();
         tokio::spawn(async move {
-            the_clone.tcp_thread(smq, steady_sender_at_tcpthread, steady_update).await;
+            the_clone.tcp_thread(steady_sender_at_tcpthread, steady_receiver_at_tcpthread, steady_update).await;
         });
         the_self
     }
@@ -372,8 +374,8 @@ impl LanConnection {
         None
     }
 
-    pub async fn attempt_receive_steady_and_deserialise(&self) -> Result<Option<SteadyPacketData>, ConnectionError> {
-        let packet = self.steady_receiver.pop().await;
+    pub async fn attempt_receive_steady_and_deserialise(&self, steady_receiver: &mut mpsc::Receiver<SteadyPacketData>) -> Result<Option<SteadyPacketData>, ConnectionError> {
+        let packet = steady_receiver.recv().await;
         if let Some(packet) = packet {
             Ok(Some(packet))
         } else if !self.is_connected.load(Ordering::Relaxed) {
@@ -384,9 +386,7 @@ impl LanConnection {
     }
 
     // sender receives from client and sends to other threads, receiver receives from other threads and sends to client
-    pub async fn tcp_thread(&self, sender: SteadyMessageQueue, mut receiver: mpsc::Receiver<SteadyPacketData>, mut reader: Framed<TcpStream, LengthDelimitedCodec>) {
-        let mut packets_needing_consumption: VecDeque<(PacketUUID, SteadyPacketData)> = VecDeque::new();
-        let mut time_since_packet_sent: HashMap<PacketUUID, Instant> = HashMap::new();
+    pub async fn tcp_thread(&self, sender: mpsc::Sender<SteadyPacketData>, mut receiver: mpsc::Receiver<SteadyPacketData>, mut reader: Framed<TcpStream, LengthDelimitedCodec>) {
         loop {
             tokio::select! {
                 attempt = StreamExt::next(&mut reader) => {
@@ -395,29 +395,9 @@ impl LanConnection {
                             let mut deserialiser = rmp_serde::Deserializer::new(&packet[..]);
                             let packet = SteadyPacketData::deserialize(&mut deserialiser);
                             if let Ok(packet) = packet {
-                                match packet.packet {
-                                    SteadyPacket::Consume(uuid) => {
-                                        if time_since_packet_sent.contains_key(&uuid) {
-                                            // consume packet
-                                            packets_needing_consumption.retain(|x| &x.0 != &uuid);
-                                            time_since_packet_sent.remove(&uuid);
-                                        }
-                                    }
-                                    _ => {
-                                        let uuid = packet.uuid.clone();
-                                        sender.push(packet);
-                                        // send consume packet
-                                        let packet = SteadyPacketData {
-                                            uuid: PacketUUID::new(),
-                                            packet: SteadyPacket::Consume(uuid),
-                                        };
-
-                                        let mut buffer = Vec::new();
-                                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
-                                        packet.serialize(&mut serialiser).unwrap();
-                                        reader.send(Bytes::from(buffer)).await.unwrap();
-                                    }
-                                }
+                                debug!("received steady packet: {:?}", packet);
+                                let uuid = packet.uuid.clone();
+                                sender.send(packet).await.unwrap();
                             }
                         }
                     } else {
@@ -428,28 +408,11 @@ impl LanConnection {
                 }
                 attempt = receiver.recv() => {
                     if let Some(packet) = attempt {
-                        // add to packets needing consumption and time since packet sent
-                        packets_needing_consumption.push_back((packet.uuid.clone(), packet.clone()));
-                        time_since_packet_sent.insert(packet.uuid.clone(), Instant::now());
-
+                        debug!("sending steady packet: {:?}", packet);
                         let mut buffer = Vec::new();
                         let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
                         packet.serialize(&mut serialiser).unwrap();
                         reader.send(Bytes::from(buffer)).await.unwrap();
-                    }
-                }
-            }
-
-            // for each packet needing consumption, check if it's been over 1 second since it was sent
-            for (uuid, packet_data) in packets_needing_consumption.iter() {
-                if let Some(time) = time_since_packet_sent.get_mut(uuid) {
-                    if time.elapsed().as_secs() > 1 {
-                        // re-send packet
-                        let mut buffer = Vec::new();
-                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
-                        packet_data.serialize(&mut serialiser).unwrap();
-                        reader.send(Bytes::from(buffer)).await.unwrap();
-                        *time = Instant::now();
                     }
                 }
             }
@@ -577,8 +540,6 @@ impl ClientLanConnection {
     }
 
     pub async fn tcp_listener_thread(&self, mut reader: Framed<TcpStream, LengthDelimitedCodec>, mut receiver: mpsc::Receiver<SteadyPacketData>) {
-        let mut packets_needing_consumption: VecDeque<(PacketUUID, SteadyPacketData)> = VecDeque::new();
-        let mut time_since_packet_sent: HashMap<PacketUUID, Instant> = HashMap::new();
         loop {
             tokio::select! {
                 attempt = StreamExt::next(&mut reader) => {
@@ -590,29 +551,8 @@ impl ClientLanConnection {
                                 warn!("failed to deserialise steady update: {:?}", packet);
                             } else {
                                 let packet = packet.unwrap();
-                                match packet.packet {
-                                    SteadyPacket::Consume(uuid) => {
-                                        if time_since_packet_sent.contains_key(&uuid) {
-                                            // consume packet
-                                            packets_needing_consumption.retain(|x| &x.0 != &uuid);
-                                            time_since_packet_sent.remove(&uuid);
-                                        }
-                                    }
-                                    _ => {
-                                        let uuid = packet.uuid.clone();
-                                        self.steady_receiver_queue.lock().await.push(packet);
-                                        // send consume packet
-                                        let packet = SteadyPacketData {
-                                            uuid: PacketUUID::new(),
-                                            packet: SteadyPacket::Consume(uuid),
-                                        };
-
-                                        let mut buffer = Vec::new();
-                                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
-                                        packet.serialize(&mut serialiser).unwrap();
-                                        reader.send(Bytes::from(buffer)).await.unwrap();
-                                    }
-                                }
+                                let uuid = packet.uuid.clone();
+                                self.steady_receiver_queue.lock().await.push(packet);
                             }
                         }
                     } else {
@@ -622,9 +562,7 @@ impl ClientLanConnection {
                 }
                 attempt = receiver.recv() => {
                     if let Some(attempt) = attempt {
-                        // add to packets needing consumption and time since packet sent
-                        packets_needing_consumption.push_back((attempt.uuid.clone(), attempt.clone()));
-                        time_since_packet_sent.insert(attempt.uuid.clone(), Instant::now());
+                        debug!("sending steady update: {:?}", attempt);
 
                         let mut buffer = Vec::new();
                         let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
@@ -633,20 +571,6 @@ impl ClientLanConnection {
                         if attempt.is_err() {
                             warn!("failed to send steady update: {:?}", attempt);
                         }
-                    }
-                }
-            }
-
-            // for each packet needing consumption, check if it's been over 1 second since it was sent
-            for (uuid, packet_data) in packets_needing_consumption.iter() {
-                if let Some(time) = time_since_packet_sent.get_mut(uuid) {
-                    if time.elapsed().as_secs() > 1 {
-                        // re-send packet
-                        let mut buffer = Vec::new();
-                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
-                        packet_data.serialize(&mut serialiser).unwrap();
-                        reader.send(Bytes::from(buffer)).await.unwrap();
-                        *time = Instant::now();
                     }
                 }
             }

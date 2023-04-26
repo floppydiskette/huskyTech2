@@ -370,7 +370,7 @@ unsafe impl Send for PhysicsCharacterController {}
 unsafe impl Sync for PhysicsCharacterController {}
 
 impl PhysicsCharacterController {
-    pub fn move_by(&mut self, displacement: Vec3, jump: bool, _server: bool, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
+    pub fn move_by(&mut self, displacement: Vec3, jump: bool, server: Option<bool>, cheat: bool, delta_time: f32, frame_delta: f32) -> Vec3 {
         let lock = PHYSICS_LOCK.lock().unwrap();
         if delta_time <= 0.0 || frame_delta <= 0.0 {
             return Vec3::zero();
@@ -382,17 +382,25 @@ impl PhysicsCharacterController {
             z: displacement.z,
         };
 
+        let do_gravity = if let Some(server) = server {
+            server
+        } else {
+            true
+        };
+
         if jump && self.is_on_ground() {
             unsafe {
                 *self.y_velocity.get() = PLAYER_JUMP_VELOCITY;
             }
         } else if !self.is_on_ground() {
-            let gravity = PLAYER_GRAVITY;
-            let mut velocity = unsafe { *self.y_velocity.get() };
-            velocity += gravity * delta_time;
-            velocity = velocity.clamp(-PLAYER_TERMINAL_VELOCITY, PLAYER_TERMINAL_VELOCITY);
-            unsafe {
-                *self.y_velocity.get() = velocity;
+            if do_gravity {
+                let gravity = PLAYER_GRAVITY;
+                let mut velocity = unsafe { *self.y_velocity.get() };
+                velocity += gravity * delta_time;
+                velocity = velocity.clamp(-PLAYER_TERMINAL_VELOCITY, PLAYER_TERMINAL_VELOCITY);
+                unsafe {
+                    *self.y_velocity.get() = velocity;
+                }
             }
         } else if cheat {
             unsafe {
@@ -400,8 +408,10 @@ impl PhysicsCharacterController {
             }
         }
 
-        displacement.y = unsafe { *self.y_velocity.get() };
-        displacement.y *= delta_time;
+        if do_gravity {
+            displacement.y = unsafe { *self.y_velocity.get() };
+            displacement.y *= delta_time;
+        }
 
         unsafe {
             let flags = PxController_move_mut(*self.controller.lock().unwrap(),

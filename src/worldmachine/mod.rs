@@ -657,7 +657,6 @@ impl WorldMachine {
                 }
             }
             SteadyPacket::Ping => {}
-            SteadyPacket::Consume(_) => {}
         }
     }
 

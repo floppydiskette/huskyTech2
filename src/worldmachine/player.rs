@@ -286,7 +286,7 @@ impl Player {
         let delta_time = now.duration_since(self.last_move_call).as_secs_f32();
         self.last_move_call = now;
         let dt_movement = movement * frame_delta;
-        let final_movement = self.physics_controller.as_mut().unwrap().move_by(dt_movement, jump, false, false, delta_time, frame_delta);
+        let final_movement = self.physics_controller.as_mut().unwrap().move_by(dt_movement, jump, None, false, delta_time, frame_delta);
         // uncomment next three lines for FLIGHT
         //let mut position = self.physics_controller.as_ref().unwrap().get_position();
         //position.y += 5.0;
