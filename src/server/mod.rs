@@ -10,6 +10,7 @@ use mutex_timeouts::tokio::MutexWithTimeoutAuto as Mutex;
 use tokio::time::{Instant, Duration};
 use serde::{Serialize, Deserialize};
 use tokio::net::TcpStream;
+use tokio_util::codec::Encoder;
 use crate::physics::PhysicsSystem;
 use crate::server::connections::SteadyMessageQueue;
 use crate::server::lan::{ClientLanConnection, LanConnection, LanListener};
@@ -81,8 +82,6 @@ pub enum NameRejectionReason {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SteadyPacket {
-    SelfTest,
-    KeepAlive,
     InitialiseEntity(EntityId, Entity),
     RemoveEntity(EntityId),
     FinaliseMapLoad,
@@ -92,16 +91,17 @@ pub enum SteadyPacket {
     ChatMessage(ConnectionUUID, String),
     SetName(ConnectionUUID, String),
     NameRejected(NameRejectionReason),
-    ThrowSnowball(String, Vec3, Vec3), // uuid, position, initial velocity
     Respawn(Vec3), // position
+    ThrowSnowball(String, Vec3, Vec3), // uuid, position, initial velocity
 
     Ping,
+    Consume(PacketUUID),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SteadyPacketData {
-    pub packet: Option<SteadyPacket>,
-    pub uuid: Option<PacketUUID>,
+    pub packet: SteadyPacket,
+    pub uuid: PacketUUID,
 }
 
 #[derive(Clone)]
@@ -229,11 +229,7 @@ impl Server {
             }
             Connection::Lan(_, connection) => {
                 let res = connection.serialise_and_send_steady(packet.clone()).await;
-                return if res.is_ok() {
-                    true
-                } else {
-                    false
-                }
+                return res.is_ok()
             }
         }
         true
@@ -244,8 +240,8 @@ impl Server {
             Connection::Local(connection) => {
                 let uuid = generate_uuid();
                 let packet_data = SteadyPacketData {
-                    packet: Some(packet),
-                    uuid: Some(uuid.clone()),
+                    packet,
+                    uuid: uuid.clone(),
                 };
                 unsafe {
                     self.send_steady_packet_unsafe(&Connection::Local(connection), packet_data).await
@@ -254,8 +250,8 @@ impl Server {
             Connection::Lan(listener, connection) => {
                 let uuid = generate_uuid();
                 let packet_data = SteadyPacketData {
-                    packet: Some(packet),
-                    uuid: Some(uuid.clone()),
+                    packet,
+                    uuid: uuid.clone(),
                 };
                 unsafe {
                     self.send_steady_packet_unsafe(&Connection::Lan(listener, connection), packet_data).await
@@ -315,6 +311,7 @@ impl Server {
                 return None;
             }
         }
+        debug!("sent all entity initialise packets");
         let uuid = self.get_connection_uuid(&connection).await;
 
         let name = "morbius";
@@ -347,6 +344,7 @@ impl Server {
         if !res {
             return None;
         }
+        debug!("sent player initialise packet");
         let mut worldmachine = self.worldmachine.lock().await;
         worldmachine.world.entities.push(player_entity.clone());
         worldmachine.queue_update(WorldUpdate::InitEntity(entity_uuid, player_entity.clone())).await;
@@ -373,15 +371,10 @@ impl Server {
     #[async_recursion]
     async fn steady_packet(&self, connection: Connection, packet: SteadyPacket, steady_packet_data: SteadyPacketData) -> bool {
         match packet {
-            SteadyPacket::KeepAlive => {
-                // do nothing
-            }
             SteadyPacket::InitialiseEntity(_uid, _entity) => {
                 // client shouldn't be sending this
                 debug!("client sent initialise packet");
             }
-            // client shouldn't be sending these
-            SteadyPacket::SelfTest => {}
             SteadyPacket::InitialisePlayer(_, _, _, _, _, _) => {}
             SteadyPacket::Message(_) => {}
             SteadyPacket::FinaliseMapLoad => {}
@@ -541,6 +534,7 @@ impl Server {
             }
             SteadyPacket::NameRejected(_) => {}
             SteadyPacket::Respawn(_) => {}
+            SteadyPacket::Consume(_) => {}
         }
         true
     }
@@ -552,10 +546,8 @@ impl Server {
                 let mut sur = sur.lock().await;
                 if let Ok(packet) = sur.try_recv() {
                     drop(sur);
-                    if let Some(steady_packet) = packet.clone().packet {
-                        if !self.steady_packet(connection.clone(), steady_packet, packet).await {
-                            return false;
-                        }
+                    if !self.steady_packet(connection.clone(), packet.packet.clone(), packet).await {
+                        return false;
                     }
                 }
             }
@@ -567,10 +559,8 @@ impl Server {
                 }
                 let packet_og = packet.unwrap();
                 if let Some(packet) = packet_og.clone() {
-                    if let Some(steady_packet) = packet.clone().packet {
-                        if !self.steady_packet(connection.clone(), steady_packet, packet).await {
-                            return false;
-                        }
+                    if !self.steady_packet(connection.clone(), packet.packet.clone(), packet).await {
+                        return false;
                     }
                 }
             }

@@ -8,12 +8,16 @@ use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
 use tokio::sync::{mpsc};
 use mutex_timeouts::tokio::MutexWithTimeoutAuto as Mutex;
 use serde::{Serialize, Deserialize};
-use std::net::SocketAddr;
+use std::net::{SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use bytes::{Bytes, BytesMut};
+use fyrox_sound::futures::{SinkExt, TryStreamExt};
 use tokio::sync::mpsc::error::SendError;
 use tokio::time::Instant;
-use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, SteadyPacket, SteadyPacketData};
+use tokio_stream::StreamExt;
+use tokio_util::codec::{BytesCodec, Decoder, Encoder, Framed, LengthDelimitedCodec};
+use crate::server::{ConnectionUUID, FastPacket, FastPacketData, generate_uuid, PacketUUID, SteadyPacket, SteadyPacketData};
 use crate::server::connections::SteadyMessageQueue;
 
 pub const FAST_QUEUE_LIMIT: usize = 4;
@@ -67,30 +71,30 @@ impl FastUpdateQueue<FastPacketLan> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LanConnection {
     pub steady_update: mpsc::Sender<SteadyPacketData>,
     pub steady_receiver: SteadyMessageQueue,
-    pub steady_requeue: mpsc::Sender<SteadyPacketData>,
     pub is_connected: Arc<AtomicBool>,
     pub remote_addr: SocketAddr,
     pub uuid: ConnectionUUID,
 }
 
 unsafe impl Send for LanConnection {}
+
 unsafe impl Sync for LanConnection {}
 
 #[derive(Clone)]
 pub struct ClientLanConnection {
-    pub steady_update: Arc<Mutex<TcpStream>>,
     fast_update: Arc<UdpSocket>,
     pub fast_update_queue: Arc<Mutex<FastUpdateQueue<FastPacketData>>>,
-    pub steady_sender_queue: Arc<Mutex<SteadyMessageQueue>>,
+    pub steady_sender_queue: mpsc::Sender<SteadyPacketData>,
     pub steady_receiver_queue: Arc<Mutex<SteadyMessageQueue>>,
     pub uuid: ConnectionUUID,
 }
 
 unsafe impl Send for ClientLanConnection {}
+
 unsafe impl Sync for ClientLanConnection {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -101,6 +105,7 @@ pub struct FastPacketLan {
 }
 
 unsafe impl Send for FastPacketLan {}
+
 unsafe impl Sync for FastPacketLan {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -111,9 +116,12 @@ pub enum FastPacketPotentials {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ConnectionHandshakePacket {
-    JoinRequest, // sent from client to server
-    PleaseConnectUDPNow(ConnectionUUID), // sent from server to client
-    IconnectedUDP(ConnectionUUID), // sent from client to server (over udp)
+    JoinRequest,
+    // sent from client to server
+    PleaseConnectUDPNow(ConnectionUUID),
+    // sent from server to client
+    IconnectedUDP(ConnectionUUID),
+    // sent from client to server (over udp)
     YoureReady(ConnectionUUID), // sent from server to client (over udp)
 }
 
@@ -125,6 +133,7 @@ pub struct LanListener {
 }
 
 unsafe impl Send for LanListener {}
+
 unsafe impl Sync for LanListener {}
 
 #[derive(Clone, Copy, Debug)]
@@ -140,10 +149,10 @@ impl LanListener {
         let fast_update_map = Arc::new(Mutex::new(HashMap::new()));
 
         let the_self = Self {
-                fast_update: Arc::new(udp_socket),
-                steady_update: Arc::new(Mutex::new(tcp_listener)),
-                fast_update_map,
-            };
+            fast_update: Arc::new(udp_socket),
+            steady_update: Arc::new(Mutex::new(tcp_listener)),
+            fast_update_map,
+        };
 
         let the_clone = the_self.clone();
         tokio::spawn(async move {
@@ -166,14 +175,13 @@ impl LanListener {
     }
 
     pub async fn init_new_connection(&self, steady_update: TcpStream) -> Option<LanConnection> {
-
         debug!("new connection");
         let mut steady_update = steady_update;
+        let mut reader = Framed::new(steady_update, LengthDelimitedCodec::new());
 
         // check for first handshake packet
-        let mut buf = [0; 1024];
-        let len = steady_update.read(&mut buf).await.unwrap();
-        let mut deserialiser = rmp_serde::Deserializer::new(&buf[..len]);
+        let buffer = StreamExt::next(&mut reader).await.expect("failed to read result from server").expect("error reading result from server");
+        let mut deserialiser = rmp_serde::Deserializer::new(buffer.as_ref());
         let handshake_packet = ConnectionHandshakePacket::deserialize(&mut deserialiser);
         if let Err(_) = handshake_packet {
             warn!("handshake packet error");
@@ -187,15 +195,11 @@ impl LanListener {
             let packet = ConnectionHandshakePacket::PleaseConnectUDPNow(uuid_real.clone());
             packet.serialize(&mut serialiser).unwrap();
             let data = serialiser.into_inner();
-            let n = steady_update.write(&data).await;
+            let n = reader.send(Bytes::from(data)).await;
             if let Err(_) = n {
                 warn!("handshake packet error");
                 return None;
-            } else if n.unwrap() != data.len() {
-                warn!("handshake packet error");
-                return None;
             }
-            steady_update.flush().await.unwrap();
             debug!("sent second handshake packet");
 
             let mut peer_addr = None;
@@ -237,7 +241,7 @@ impl LanListener {
             packet.serialize(&mut serialiser).unwrap();
             let data = serialiser.into_inner();
 
-            let successful_write = steady_update.write_all(&data).await;
+            let successful_write = reader.send(Bytes::from(data)).await;
             if successful_write.is_err() {
                 warn!("handshake packet error");
                 return None;
@@ -253,7 +257,7 @@ impl LanListener {
             //    remote_addr: peer_addr,
             //    uuid: uuid_real,
             //});
-            return Some(LanConnection::new(uuid_real, steady_update, peer_addr));
+            return Some(LanConnection::new(uuid_real, reader, peer_addr));
         }
 
         None
@@ -273,7 +277,7 @@ impl LanListener {
             if FAKE_LAG {
                 tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
             }
-            let (len, addr) =  fast_update.recv_from(&mut buf).await.expect("failed to receive from udp socket");
+            let (len, addr) = fast_update.recv_from(&mut buf).await.expect("failed to receive from udp socket");
             let mut deserialiser = rmp_serde::Deserializer::new(&buf[..len]);
             let packet = FastPacketLan::deserialize(&mut deserialiser);
             if let Err(e) = packet {
@@ -309,30 +313,21 @@ impl LanListener {
 }
 
 impl LanConnection {
-    pub fn new(uuid: ConnectionUUID, steady_update: TcpStream, peer_addr: SocketAddr) -> Self {
+    pub fn new(uuid: ConnectionUUID, steady_update: Framed<TcpStream, LengthDelimitedCodec>, peer_addr: SocketAddr) -> Self {
         let mut smq = SteadyMessageQueue::new();
         let (steady_sender_to_client, steady_sender_at_tcpthread) = mpsc::channel(100);
-        let (steady_requeue_sender, steady_requeue_at_tcpthread) = mpsc::channel(100);
         let the_self = Self {
             steady_update: steady_sender_to_client,
             steady_receiver: smq.clone(),
-            steady_requeue: steady_requeue_sender,
             is_connected: Arc::new(AtomicBool::new(true)),
             remote_addr: peer_addr,
-            uuid
+            uuid,
         };
         let the_clone = the_self.clone();
         tokio::spawn(async move {
-            the_clone.tcp_thread(smq, steady_sender_at_tcpthread, steady_update, steady_requeue_at_tcpthread).await;
+            the_clone.tcp_thread(smq, steady_sender_at_tcpthread, steady_update).await;
         });
         the_self
-    }
-
-    async fn attempt_receive_steady_update(&self, data: &mut [u8], tcp_handle: &mut TcpStream) -> std::io::Result<usize> {
-        if FAKE_LAG {
-            tokio::time::sleep(Duration::from_millis(FAKE_LAG_TIME)).await;
-        }
-        tcp_handle.try_read(data)
     }
 
     pub async fn serialise_and_send_fast(&self, to_uuid: ConnectionUUID, listener: LanListener, packet: FastPacketData) -> std::io::Result<usize> {
@@ -345,14 +340,6 @@ impl LanConnection {
         let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
         packet.serialize(&mut serialiser).unwrap();
         listener.send_fast_update(self.clone(), &buffer).await
-    }
-
-    pub async fn serialise_and_send_steady_inner(&self, packet: SteadyPacketData, tcp_handle: &mut TcpStream) -> std::io::Result<()> {
-        let mut buffer = Vec::new();
-        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
-        packet.serialize(&mut serialiser).unwrap();
-        debug!("sending steady packet: {:?}", packet);
-        tcp_handle.write_all(&buffer).await
     }
 
     pub async fn serialise_and_send_steady(&self, packet: SteadyPacketData) -> Result<(), SendError<SteadyPacketData>> {
@@ -381,49 +368,92 @@ impl LanConnection {
     }
 
     // sender receives from client and sends to other threads, receiver receives from other threads and sends to client
-    pub async fn tcp_thread(&self, sender: SteadyMessageQueue, mut receiver: mpsc::Receiver<SteadyPacketData>, mut tcp_handle: TcpStream, mut requeue: mpsc::Receiver<SteadyPacketData>) {
-        let mut buffer = [0; 2048];
+    pub async fn tcp_thread(&self, sender: SteadyMessageQueue, mut receiver: mpsc::Receiver<SteadyPacketData>, mut reader: Framed<TcpStream, LengthDelimitedCodec>) {
+        let mut packets_needing_consumption: VecDeque<(PacketUUID, SteadyPacketData)> = VecDeque::new();
+        let mut time_since_packet_sent: HashMap<PacketUUID, Instant> = HashMap::new();
         loop {
-            let attempt = self.attempt_receive_steady_update(&mut buffer, &mut tcp_handle).await;
-            if let Ok(packet) = attempt {
-                if packet == 0 {
-                    // connection closed
-                    self.is_connected.store(false, Ordering::Relaxed);
-                    break;
+            tokio::select! {
+                attempt = StreamExt::next(&mut reader) => {
+                    if let Some(packet) = attempt {
+                        if let Ok(packet) = packet {
+                            let mut deserialiser = rmp_serde::Deserializer::new(&packet[..]);
+                            let packet = SteadyPacketData::deserialize(&mut deserialiser);
+                            if let Ok(packet) = packet {
+                                match packet.packet {
+                                    SteadyPacket::Consume(uuid) => {
+                                        if time_since_packet_sent.contains_key(&uuid) {
+                                            // consume packet
+                                            packets_needing_consumption.retain(|x| &x.0 != &uuid);
+                                            time_since_packet_sent.remove(&uuid);
+                                        }
+                                    }
+                                    _ => {
+                                        let uuid = packet.uuid.clone();
+                                        sender.push(packet);
+                                        // send consume packet
+                                        let packet = SteadyPacketData {
+                                            uuid: PacketUUID::new(),
+                                            packet: SteadyPacket::Consume(uuid),
+                                        };
+
+                                        let mut buffer = Vec::new();
+                                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
+                                        packet.serialize(&mut serialiser).unwrap();
+                                        reader.send(Bytes::from(buffer)).await.unwrap();
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // connection closed
+                        self.is_connected.store(false, Ordering::Relaxed);
+                        break;
+                    }
                 }
-                let packet = &buffer[..packet];
-                let mut deserialiser = rmp_serde::Deserializer::new(packet);
-                let packet = SteadyPacketData::deserialize(&mut deserialiser);
-                if let Ok(packet) = packet {
-                    sender.push(packet);
+                attempt = receiver.recv() => {
+                    if let Some(packet) = attempt {
+                        // add to packets needing consumption and time since packet sent
+                        packets_needing_consumption.push_back((packet.uuid.clone(), packet.clone()));
+                        time_since_packet_sent.insert(packet.uuid.clone(), Instant::now());
+
+                        let mut buffer = Vec::new();
+                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
+                        packet.serialize(&mut serialiser).unwrap();
+                        reader.send(Bytes::from(buffer)).await.unwrap();
+                    }
                 }
-            }
-            let attempt = receiver.try_recv();
-            if let Ok(packet) = attempt {
-                self.serialise_and_send_steady_inner(packet, &mut tcp_handle).await.unwrap();
             }
 
-            let attempt = requeue.try_recv();
-            if let Ok(packet) = attempt {
-                sender.push(packet);
+            // for each packet needing consumption, check if it's been over 1 second since it was sent
+            for (uuid, packet_data) in packets_needing_consumption.iter() {
+                if let Some(time) = time_since_packet_sent.get_mut(uuid) {
+                    if time.elapsed().as_secs() > 1 {
+                        // re-send packet
+                        let mut buffer = Vec::new();
+                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
+                        packet_data.serialize(&mut serialiser).unwrap();
+                        reader.send(Bytes::from(buffer)).await.unwrap();
+                        *time = Instant::now();
+                    }
+                }
             }
         }
     }
 }
 
 impl ClientLanConnection {
-    pub async fn connect(hostname: &str, tcp_port: u16, udp_port: u16) -> Option<Self> {
-        let mut stream = TcpStream::connect(format!("{}:{}", hostname, tcp_port)).await.ok()?;
+    pub async fn connect(hostname: &str, tcp_port: u16, udp_port: u16) -> Option<(Self, Framed<TcpStream, LengthDelimitedCodec>, mpsc::Receiver<SteadyPacketData>)> {
+        let stream = TcpStream::connect(format!("{}:{}", hostname, tcp_port)).await.ok()?;
+        let mut reader = Framed::new(stream, LengthDelimitedCodec::new());
         debug!("connected to server");
         let mut serialiser = rmp_serde::Serializer::new(Vec::new());
         let packet = ConnectionHandshakePacket::JoinRequest;
         packet.serialize(&mut serialiser).unwrap();
         let data = serialiser.into_inner();
-        stream.write_all(&data).await.ok()?;
+        reader.send(Bytes::from(data)).await.ok()?;
         debug!("sent join request");
-        let mut buffer = [0; 2048];
-        let n = stream.read(&mut buffer).await.ok()?;
-        let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
+        let buffer = StreamExt::next(&mut reader).await.expect("failed to read result from server").expect("error reading result from server");
+        let mut deserialiser = rmp_serde::Deserializer::new(buffer.as_ref());
         let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
         if let ConnectionHandshakePacket::PleaseConnectUDPNow(uuid) = packet {
             debug!("received join response");
@@ -451,9 +481,8 @@ impl ClientLanConnection {
 
             // loop until we receive the YoureReady packet
             loop {
-                let mut buffer = [0; 2048];
-                let n = stream.read(&mut buffer).await.ok()?;
-                let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..n]);
+                let buffer = StreamExt::next(&mut reader).await.expect("failed to read result from server").expect("error reading result from server");
+                let mut deserialiser = rmp_serde::Deserializer::new(buffer.as_ref());
                 let packet = ConnectionHandshakePacket::deserialize(&mut deserialiser).unwrap();
                 if let ConnectionHandshakePacket::YoureReady(_) = packet {
                     debug!("received YoureReady packet");
@@ -461,30 +490,18 @@ impl ClientLanConnection {
                 }
             }
 
-            return Some(ClientLanConnection {
-                steady_update: Arc::new(Mutex::new(stream)),
+            let (sender, receiver) = mpsc::channel(100);
+
+            return Some((ClientLanConnection {
                 fast_update: Arc::new(socket),
                 fast_update_queue: Arc::new(Mutex::new(FastUpdateQueue::<FastPacketData>::new(None))),
-                steady_sender_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
+                steady_sender_queue: sender,
                 steady_receiver_queue: Arc::new(Mutex::new(SteadyMessageQueue::new())),
                 uuid,
-            });
+            }, reader, receiver));
         }
 
         None
-    }
-
-    async fn send_steady_update(&self, data: &[u8]) -> std::io::Result<()> {
-        self.steady_update.lock().await.write_all(data).await
-    }
-
-    async fn attempt_receive_steady_update(&self, data: &mut [u8]) -> Option<std::io::Result<usize>> {
-        let attempt = self.steady_update.lock().await.try_read(data);
-        if let Ok(packet) = attempt {
-            Some(Ok(packet))
-        } else {
-            None
-        }
     }
 
     async fn send_fast_update(&self, data: &[u8]) -> std::io::Result<usize> {
@@ -529,31 +546,80 @@ impl ClientLanConnection {
         }
     }
 
-    pub async fn tcp_listener_thread(&self) {
-        let mut buffer = [0; 2048];
+    pub async fn tcp_listener_thread(&self, mut reader: Framed<TcpStream, LengthDelimitedCodec>, mut receiver: mpsc::Receiver<SteadyPacketData>) {
+        let mut packets_needing_consumption: VecDeque<(PacketUUID, SteadyPacketData)> = VecDeque::new();
+        let mut time_since_packet_sent: HashMap<PacketUUID, Instant> = HashMap::new();
         loop {
-            let attempt = self.attempt_receive_steady_update(&mut buffer).await;
-            if attempt.is_none() {
-                continue;
+            tokio::select! {
+                attempt = StreamExt::next(&mut reader) => {
+                    if let Some(attempt) = attempt {
+                        if let Ok(attempt) = attempt {
+                            let mut deserialiser = rmp_serde::Deserializer::new(attempt.as_ref());
+                            let packet = SteadyPacketData::deserialize(&mut deserialiser);
+                            if packet.is_err() {
+                                warn!("failed to deserialise steady update: {:?}", packet);
+                            } else {
+                                let packet = packet.unwrap();
+                                match packet.packet {
+                                    SteadyPacket::Consume(uuid) => {
+                                        if time_since_packet_sent.contains_key(&uuid) {
+                                            // consume packet
+                                            packets_needing_consumption.retain(|x| &x.0 != &uuid);
+                                            time_since_packet_sent.remove(&uuid);
+                                        }
+                                    }
+                                    _ => {
+                                        let uuid = packet.uuid.clone();
+                                        self.steady_receiver_queue.lock().await.push(packet);
+                                        // send consume packet
+                                        let packet = SteadyPacketData {
+                                            uuid: PacketUUID::new(),
+                                            packet: SteadyPacket::Consume(uuid),
+                                        };
+
+                                        let mut buffer = Vec::new();
+                                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
+                                        packet.serialize(&mut serialiser).unwrap();
+                                        reader.send(Bytes::from(buffer)).await.unwrap();
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        error!("connection closed");
+                        break;
+                    }
+                }
+                attempt = receiver.recv() => {
+                    if let Some(attempt) = attempt {
+                        // add to packets needing consumption and time since packet sent
+                        packets_needing_consumption.push_back((attempt.uuid.clone(), attempt.clone()));
+                        time_since_packet_sent.insert(attempt.uuid.clone(), Instant::now());
+
+                        let mut buffer = Vec::new();
+                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
+                        attempt.serialize(&mut serialiser).unwrap();
+                        let attempt = reader.send(Bytes::from(buffer)).await;
+                        if attempt.is_err() {
+                            warn!("failed to send steady update: {:?}", attempt);
+                        }
+                    }
+                }
             }
-            let attempt = attempt.unwrap();
-            if attempt.is_err() {
-                warn!("failed to receive steady update: {:?}", attempt);
-                continue;
+
+            // for each packet needing consumption, check if it's been over 1 second since it was sent
+            for (uuid, packet_data) in packets_needing_consumption.iter() {
+                if let Some(time) = time_since_packet_sent.get_mut(uuid) {
+                    if time.elapsed().as_secs() > 1 {
+                        // re-send packet
+                        let mut buffer = Vec::new();
+                        let mut serialiser = rmp_serde::Serializer::new(&mut buffer);
+                        packet_data.serialize(&mut serialiser).unwrap();
+                        reader.send(Bytes::from(buffer)).await.unwrap();
+                        *time = Instant::now();
+                    }
+                }
             }
-            let attempt = attempt.unwrap();
-            if attempt == 0 {
-                warn!("received 0 bytes from steady update");
-                break;
-            }
-            let mut deserialiser = rmp_serde::Deserializer::new(&buffer[..attempt]);
-            let packet = SteadyPacketData::deserialize(&mut deserialiser);
-            if packet.is_err() {
-                warn!("failed to deserialise steady update: {:?}", packet);
-                continue;
-            }
-            let packet = packet.unwrap();
-            self.steady_receiver_queue.lock().await.push(packet);
         }
     }
 
@@ -569,10 +635,7 @@ impl ClientLanConnection {
     }
 
     pub async fn send_steady_and_serialise(&self, packet: SteadyPacketData) -> std::io::Result<()> {
-        let mut serialiser = rmp_serde::Serializer::new(Vec::new());
-        packet.serialize(&mut serialiser).unwrap();
-        let data = serialiser.into_inner();
-        self.send_steady_update(&data).await
+        self.steady_sender_queue.send(packet).await.map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "failed to send steady packet"))
     }
 
     pub async fn attempt_receive_steady_and_deserialise(&self) -> Option<SteadyPacketData> {

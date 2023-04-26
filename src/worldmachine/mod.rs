@@ -416,29 +416,6 @@ impl WorldMachine {
         self.server_connection = Some(connection);
     }
 
-    async fn send_queued_steady_messages(&mut self) {
-        if let Some(connection) = &mut self.server_connection {
-            match connection {
-                ConnectionClientside::Local(connection) => {
-                    let mut connection = connection.lock().await;
-                    let mut queue = connection.steady_sender_queue.lock().await;
-                    while let Some(message) = queue.pop().await {}
-                }
-                ConnectionClientside::Lan(connection) => {
-                    let mut queue = connection.steady_sender_queue.lock().await;
-                    while let Some(message) = queue.pop().await {
-                        debug!("sending queued steady message");
-                        debug!("message: {:?}", message);
-                        let attempt = connection.send_steady_and_serialise(message).await;
-                        if attempt.is_err() {
-                            error!("send_queued_steady_messages: failed to send message");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     async fn send_fast_message(&mut self, message: FastPacketData) {
         if let Some(connection) = &mut self.server_connection {
             match connection {
@@ -499,28 +476,27 @@ impl WorldMachine {
 
     pub async fn set_name(&mut self, name: String) {
         self.send_steady_message(SteadyPacketData {
-            packet: Some(SteadyPacket::SetName(String::new(), name)),
-            uuid: Some(server::generate_uuid()),
+            packet: SteadyPacket::SetName(String::new(), name),
+            uuid: server::generate_uuid(),
         }).await;
     }
 
     pub async fn send_chat_message(&mut self, message: String) {
         self.send_steady_message(SteadyPacketData {
-            packet: Some(SteadyPacket::ChatMessage(String::new(), message)),
-            uuid: Some(server::generate_uuid()),
+            packet: SteadyPacket::ChatMessage(String::new(), message),
+            uuid: server::generate_uuid(),
         }).await;
     }
 
     pub async fn throw_snowball(&mut self) {
         self.send_steady_message(SteadyPacketData {
-            packet: Some(SteadyPacket::ThrowSnowball(String::new(), Vec3::default(), Vec3::default())),
-            uuid: Some(server::generate_uuid()),
+            packet: SteadyPacket::ThrowSnowball(String::new(), Vec3::default(), Vec3::default()),
+            uuid: server::generate_uuid(),
         }).await;
     }
 
     async fn handle_steady_message(&mut self, packet: SteadyPacket) {
         match packet {
-            SteadyPacket::KeepAlive => {}
             SteadyPacket::InitialiseEntity(entity_id, entity_data) => {
                 if let Some(ignore) = self.ignore_this_entity {
                     if entity_id == ignore {
@@ -552,11 +528,8 @@ impl WorldMachine {
             SteadyPacket::Message(str_message) => {
                 info!("Received message from server: {}", str_message);
             }
-            SteadyPacket::SelfTest => {
-                self.counter += 1.0;
-                info!("received {} self test messages", self.counter);
-            }
             SteadyPacket::InitialisePlayer(uuid, id, name, position, rotation, scale) => {
+                debug!("initialise player message received");
                 let mut player = Player::default();
                 player.init(self.physics.lock().unwrap().clone().unwrap(), uuid, name.clone(), position, rotation, scale);
                 chat::CHAT_BUFFER.lock().unwrap().my_name = name;
@@ -684,6 +657,7 @@ impl WorldMachine {
                 }
             }
             SteadyPacket::Ping => {}
+            SteadyPacket::Consume(_) => {}
         }
     }
 
@@ -696,7 +670,7 @@ impl WorldMachine {
                     let try_recv = connection.steady_update_receiver.try_recv();
                     if let Ok(message) = try_recv {
                         drop(connection);
-                        self.handle_steady_message(message.clone().packet.unwrap()).await;
+                        self.handle_steady_message(message.clone().packet).await;
                     } else if let Err(e) = try_recv {
                         if e != TryRecvError::Empty {
                             warn!("process_steady_messages: error receiving message: {:?}", e);
@@ -707,7 +681,7 @@ impl WorldMachine {
                     // check if we have any messages to process
                     let try_recv = connection.attempt_receive_steady_and_deserialise().await;
                     if let Some(message) = try_recv {
-                        self.handle_steady_message(message.clone().packet.unwrap()).await;
+                        self.handle_steady_message(message.clone().packet).await;
                     }
                 }
             }
@@ -951,8 +925,8 @@ impl WorldMachine {
     async fn ping_if_needed(&mut self) {
         if self.last_ping.elapsed().as_secs_f32() > 5.0 {
             let res = self.send_steady_message(SteadyPacketData {
-                packet: Some(SteadyPacket::Ping),
-                uuid: Some(server::generate_uuid()),
+                packet: SteadyPacket::Ping,
+                uuid: server::generate_uuid(),
             }).await;
             if !res {
                 crate::ui::DISCONNECTED.store(true, Ordering::Relaxed);
@@ -963,7 +937,6 @@ impl WorldMachine {
 
     pub async fn tick_connection(&mut self, client_updates: &mut Vec<ClientUpdate>) {
         self.process_steady_messages().await;
-        self.send_queued_steady_messages().await;
         self.process_fast_messages().await;
         self.process_client_updates(client_updates).await;
         self.ping_if_needed().await;

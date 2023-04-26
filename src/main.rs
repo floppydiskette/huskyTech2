@@ -141,7 +141,7 @@ async fn main() {
         info!("initialised worldmachine");
 
         if let Some(ip) = connect_to_lan_server {
-            let server_connection = ClientLanConnection::connect(ip.as_str(), 25566, 25567).await.expect("failed to connect to server");
+            let (server_connection, tcpstream, tcpreceiver) = ClientLanConnection::connect(ip.as_str(), 25566, 25567).await.expect("failed to connect to server");
             worldmachine.connect_to_server(ConnectionClientside::Lan(server_connection.clone()));
             let the_clone = server_connection.clone();
             tokio::spawn(async move {
@@ -149,7 +149,7 @@ async fn main() {
             });
             let the_clone = server_connection.clone();
             tokio::spawn(async move {
-                the_clone.tcp_listener_thread().await;
+                the_clone.tcp_listener_thread(tcpstream, tcpreceiver).await;
             });
         } else {
             let mut server = server::Server::new(&level_to_load.unwrap_or("lava".to_string()), physics.clone());
