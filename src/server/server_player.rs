@@ -17,7 +17,7 @@ pub const DEFAULT_HEIGHT: f32 = 1.7;
 pub const DEFAULT_STEPHEIGHT: f32 = 0.5;
 
 pub const ERROR_MARGIN: f32 = 5.0;
-pub const MAX_HEIGHT_BEFORE_FLIGHT: f32 = 10.0;
+pub const MAX_HEIGHT_BEFORE_FLIGHT: f32 = 15.0;
 
 #[derive(Clone)]
 pub struct ServerPlayerContainer {

@@ -206,7 +206,8 @@ impl LanListener {
 
             // wait for udp connection
             let starting_time = Instant::now();
-            const TIMEOUT_SECS: u64 = 5;
+            const TIMEOUT_SECS: u64 = 20;
+            const RETRY_SECS: u64 = 5;
             loop {
                 let packet = self.check_for_fast_update(&uuid_real).await;
                 if let Some(packet) = packet {
@@ -220,6 +221,21 @@ impl LanListener {
                         }
                     }
                 }
+
+                // every RETRY_SECS seconds, resend the packet
+                if starting_time.elapsed().as_secs() % RETRY_SECS == 0 {
+                    let mut serialiser = rmp_serde::Serializer::new(Vec::new());
+                    let packet = ConnectionHandshakePacket::PleaseConnectUDPNow(uuid_real.clone());
+                    packet.serialize(&mut serialiser).unwrap();
+                    let data = serialiser.into_inner();
+                    let n = reader.send(Bytes::from(data)).await;
+                    if let Err(_) = n {
+                        warn!("handshake packet error");
+                        return None;
+                    }
+                    debug!("resent second handshake packet");
+                }
+
                 if starting_time.elapsed().as_secs() > TIMEOUT_SECS {
                     warn!("handshake packet error: timed out");
                     return None;
@@ -487,6 +503,20 @@ impl ClientLanConnection {
                 if let ConnectionHandshakePacket::YoureReady(_) = packet {
                     debug!("received YoureReady packet");
                     break;
+                }
+
+                if let ConnectionHandshakePacket::PleaseConnectUDPNow(_) = packet {
+                    // server didn't get our IConnectedUDP packet, send it again
+                    let packet = FastPacketLan {
+                        uuid: uuid.clone(),
+                        socket_addr: Some(socket.local_addr().unwrap()),
+                        data: FastPacketPotentials::ConnectionHandshake(ConnectionHandshakePacket::IconnectedUDP(uuid.clone())),
+                    };
+                    let mut serialiser = rmp_serde::Serializer::new(Vec::new());
+                    packet.serialize(&mut serialiser).unwrap();
+                    let data = serialiser.into_inner();
+                    debug!("told the server we're ready to receive udp (again)");
+                    socket.send(&data.clone()).await.ok()?;
                 }
             }
 
